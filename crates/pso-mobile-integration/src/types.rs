@@ -127,6 +127,41 @@ pub struct AggregationTierInfo {
     pub vk_hash: Vec<u8>,
 }
 
+/// VDF (MinRoot over BLS12-381) computation result.
+///
+/// Returned by [`compute_vdf`](crate::api::compute_vdf). Both fields are
+/// raw byte vectors so they can be attached verbatim to a Users-pool
+/// transaction's `vdfOutput` / `vdfProof` fields. The validator
+/// re-derives the input from `VdfParams::derive_input_from`, so wallets
+/// must use the same canonical construction (see
+/// [`derive_vdf_input`](crate::api::derive_vdf_input)).
+#[derive(Debug, uniffi::Record)]
+pub struct VdfResult {
+    /// VDF output `y` — for MinRoot, a 48-byte BLS12-381 Fp element.
+    pub output: Vec<u8>,
+    /// Wesolowski proof `π` — for MinRoot, a 48-byte BLS12-381 Fp element.
+    pub proof: Vec<u8>,
+}
+
+/// Snapshot of the VDF parameters compiled into this client.
+///
+/// Returned by [`vdf_constants`](crate::api::vdf_constants). Wallets
+/// surface these to UI so users can see the current calibration; the
+/// validator pins the same values at runtime (see
+/// `crates/pso-chain/src/config.rs`).
+#[derive(Debug, uniffi::Record)]
+pub struct VdfConstants {
+    /// Base difficulty `T` — sequential MinRoot iterations.
+    /// Calibrated for ~2 seconds on iPhone 13 (A15 Bionic).
+    pub t_base: u64,
+    /// Maximum per-epoch difficulty adjustment in percent (±25%).
+    pub max_difficulty_adjustment_pct: u64,
+    /// Epoch length in L2 blocks.
+    pub epoch_length_blocks: u64,
+    /// Backward-looking validity window in blocks (±32 from target).
+    pub proof_validity_window: u64,
+}
+
 /// Error type for the mobile proof API.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum MobileError {
@@ -150,6 +185,12 @@ pub enum MobileError {
 
     #[error("Aggregation tier unavailable: {detail}")]
     AggregationTierUnavailable { detail: String },
+
+    #[error("Invalid VDF input: {detail}")]
+    InvalidVdfInput { detail: String },
+
+    #[error("Invalid VDF difficulty: {detail}")]
+    InvalidVdfDifficulty { detail: String },
 
     #[error("Witness generation failed: {detail}")]
     WitnessGenerationFailed { detail: String },

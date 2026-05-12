@@ -28,6 +28,9 @@ pso-integrations-shared  = { path = "crates/pso-integrations-shared" }
 
 # External
 pso-poseidon = "0.2"
+# MinRoot VDF over BLS12-381. Used by `pso-mobile-integration::vdf` for
+# the proof-of-personhood challenge wallets attach to Users-pool txs.
+pso-vdf      = "0.1"
 k256         = { version = "0.14.0-rc.8", features = ["std"] }
 ark-ff       = { version = "0.5", features = ["asm", "parallel"] }
 ark-bn254    = { version = "0.5", features = ["default"] }

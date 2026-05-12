@@ -36,14 +36,15 @@ interaction a client makes with the L2:
 | Mobile UniFFI bindings (iOS / Android)     | shipped | `pso-mobile-integration`            |
 | SRA registrar UniFFI bindings              | shipped | `pso-sra-integration`               |
 | Command-line frontend                      | shipped | `cli/pso-zk-cli`                    |
-| VDF FFI binding (proof-of-personhood)      | planned | (mobile) — see `docs/issues/wallet-example-real-prover.md` in `pso-chain` |
+| VDF FFI binding (proof-of-personhood)      | shipped | `pso-mobile-integration::vdf` (`compute_vdf`, `verify_vdf`, `derive_vdf_input`, `vdf_constants`) — see `pso-vdf` crate |
 | L2 RPC client (submit TD, read state)      | planned | new crate — alloy-based, not yet started |
 
-The shipped surface today is wallet-side ZK proof generation plus the
-shared cryptographic primitives. VDF FFI and L2 RPC integration land
-here next; they belong in this repo for the same reason ZK witness
-builders do — they all depend on k256 / native crypto and would force
-`pso-protocol` to carry an EC dependency if they lived there.
+The shipped surface today is wallet-side ZK proof generation, the
+shared cryptographic primitives, and the MinRoot VDF prover. The L2
+RPC client lands here next; alongside ZK and VDF it belongs in this
+repo for the same reason — they all depend on k256 / native crypto
+and would force `pso-protocol` to carry an EC dependency if they
+lived there.
 
 ## Why split it out
 
@@ -102,7 +103,7 @@ pso-integration/
   SEC1 coordinate extraction.
 - `uniffi` — mobile / SRA FFI bindings.
 - `clap`, `tabled` — CLI surface.
-- *(planned)* `pso-vdf` — VDF prover FFI for mobile.
+- `pso-vdf` — MinRoot VDF prover (Users-pool tx gating).
 - *(planned)* `alloy` — L2 RPC client + transaction submission.
 
 ## Build

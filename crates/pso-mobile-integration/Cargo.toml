@@ -19,6 +19,10 @@ pso-zk-canonical.workspace = true
 pso-nft.workspace = true
 pso-integrations-shared.workspace = true
 pso-poseidon.workspace = true
+# MinRoot VDF — Users-pool transaction gating. Wrapped by the `vdf`
+# module behind UniFFI; the slow path runs on a wallet background
+# thread before broadcasting the tx.
+pso-vdf = { workspace = true, features = ["std"] }
 
 # UniFFI for React Native bindings
 uniffi = { version = "0.31", features = ["cli"] }
