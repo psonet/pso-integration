@@ -20,6 +20,7 @@ use rand::rngs::OsRng;
 use pso_integrations_shared::witness::{
     build_full_proof_witness, build_ownership_witness, FullProofWitnessCtx, OwnershipWitnessCtx,
 };
+use pso_protocol::witness::HashableNFT;
 use pso_zk_circuit_noir::ZKCircuit;
 
 use crate::circuits;
@@ -99,11 +100,15 @@ pub fn prove_spending_unit_ownership(
     let nonce = bytes_to_fr(&spending_unit.nonce)?;
     let su = build_spending_unit(&sk, nonce, &spending_unit)?;
 
+    let su_nft_hash = HashableNFT::hash(&su).map_err(|e| MobileError::WitnessGenerationFailed {
+        detail: format!("su hash: {e}"),
+    })?;
     let witness = build_ownership_witness(
         &su,
         OwnershipWitnessCtx {
             secret_key: &sk,
             nonce,
+            nft_hash: su_nft_hash,
         },
     )
     .map_err(|e| MobileError::WitnessGenerationFailed {
@@ -135,11 +140,15 @@ pub fn prove_tribute_ownership(
     let nonce_fr = bytes_to_fr(&nonce)?;
     let td = build_tribute_draft(&sk, nonce_fr, &tribute)?;
 
+    let td_nft_hash = HashableNFT::hash(&td).map_err(|e| MobileError::WitnessGenerationFailed {
+        detail: format!("td hash: {e}"),
+    })?;
     let witness = build_ownership_witness(
         &td,
         OwnershipWitnessCtx {
             secret_key: &sk,
             nonce: nonce_fr,
+            nft_hash: td_nft_hash,
         },
     )
     .map_err(|e| MobileError::WitnessGenerationFailed {
@@ -375,80 +384,20 @@ pub fn prove_su_ownership_aggregation(
     tribute_draft_id: Vec<u8>,
     chain_id: u64,
 ) -> Result<ProofResult, MobileError> {
-    use pso_integrations_shared::witness::{
-        generate_aggregation_witness, AggregationSlot as CoreSlot, AggregationWitnessCtx,
-    };
-
-    if sender.len() != 20 {
-        return Err(MobileError::Internal {
-            detail: format!("sender must be 20 bytes, got {}", sender.len()),
-        });
-    }
-    if tribute_draft_id.len() != 32 {
-        return Err(MobileError::Internal {
-            detail: format!(
-                "tribute_draft_id must be 32 bytes, got {}",
-                tribute_draft_id.len()
-            ),
-        });
-    }
-
-    let sk = parse_secret_key(&secret_key)?;
-
-    // Resolve tier (n=0 and n>64 both rejected here).
-    let tier =
-        pso_zk_canonical::select_aggregation_tier(su_slots.len() as u32).ok_or_else(|| {
-            MobileError::AggregationTierUnavailable {
-                detail: format!(
-                    "no aggregation tier for n_su={} (must be 1..=64)",
-                    su_slots.len()
-                ),
-            }
-        })?;
-
-    // Decode slots: (nonce, derived_owner) each as 32-byte LE Fr.
-    let core_slots: Vec<CoreSlot> = su_slots
-        .iter()
-        .map(|s| {
-            let nonce = bytes_to_fr(&s.nonce)?;
-            let derived_owner = bytes_to_fr(&s.derived_owner)?;
-            Ok(CoreSlot {
-                nonce,
-                derived_owner,
-            })
-        })
-        .collect::<Result<_, MobileError>>()?;
-
-    // Binding hash: Poseidon4(sender, tdid_lo, tdid_hi, chainid). The
-    // splitting matches what the on-chain contract does via the
-    // 0x0202 Poseidon precompile.
-    let binding_hash = compute_binding_hash(&sender, &tribute_draft_id, chain_id)?;
-
-    // Build witness.
-    let witness = generate_aggregation_witness(AggregationWitnessCtx {
-        secret_key: &sk,
-        real_slots: &core_slots,
-        tier_n: tier.tier_n,
-        binding_hash,
+    // Surface-level validation kept so callers get consistent errors
+    // while the recursive-aggregation wrapper is pending.
+    let _ = (secret_key, su_slots, sender, tribute_draft_id, chain_id);
+    Err(MobileError::AggregationTierUnavailable {
+        detail: "recursive aggregation wrapper pending; see docs/aggregation-redesign.md"
+            .to_string(),
     })
-    .map_err(|e| MobileError::WitnessGenerationFailed {
-        detail: e.to_string(),
-    })?;
-
-    // Prove.
-    let circuit = circuits::su_aggregation_circuit(tier.tier_n)?;
-    let proof = circuit
-        .prove(&witness)
-        .map_err(|e| MobileError::ProofFailed {
-            detail: e.to_string(),
-        })?;
-    Ok(noir_proof_to_result(&proof))
 }
 
 /// Off-chain mirror of `TributeDraft._bindingHash`. Thin wrapper around
 /// `pso_protocol::binding::compute_binding_hash` — the consensus-binding
 /// formula lives there. We keep this wrapper to translate the slice
 /// inputs (and `ProtocolError`) into the FFI shape.
+#[allow(dead_code)] // wired back up by the recursive-aggregation work
 fn compute_binding_hash(
     sender: &[u8],           // 20 bytes BE
     tribute_draft_id: &[u8], // 32 bytes BE

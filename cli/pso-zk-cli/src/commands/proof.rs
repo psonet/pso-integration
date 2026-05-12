@@ -19,6 +19,7 @@ use pso_integrations_shared::witness::{
     build_full_proof_witness, build_ownership_witness, FullProofWitnessCtx, OwnershipWitnessCtx,
 };
 use pso_nft::{SpendingUnit, TributeDraft};
+use pso_protocol::witness::HashableNFT;
 use pso_zk_circuit_noir::{
     circuit_loader, NoirCircuitConfig, NoirFullProofCircuit, NoirOwnershipCircuit, NoirProof,
     ZKCircuit, ZKMode,
@@ -270,14 +271,24 @@ fn generate_ownership_proof(
         "tribute-draft" => {
             let nft: TributeDraft = serde_json::from_value(generated_output.nft.clone())
                 .context("Failed to deserialize NFT as TributeDraft")?;
-            let ctx = OwnershipWitnessCtx { secret_key, nonce };
+            let nft_hash = HashableNFT::hash(&nft).context("td hash")?;
+            let ctx = OwnershipWitnessCtx {
+                secret_key,
+                nonce,
+                nft_hash,
+            };
             build_ownership_witness(&nft, ctx)
                 .context("Failed to generate ownership witness for TributeDraft")?
         }
         "spending-unit" => {
             let nft: SpendingUnit = serde_json::from_value(generated_output.nft.clone())
                 .context("Failed to deserialize NFT as SpendingUnit")?;
-            let ctx = OwnershipWitnessCtx { secret_key, nonce };
+            let nft_hash = HashableNFT::hash(&nft).context("su hash")?;
+            let ctx = OwnershipWitnessCtx {
+                secret_key,
+                nonce,
+                nft_hash,
+            };
             build_ownership_witness(&nft, ctx)
                 .context("Failed to generate ownership witness for SpendingUnit")?
         }

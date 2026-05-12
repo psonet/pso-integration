@@ -106,12 +106,19 @@ pub fn sign_prehash_le(secret_key: &SecretKey, digest: &Fr) -> anyhow::Result<[u
 // Witness contexts
 // =====================================================================
 
-/// Context for generating an ownership-only witness.
+/// Context for generating an ownership-only witness per the §4.2
+/// privacy-preserving L2 spec.
 pub struct OwnershipWitnessCtx<'a> {
-    /// Wallet's secret key.
+    /// Wallet's secret key — for SU ownership this is the per-SU
+    /// `shared_sk` reconstructed via App. A; for TD ownership this
+    /// is the wallet-rolled per-TD secret key.
     pub secret_key: &'a SecretKey,
     /// Nonce baked into the ownership commitment.
     pub nonce: Fr,
+    /// Per-NFT entity hash. The signature is over
+    /// `Poseidon2(nft_hash, nonce).to_le_bytes()` so the proof is
+    /// bound to a specific NFT and can't be replayed across SUs.
+    pub nft_hash: Fr,
 }
 
 /// Context for generating a full proof witness (ownership + inclusion).
@@ -142,10 +149,14 @@ pub struct AggregationWitnessCtx<'a> {
 // since `GenerateWitness` and `T` are both foreign to this crate).
 // =====================================================================
 
-/// Build an `OwnershipWitness` from any `OwnableNFT` plus a key
-/// material context. Equivalent to the original
-/// `nft.generate_witness(OwnershipWitnessCtx { ... })` from
-/// `pso-zk-core::witness`.
+/// Build an `OwnershipWitness` per §4.2 of the privacy-preserving L2
+/// spec.
+///
+/// The signature is over `Poseidon2(nft_hash, nonce).to_le_bytes()` —
+/// bound to a specific (NFT, nonce) pair so the proof can't be
+/// replayed across SUs. `nft_hash` is added to the public inputs so
+/// the on-chain verifier can reconstruct the same prehash and bind
+/// the proof to the right NFT entity.
 pub fn build_ownership_witness<T: OwnableNFT + ?Sized>(
     nft: &T,
     ctx: OwnershipWitnessCtx<'_>,
@@ -153,8 +164,13 @@ pub fn build_ownership_witness<T: OwnableNFT + ?Sized>(
     let (public_key_x, public_key_y) = sec1_coords(&ctx.secret_key.public_key())?;
     let ownership_fr = nft.ownership();
     let ownership = fr_to_le32(&ownership_fr);
-    let signature = sign_prehash_le(ctx.secret_key, &ownership_fr)?;
+
+    // Prehash bound to (nft_hash, nonce) — the §4.2 binding.
+    let prehash_fr = pso_protocol::hash::poseidon2(ctx.nft_hash, ctx.nonce)
+        .map_err(|e| anyhow::anyhow!("poseidon2(nft_hash, nonce): {e}"))?;
+    let signature = sign_prehash_le(ctx.secret_key, &prehash_fr)?;
     let nonce = fr_to_le32(&ctx.nonce);
+    let nft_hash = fr_to_le32(&ctx.nft_hash);
 
     Ok(OwnershipWitness {
         private_inputs: OwnershipPrivateInputs {
@@ -164,13 +180,20 @@ pub fn build_ownership_witness<T: OwnableNFT + ?Sized>(
         },
         public_inputs: OwnershipPublicInputs {
             ownership,
+            nft_hash,
             signature,
         },
     })
 }
 
 /// Build a `FullProofWitness` from any `OwnableNFT + HashableNFT`.
-/// Equivalent to the original `nft.generate_witness(FullProofWitnessCtx { ... })`.
+///
+/// Uses the same §4.2 ownership semantics as
+/// [`build_ownership_witness`] — the signature is over
+/// `Poseidon2(nft_hash, nonce)` and the witness carries `nft_hash`
+/// inside `OwnershipPublicInputs`. There is one ownership
+/// implementation across the codebase; the full proof composes it
+/// with a Merkle-inclusion check on the same `nft_hash`.
 pub fn build_full_proof_witness<T: OwnableNFT + HashableNFT + ?Sized>(
     nft: &T,
     ctx: FullProofWitnessCtx<'_>,
@@ -178,16 +201,19 @@ pub fn build_full_proof_witness<T: OwnableNFT + HashableNFT + ?Sized>(
     let (public_key_x, public_key_y) = sec1_coords(&ctx.secret_key.public_key())?;
     let ownership_fr = nft.ownership();
     let ownership = fr_to_le32(&ownership_fr);
-    let signature = sign_prehash_le(ctx.secret_key, &ownership_fr)?;
+
+    let nft_hash_fr = nft.hash().map_err(|e| anyhow::anyhow!("nft hash: {e}"))?;
+    let nft_hash = fr_to_le32(&nft_hash_fr);
+
+    // Same prehash the standalone ownership circuit uses — keeps the
+    // signature semantics identical across both circuits.
+    let prehash_fr = pso_protocol::hash::poseidon2(nft_hash_fr, ctx.nonce)
+        .map_err(|e| anyhow::anyhow!("poseidon2(nft_hash, nonce): {e}"))?;
+    let signature = sign_prehash_le(ctx.secret_key, &prehash_fr)?;
     let nonce = fr_to_le32(&ctx.nonce);
 
-    let entity_hash_fr = nft
-        .hash()
-        .map_err(|e| anyhow::anyhow!("entity hash: {e}"))?;
-    let entity_hash = fr_to_le32(&entity_hash_fr);
-
     let merkle_root_fr = pso_protocol::merkle::compute_merkle_root(
-        &entity_hash_fr,
+        &nft_hash_fr,
         ctx.merkle_path,
         pso_protocol::merkle::SPARSE_MERKLE_PATH_DEPTH,
     )
@@ -206,9 +232,9 @@ pub fn build_full_proof_witness<T: OwnableNFT + HashableNFT + ?Sized>(
         public_inputs: FullProofPublicInputs {
             ownership: OwnershipPublicInputs {
                 ownership,
+                nft_hash,
                 signature,
             },
-            entity_hash,
             merkle_root,
         },
     })

@@ -564,7 +564,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(witness.public_inputs.entity_hash.len(), 32);
+        assert_eq!(witness.public_inputs.ownership.nft_hash.len(), 32);
         assert_eq!(witness.public_inputs.merkle_root.len(), 32);
     }
 
@@ -573,11 +573,13 @@ mod tests {
         let mut rng = OsRng;
         let data = TributeDraft::generate(&mut rng).unwrap();
 
+        let nft_hash = data.nft.hash().expect("nft hash");
         let witness = build_ownership_witness(
             &data.nft,
             OwnershipWitnessCtx {
                 secret_key: &data.owner_keys.secret_key,
                 nonce: data.nonce,
+                nft_hash,
             },
         )
         .unwrap();
@@ -613,7 +615,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(witness.public_inputs.entity_hash.len(), 32);
+        assert_eq!(witness.public_inputs.ownership.nft_hash.len(), 32);
         assert_eq!(witness.public_inputs.merkle_root.len(), 32);
     }
 
@@ -622,11 +624,13 @@ mod tests {
         let mut rng = OsRng;
         let data = SpendingUnit::generate(&mut rng).unwrap();
 
+        let nft_hash = data.nft.hash().expect("nft hash");
         let witness = build_ownership_witness(
             &data.nft,
             OwnershipWitnessCtx {
                 secret_key: &data.owner_keys.secret_key,
                 nonce: data.nonce,
+                nft_hash,
             },
         )
         .unwrap();
