@@ -1,0 +1,39 @@
+[package]
+name        = "pso-l2-client"
+version.workspace = true
+edition.workspace = true
+description = "Alloy-based JSON-RPC client + flow library for PSO L2 wallet and SRA operations."
+
+[dependencies]
+# Consensus-binding primitives + entity-hash formulas.
+pso-protocol.workspace = true
+# k256-bound witness builders (ownership, signature, aggregation).
+pso-integrations-shared.workspace = true
+# Prover wrapper for ownership / aggregation / full proofs.
+pso-zk-circuit-noir.workspace = true
+# Canonical descriptors (circuit_hash + VK bytes per tier).
+pso-zk-canonical.workspace = true
+
+# RPC + ABI + signing.
+alloy.workspace = true
+
+# Async + errors.
+tokio.workspace      = true
+eyre.workspace       = true
+thiserror.workspace  = true
+
+# Crypto used by the flow helpers.
+ark-bn254.workspace = true
+ark-ff.workspace    = true
+k256.workspace      = true
+rand.workspace      = true
+
+# Serde for JSON load/save of intermediate artifacts (ownership records,
+# aggregation proofs, full proofs).
+serde.workspace      = true
+serde_json.workspace = true
+hex.workspace        = true
+once_cell.workspace  = true
+
+# Logging.
+tracing.workspace = true

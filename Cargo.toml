@@ -7,7 +7,11 @@ members = [
     "crates/pso-mobile-integration",
     "crates/pso-integrations-shared",
     "crates/pso-sra-integration",
+    "crates/pso-l2-client",
+    "crates/pso-l2-e2e-tests",
     "cli/pso-zk-cli",
+    "cli/pso-sra-cli",
+    "cli/pso-wallet-cli",
     "domain/pso-nft",
 ]
 resolver = "2"
@@ -25,6 +29,7 @@ pso-zk-canonical     = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git"
 # Crates internal to this workspace
 pso-nft                  = { path = "domain/pso-nft" }
 pso-integrations-shared  = { path = "crates/pso-integrations-shared" }
+pso-l2-client            = { path = "crates/pso-l2-client" }
 
 # External
 pso-poseidon = "0.2"
@@ -48,6 +53,26 @@ hmac = "0.12"
 sha2 = "0.10"
 once_cell = "1"
 hex = "0.4"
+
+# Alloy umbrella — used by `pso-l2-client` for L2 RPC interaction.
+# The umbrella crate bundles every alloy submodule with version-aligned
+# pinning, sparing us a multi-crate dependency matrix.
+alloy = { version = "1.0", features = [
+    "sol-types",
+    "contract",
+    "providers",
+    "signer-local",
+    "network",
+    "rpc-types-eth",
+    "reqwest",
+] }
+
+# Async runtime — needed by the L2 client + CLIs + e2e tests.
+tokio = { version = "1", features = ["full"] }
+# Result/error glue at binary edges.
+eyre  = "0.6"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Same profile shape as pso-zk-circuits — proving times collapse
 # under opt-level=3 even in dev.

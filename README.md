@@ -37,14 +37,18 @@ interaction a client makes with the L2:
 | SRA registrar UniFFI bindings              | shipped | `pso-sra-integration`               |
 | Command-line frontend                      | shipped | `cli/pso-zk-cli`                    |
 | VDF FFI binding (proof-of-personhood)      | shipped | `pso-mobile-integration::vdf` (`compute_vdf`, `verify_vdf`, `derive_vdf_input`, `vdf_constants`) — see `pso-vdf` crate |
-| L2 RPC client (submit TD, read state)      | planned | new crate — alloy-based, not yet started |
+| L2 RPC client + ABI bindings               | shipped | `pso-l2-client` (alloy-based; inline `sol!` for the 4 predeployed contracts; SRA + Wallet flow functions) |
+| SRA CLI (register SR/AR, mint SU)          | shipped | `pso-sra-cli` |
+| Wallet CLI (prepare SU, aggregate, submit TD, prove TD full) | shipped | `pso-wallet-cli` |
+| End-to-end test (programmatic, not via CLI) | shipped | `pso-l2-e2e-tests` — `#[ignore]` by default; opt in with `PSO_L2_RPC=… cargo test -p pso-l2-e2e-tests -- --ignored` |
 
-The shipped surface today is wallet-side ZK proof generation, the
-shared cryptographic primitives, and the MinRoot VDF prover. The L2
-RPC client lands here next; alongside ZK and VDF it belongs in this
-repo for the same reason — they all depend on k256 / native crypto
-and would force `pso-protocol` to carry an EC dependency if they
-lived there.
+The shipped surface today covers the full client lifecycle: wallet-side
+ZK proof generation (ownership, aggregation, full proof), the MinRoot
+VDF prover for Users-pool gating, and the alloy-based L2 RPC client +
+two CLIs that the SRA registrar and wallet use to talk to the chain.
+Each lives in this repo for the same reason — they all depend on k256
+/ native crypto and would force `pso-protocol` to carry an EC
+dependency if they lived there.
 
 ## Why split it out
 
@@ -64,25 +68,35 @@ code. Keeping integration code in its own repo means:
 
 ```
 pso-integration/
-├── Cargo.toml                          # 5-member workspace
+├── Cargo.toml                          # 9-member workspace
 ├── crates/
 │   ├── pso-integrations-shared/        # Shared ECDH + KDF + the
-│   │                                   # NEW `witness` module: k256-aware
+│   │                                   # `witness` module: k256-aware
 │   │                                   # witness builders that used to
 │   │                                   # live in `pso-zk-core::witness`.
-│   ├── pso-mobile-integration/         # UniFFI wrapper for React Native,
-│   │                                   # iOS staticlib, Android cdylib.
-│   │                                   # Wallet-facing API; will host the
-│   │                                   # VDF prover FFI once it lands.
-│   └── pso-sra-integration/            # UniFFI bindings for the SRA
-│                                       # registrar — secp256k1 ECDH +
-│                                       # Poseidon5 ownership derivation.
+│   ├── pso-mobile-integration/         # UniFFI wrapper for React Native
+│   │                                   # (iOS staticlib, Android cdylib).
+│   │                                   # Hosts the ZK proof API + the
+│   │                                   # MinRoot VDF FFI.
+│   ├── pso-sra-integration/            # UniFFI bindings for the SRA
+│   │                                   # registrar — secp256k1 ECDH +
+│   │                                   # Poseidon5 ownership derivation.
+│   ├── pso-l2-client/                  # Alloy-based L2 RPC client +
+│   │                                   # inline `sol!` ABI bindings +
+│   │                                   # SRA/Wallet flow functions.
+│   └── pso-l2-e2e-tests/               # Integration test crate that
+│                                       # exercises the full SRA + Wallet
+│                                       # flow programmatically (no CLI
+│                                       # invocation). #[ignore]'d by
+│                                       # default; needs a running L2.
 ├── cli/
-│   └── pso-zk-cli/                     # Command-line frontend for
-│                                       # NFT generation, proof gen/verify,
-│                                       # the aggregate workflow, and
-│                                       # whatever L2-interaction commands
-│                                       # land alongside the RPC client.
+│   ├── pso-zk-cli/                     # ZK proof CLI (NFT gen, proof
+│   │                                   # gen/verify, aggregate workflow).
+│   ├── pso-sra-cli/                    # SRA-side L2 ops: register SR,
+│   │                                   # register AR, mint SU.
+│   └── pso-wallet-cli/                 # Wallet-side L2 ops: prepare SU,
+│                                       # aggregate, submit TD, prove
+│                                       # TD full proof.
 └── domain/
     └── pso-nft/                        # TributeDraft + SpendingUnit
                                         # struct types and trait impls.
@@ -104,7 +118,7 @@ pso-integration/
 - `uniffi` — mobile / SRA FFI bindings.
 - `clap`, `tabled` — CLI surface.
 - `pso-vdf` — MinRoot VDF prover (Users-pool tx gating).
-- *(planned)* `alloy` — L2 RPC client + transaction submission.
+- `alloy` (1.x umbrella) — L2 RPC client + ABI bindings + transaction submission.
 
 ## Build
 
