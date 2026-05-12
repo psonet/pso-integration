@@ -43,6 +43,17 @@ pub enum L2ClientError {
         detail: String,
     },
 
+    /// A Noir circuit this code path needs hasn't been built /
+    /// compiled / canonicalized yet. Surfaces at the prover-call
+    /// boundary so callers don't get a silent failure. See
+    /// `docs/aggregation-redesign.md` for the redesign blocking
+    /// these paths.
+    #[error("circuit not available: {detail}")]
+    CircuitNotAvailable {
+        /// Caller-facing reason — usually points at the docs.
+        detail: String,
+    },
+
     /// Invalid input bytes — wrong length, malformed hex, etc.
     #[error("invalid input: {0}")]
     InvalidInput(String),

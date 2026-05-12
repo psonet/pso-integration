@@ -18,10 +18,3 @@ pub(crate) fn parse_uint256(s: &str) -> Result<U256> {
     arr.copy_from_slice(&bytes);
     Ok(U256::from_be_bytes(arr))
 }
-
-pub(crate) fn parse_uint256_list(s: &str) -> Result<Vec<U256>> {
-    if s.is_empty() {
-        return Ok(Vec::new());
-    }
-    s.split(',').map(|tok| parse_uint256(tok.trim())).collect()
-}

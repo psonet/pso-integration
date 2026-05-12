@@ -38,9 +38,13 @@ interaction a client makes with the L2:
 | Command-line frontend                      | shipped | `cli/pso-zk-cli`                    |
 | VDF FFI binding (proof-of-personhood)      | shipped | `pso-mobile-integration::vdf` (`compute_vdf`, `verify_vdf`, `derive_vdf_input`, `vdf_constants`) — see `pso-vdf` crate |
 | L2 RPC client + ABI bindings               | shipped | `pso-l2-client` (alloy-based; inline `sol!` for the 4 predeployed contracts; SRA + Wallet flow functions) |
+| App. A shared-key derivation (ECDH + HKDF) | shipped | `pso-l2-client::shared_key` |
 | SRA CLI (register SR/AR, mint SU)          | shipped | `pso-sra-cli` |
-| Wallet CLI (prepare SU, aggregate, submit TD, prove TD full) | shipped | `pso-wallet-cli` |
-| End-to-end test (programmatic, not via CLI) | shipped | `pso-l2-e2e-tests` — `#[ignore]` by default; opt in with `PSO_L2_RPC=… cargo test -p pso-l2-e2e-tests -- --ignored` |
+| Wallet CLI (prepare-su, aggregate, submit-td, prove-td-ownership) | shipped (proving steps gated on circuits) | `pso-wallet-cli` |
+| End-to-end test (programmatic, not via CLI) | shipped (proving steps gated on circuits) | `pso-l2-e2e-tests` — `#[ignore]` by default; opt in with `PSO_L2_RPC=… cargo test -p pso-l2-e2e-tests -- --ignored` |
+| Per-SU ownership proof (§4.2 rewrite)      | **pending circuits** | needs Noir circuit work in `psonet/pso-zk-circuits`. See `docs/aggregation-redesign.md`. |
+| Recursive aggregation proof (Noir recursion) | **pending circuits** | needs Noir circuit work in `psonet/pso-zk-circuits`. See `docs/aggregation-redesign.md`. |
+| TD ownership proof (post-mint, for L1 redemption) | **pending circuits** | same ownership circuit; will reuse once available. |
 
 The shipped surface today covers the full client lifecycle: wallet-side
 ZK proof generation (ownership, aggregation, full proof), the MinRoot

@@ -4118,6 +4118,7 @@ dependencies = [
  "ark-ff 0.5.0",
  "eyre",
  "hex",
+ "hmac 0.12.1",
  "k256 0.14.0-rc.9",
  "once_cell",
  "pso-integrations-shared",
@@ -4127,6 +4128,7 @@ dependencies = [
  "rand 0.8.6",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -4268,9 +4270,12 @@ name = "pso-wallet-cli"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "ark-bn254",
+ "ark-ff 0.5.0",
  "clap",
  "eyre",
  "hex",
+ "k256 0.14.0-rc.9",
  "pso-l2-client",
  "serde",
  "serde_json",

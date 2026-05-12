@@ -21,6 +21,7 @@ pub mod abi;
 pub mod artifacts;
 pub mod client;
 pub mod error;
+pub mod shared_key;
 pub mod sra;
 pub mod wallet;
 
