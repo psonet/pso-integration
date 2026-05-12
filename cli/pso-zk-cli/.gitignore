@@ -1,0 +1,5 @@
+# Generated output files that may contain secret keys
+*.generated.json
+nft-output*.json
+proof-output*.json
+output.json

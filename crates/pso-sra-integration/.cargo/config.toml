@@ -1,0 +1,11 @@
+[build]
+# Default target directory
+target-dir = "target"
+
+[target.aarch64-apple-darwin]
+# macOS ARM64 uses default Apple linker (clang)
+# No special configuration needed; system Xcode toolchain is sufficient
+
+[target.x86_64-unknown-linux-gnu]
+# Linux x86_64 uses default GNU toolchain
+# Ensure build-essential is installed: apt-get install build-essential

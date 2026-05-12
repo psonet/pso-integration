@@ -1,0 +1,58 @@
+[package]
+name = "pso-mobile-integration"
+version = "0.1.0"
+edition = "2021"
+description = "Mobile-friendly UniFFI wrapper for PSO ZK proof generation"
+
+[lib]
+crate-type = [
+    "staticlib", # for iOS
+    "cdylib"    # for Android
+]
+name = "pso_mobile_integration"
+
+[dependencies]
+# Workspace dependencies
+pso-protocol.workspace = true
+pso-zk-circuit-noir.workspace = true
+pso-zk-canonical.workspace = true
+pso-nft.workspace = true
+pso-integrations-shared.workspace = true
+pso-poseidon.workspace = true
+
+# UniFFI for React Native bindings
+uniffi = { version = "0.31", features = ["cli"] }
+
+# Error handling
+anyhow.workspace = true
+thiserror = "2"
+
+# Field element types (Fr conversions)
+ark-ff = { workspace = true }
+ark-bn254 = { workspace = true }
+
+# secp256k1 key operations
+k256.workspace = true
+
+# Date parsing
+chrono.workspace = true
+
+# ISO 4217 currency lookup
+iso_currency.workspace = true
+
+# Byte array conversions
+generic-array.workspace = true
+
+# Random nonce generation
+rand.workspace = true
+
+# Stable get_or_try_init for lazy circuit singletons
+once_cell.workspace = true
+
+[features]
+default = []
+dev-tools = []
+
+[[bin]]
+name = "uniffi-bindgen-mobile"
+path = "uniffi-bindgen.rs"

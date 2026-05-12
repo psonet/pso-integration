@@ -1,0 +1,30 @@
+[package]
+name = "pso-nft"
+version = "0.1.0"
+edition = "2021"
+description = "TributeDraft NFT domain type with OwnableNFT and HashableNFT trait implementations"
+
+[dependencies]
+anyhow.workspace = true
+# Ark for compatible field types with pso-poseidon
+ark-ff = { workspace = true }
+ark-bn254 = { workspace = true }
+rand.workspace = true
+serde.workspace = true
+bs58.workspace = true
+
+# Cryptographic utilities
+k256.workspace = true
+
+# date and time functions
+chrono.workspace = true
+# ISO 4217 currency types
+iso_currency = { workspace = true, features = ["with-serde"] }
+generic-array.workspace = true
+
+pso-protocol.workspace = true
+pso-poseidon.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+pso-integrations-shared = { workspace = true }

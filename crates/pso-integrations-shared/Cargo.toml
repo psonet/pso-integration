@@ -1,0 +1,23 @@
+[package]
+name = "pso-integrations-shared"
+version = "0.1.0"
+edition = "2021"
+description = "Shared cryptographic operations for PSO integration crates"
+
+[dependencies]
+k256.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+# Used by the `witness` module to build ZK witnesses from k256 keypairs
+# against `pso-protocol`'s byte-oriented APIs. This is the production
+# home for the witness builders that used to live in `pso-zk-core` —
+# they need k256, which `pso-protocol` deliberately avoids.
+pso-protocol = { workspace = true }
+ark-ff       = { workspace = true }
+ark-bn254    = { workspace = true }
+anyhow       = { workspace = true }
+
+[dev-dependencies]
+rand.workspace = true

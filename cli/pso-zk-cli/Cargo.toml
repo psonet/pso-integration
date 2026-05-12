@@ -1,0 +1,51 @@
+[package]
+name = "pso-zk-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI for PSO ZK proof operations: NFT generation, proof generation, and verification"
+
+[[bin]]
+name = "pso-zk-cli"
+path = "src/main.rs"
+
+[lib]
+name = "pso_zk_cli"
+path = "src/lib.rs"
+
+[dependencies]
+# Workspace crates
+pso-protocol.workspace = true
+pso-zk-circuit-noir.workspace = true
+pso-zk-canonical.workspace = true
+pso-nft.workspace = true
+pso-integrations-shared.workspace = true
+pso-poseidon.workspace = true
+
+# CLI argument parsing
+clap.workspace = true
+
+# Tabular console output
+tabled = "0.20"
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Error handling
+anyhow.workspace = true
+
+# Encoding
+bs58.workspace = true
+hex.workspace = true
+
+# Crypto (for SecretKey reconstruction)
+k256.workspace = true
+ark-ff = { workspace = true }
+ark-bn254 = { workspace = true }
+generic-array.workspace = true
+
+# Random number generation
+rand.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

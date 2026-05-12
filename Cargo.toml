@@ -1,0 +1,76 @@
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = [
+    "crates/pso-mobile-integration",
+    "crates/pso-integrations-shared",
+    "crates/pso-sra-integration",
+    "cli/pso-zk-cli",
+    "domain/pso-nft",
+]
+resolver = "2"
+
+[workspace.dependencies]
+# Sibling-repo crates. Path-pinned during the multi-repo split; flip
+# to `version = "0.1"` / `git = "..."` once each upstream is published.
+pso-protocol         = { path = "../pso-protocol" }
+pso-zk-circuit-noir  = { path = "../pso-zk-circuits/crates/pso-zk-circuit-noir" }
+pso-zk-canonical     = { path = "../pso-zk-circuits/crates/pso-zk-canonical" }
+
+# Crates internal to this workspace
+pso-nft                  = { path = "domain/pso-nft" }
+pso-integrations-shared  = { path = "crates/pso-integrations-shared" }
+
+# External
+pso-poseidon = "0.2"
+k256         = { version = "0.14.0-rc.8", features = ["std"] }
+ark-ff       = { version = "0.5", features = ["asm", "parallel"] }
+ark-bn254    = { version = "0.5", features = ["default"] }
+bs58 = "0.5"
+rand = "0.8"
+thiserror = "1.0"
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+generic-array = "0.14"
+chrono = "0.4"
+iso_currency = "0.5"
+clap = { version = "4", features = ["derive"] }
+hmac = "0.12"
+sha2 = "0.10"
+once_cell = "1"
+hex = "0.4"
+
+# Same profile shape as pso-zk-circuits — proving times collapse
+# under opt-level=3 even in dev.
+[profile.dev]
+opt-level = 3
+debug = 2
+overflow-checks = true
+incremental = true
+
+[profile.local]
+inherits = "dev"
+opt-level = 3
+debug = 2
+debug-assertions = false
+panic = 'unwind'
+incremental = true
+lto = "thin"
+codegen-units = 16
+
+[profile.release]
+opt-level = 3
+overflow-checks = false
+debug = false
+
+# Size-optimized profile for mobile builds (iOS/Android).
+[profile.mobile]
+inherits = "release"
+opt-level = 'z'
+lto = true
+codegen-units = 1
+panic = 'abort'
+strip = true
