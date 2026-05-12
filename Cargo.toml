@@ -13,11 +13,14 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-# Sibling-repo crates. Path-pinned during the multi-repo split; flip
-# to `version = "0.1"` / `git = "..."` once each upstream is published.
-pso-protocol         = { path = "../pso-protocol" }
-pso-zk-circuit-noir  = { path = "../pso-zk-circuits/crates/pso-zk-circuit-noir" }
-pso-zk-canonical     = { path = "../pso-zk-circuits/crates/pso-zk-canonical" }
+# Sibling-repo crates. Git-tracked against `main` while the
+# multi-repo layout co-evolves; pin to a specific rev or tag at
+# release time. Cargo discovers `pso-zk-circuit-noir` and
+# `pso-zk-canonical` inside the `pso-zk-circuits` workspace by
+# package name — no subpath needed.
+pso-protocol         = { git = "ssh://git@github.com/psonet/pso-protocol.git",   branch = "main" }
+pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", branch = "main" }
+pso-zk-canonical     = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", branch = "main" }
 
 # Crates internal to this workspace
 pso-nft                  = { path = "domain/pso-nft" }
