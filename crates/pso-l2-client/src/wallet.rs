@@ -524,7 +524,15 @@ mod tests {
         )
         .unwrap();
         let nonce_fr = Fr::from_le_bytes_mod_order(&su_nonce);
-        let sra_sk_bytes: [u8; 32] = sra_side.secret.to_bytes().into();
+        let sra_sk_raw: [u8; 32] = sra_side.secret.to_bytes().into();
+        // Same reduction `prepare_su_ownership_material` applies on
+        // the wallet side: bb 5.x's `schnorr_compute_public_key`
+        // aborts the process (uncatchable C++ exception) on any
+        // input >= q_Grumpkin. HKDF output is uniform over
+        // [0, 2^256) so ~63% of unreduced bytes trip it. Mirror the
+        // wallet path here so the comparison stays apples-to-apples.
+        let sra_sk_bytes =
+            pso_integrations_shared::witness::reduce_to_grumpkin_sk(&sra_sk_raw);
         let sra_key = derive_grumpkin_public_key(&sra_sk_bytes).unwrap();
         let sra_owner = pso_protocol::ownership::compute_ownership_grumpkin(
             sra_key.pk_x,
