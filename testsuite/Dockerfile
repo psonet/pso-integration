@@ -39,15 +39,35 @@ COPY . .
 
 # Build the `pso-e2e` binary in release mode. cargo will pull
 # git-tracked workspace dependencies (`pso-protocol`,
-# `pso-zk-circuits`) over the network during this step — the build
-# context does NOT include sibling repos. CI runs this with
-# `--ssh default` if the sibling repos are private.
+# `pso-zk-circuits`, `psonet/noir_rs`) over the network during this
+# step — the build context does NOT include sibling repos.
+#
+# Authentication for private psonet/* repos goes through a BuildKit
+# build-secret named `gh_token` (a fine-grained GitHub PAT with
+# `Contents: Read` on the psonet org). The secret is mounted only for
+# the duration of this RUN — it never lands in any image layer.
+#
+#   docker build \
+#     --secret id=gh_token,env=GH_TOKEN \
+#     -f testsuite/Dockerfile .
+#
+# `cargo` is told to use the system `git` binary
+# (`CARGO_NET_GIT_FETCH_WITH_CLI=true`) so git's `url.insteadOf`
+# rewrite is honoured.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    cargo build --release -p pso-e2e-testsuite --bin pso-e2e \
- && cp /build/target/release/pso-e2e /usr/local/bin/pso-e2e \
- && strip /usr/local/bin/pso-e2e
+    --mount=type=secret,id=gh_token,target=/run/secrets/gh_token,required=false \
+    bash -euo pipefail -c '\
+      if [ -s /run/secrets/gh_token ]; then \
+        token=$(cat /run/secrets/gh_token); \
+        git config --global url."https://x-access-token:$${token}@github.com/".insteadOf "ssh://git@github.com/"; \
+        git config --global url."https://x-access-token:$${token}@github.com/".insteadOf "https://github.com/"; \
+      fi; \
+      export CARGO_NET_GIT_FETCH_WITH_CLI=true; \
+      cargo build --release -p pso-e2e-testsuite --bin pso-e2e; \
+      cp /build/target/release/pso-e2e /usr/local/bin/pso-e2e; \
+      strip /usr/local/bin/pso-e2e'
 
 # -----------------------------------------------------------------
 # Runtime stage

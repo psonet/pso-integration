@@ -29,6 +29,11 @@ env:
   # Treat warnings as errors so a clippy / cargo regression surfaces
   # at PR time, not at release-build time.
   RUSTFLAGS: -D warnings
+  # Use the system `git` binary for git deps so `url.insteadOf` is
+  # honoured (libgit2's auth handling can't see git config). The
+  # `check` / `unit` jobs below set up the rewrite right before
+  # invoking cargo.
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
   fmt:
@@ -57,6 +62,22 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake clang libstdc++-12-dev pkg-config libssl-dev
 
+      # Map the SSH-form `ssh://git@github.com/` deps the workspace
+      # pins onto HTTPS-with-token so cargo can resolve them from
+      # within Actions. `PSONET_REPO_TOKEN` is a fine-grained PAT
+      # with `Contents: Read` on private psonet/* repos
+      # (`pso-protocol`, `pso-zk-circuits`, `noir_rs`).
+      - name: Configure git auth for private psonet/* repos
+        env:
+          TOKEN: ${{ secrets.PSONET_REPO_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::PSONET_REPO_TOKEN secret is not set; private git deps will 404"
+            exit 1
+          fi
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+
       - uses: Swatinem/rust-cache@v2
 
       - name: cargo check --workspace --tests
@@ -73,6 +94,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake clang libstdc++-12-dev pkg-config libssl-dev
+
+      - name: Configure git auth for private psonet/* repos
+        env:
+          TOKEN: ${{ secrets.PSONET_REPO_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::PSONET_REPO_TOKEN secret is not set; private git deps will 404"
+            exit 1
+          fi
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
 
       - uses: Swatinem/rust-cache@v2
 
