@@ -190,7 +190,13 @@ jobs:
     name: cargo test (network-free)
     runs-on: ubuntu-latest
     steps:
+      # See the `check` job above for why `persist-credentials: false`
+      # is mandatory: without it actions/checkout writes its own
+      # http.extraheader into the workspace's .git/config and the
+      # PAT credential-helper auth path 400s on duplicate headers.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install C++ toolchain
         run: |
