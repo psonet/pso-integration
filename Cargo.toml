@@ -79,14 +79,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # canonical VKs were generated against. Without this we silently link
 # bb 4.2 via the upstream zkpassport tag and proofs don't verify
 # against the chain's canonical VK.
-#
-# TODO(ci): this `path` patch only resolves on workspaces that have
-# `../vendor/noir_rs` next to the repo. CI runners building
-# pso-integration standalone need either a public git ref for the
-# fork or a published `noir_rs-pso` crate — see the matching note in
-# `pso-chain/Cargo.toml`.
 [patch."https://github.com/zkpassport/noir_rs"]
-noir_rs = { path = "../vendor/noir_rs" }
+noir_rs = { git = "https://github.com/psonet/noir_rs.git", rev = "9c206b22cd702373751dbab20501815090d6d7ba" }
 
 # Same profile shape as pso-zk-circuits — proving times collapse
 # under opt-level=3 even in dev.

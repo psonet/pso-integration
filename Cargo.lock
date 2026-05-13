@@ -3479,6 +3479,7 @@ dependencies = [
 [[package]]
 name = "noir_rs"
 version = "1.0.0-beta.20"
+source = "git+https://github.com/psonet/noir_rs.git?rev=9c206b22cd702373751dbab20501815090d6d7ba#9c206b22cd702373751dbab20501815090d6d7ba"
 dependencies = [
  "acvm",
  "acvm_blackbox_solver",
