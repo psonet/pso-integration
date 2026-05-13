@@ -1,0 +1,106 @@
+//! S009 — SRA#2 cannot mint an SU referencing SRA#1's SR.
+//!
+//! Two distinct SRAs are active simultaneously. SRA#1 (Hardhat #1)
+//! registers an SR; admin promotes Hardhat #2 to an active SRA via
+//! `register_extra_sra`. SRA#2 then tries to mint an SU referencing
+//! SRA#1's SR. The on-chain
+//! `_validateSenderOwnership` step compares `srSubmittedBy == sender`
+//! and reverts with `SpendingRecordsNotOwnedBySender(...)`.
+
+use std::time::Duration;
+
+use alloy::primitives::FixedBytes;
+use async_trait::async_trait;
+
+use pso_l2_client::sra::MintSpendingUnitArgs;
+
+use pso_l2_e2e_tests::clients::sra::into_pso_error;
+use pso_l2_e2e_tests::data::{random_id, random_su_args};
+use pso_l2_e2e_tests::{PsoContractError, Scenario, TestEnv};
+
+#[allow(dead_code)]
+pub struct S009;
+
+#[async_trait]
+impl Scenario for S009 {
+    fn id(&self) -> &'static str {
+        "S009"
+    }
+    fn description(&self) -> &'static str {
+        "SU.submit referencing another SRA's SR reverts with SpendingRecordsNotOwnedBySender"
+    }
+    async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
+        run(env).await
+    }
+}
+
+async fn run(env: &TestEnv) -> eyre::Result<()> {
+    // SRA#1 (the default `env.sra`) registers an SR.
+    let sr_id = random_id();
+    let tx = env
+        .sra
+        .register_spending_record(
+            sr_id,
+            vec!["merchant".into()],
+            vec![FixedBytes::from([0xa1u8; 32])],
+        )
+        .await?;
+    env.sra
+        .wait_for_tx_success(tx, Duration::from_secs(30))
+        .await?;
+    env.sra
+        .wait_for_sr_existence(&[sr_id], &[], Duration::from_secs(30))
+        .await?;
+
+    // Admin promotes Hardhat #2 to active SRA, then SRA#2 attempts
+    // to mint an SU referencing SRA#1's SR.
+    let sra2 = env.register_extra_sra(2).await?;
+    let shape = random_su_args();
+    let err = sra2
+        .mint_spending_unit(MintSpendingUnitArgs {
+            su_id: random_id(),
+            derived_owner: FixedBytes::from([0u8; 32]),
+            settlement_currency: shape.currency,
+            worldwide_day: shape.worldwide_day,
+            settlement_amount_base: shape.settlement_amount_base,
+            settlement_amount_atto: shape.settlement_amount_atto,
+            sr_ids: vec![sr_id],
+            amendment_sr_ids: vec![],
+        })
+        .await
+        .err()
+        .ok_or_else(|| eyre::eyre!("S009: expected SpendingRecordsNotOwnedBySender revert"))?;
+
+    let typed = into_pso_error(err);
+    match &typed {
+        PsoContractError::SpendingRecordsNotOwnedBySender(sr, _) => {
+            if !sr.contains(&sr_id) {
+                return Err(eyre::eyre!(
+                    "S009: SR id missing from error payload; got {typed}"
+                ));
+            }
+            Ok(())
+        }
+        other => Err(eyre::eyre!(
+            "S009: expected SpendingRecordsNotOwnedBySender, got {other}"
+        )),
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a running PSO L2 node — opt-in via `cargo test -- --ignored`"]
+#[serial_test::serial]
+async fn s009_su_with_foreign_sr_rejected() -> eyre::Result<()> {
+    pso_l2_e2e_tests::env::init_tracing();
+    // Per-scenario test bootstraps its own env: when this file is
+    // also included into the  binary via #[path] we end up
+    // with two #[tokio::test]s — the runner sets up the shared env in
+    // its own tokio runtime, then this body runs under a *fresh*
+    // runtime that has already torn down the bridge background task
+    // owned by the cached env. Bootstrap-per-call is the simplest
+    // path that keeps both binaries green; the bootstrap step is
+    // idempotent and the extra ~5s is acceptable for the 12-scenario
+    // standalone surface.
+    let env = TestEnv::bootstrap().await?;
+    run(&env).await
+}

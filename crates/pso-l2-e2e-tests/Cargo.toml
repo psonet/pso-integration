@@ -13,6 +13,12 @@ pso-l2-client.workspace            = true
 pso-integrations-shared.workspace  = true
 pso-protocol.workspace             = true
 pso-vdf.workspace                  = true
+pso-nft.workspace                  = true
+# Used for `compute_vdf` helper + UniFFI-free types — we currently
+# duplicate the canonical `vdf_input` construction locally rather than
+# pull in the staticlib mobile crate. Kept as a path dep so the wider
+# workspace can evolve the helpers in lockstep.
+pso-mobile-integration             = { path = "../pso-mobile-integration" }
 alloy.workspace                    = true
 ark-bn254.workspace                = true
 ark-ff.workspace                   = true
@@ -24,8 +30,14 @@ tokio.workspace                    = true
 eyre.workspace                     = true
 tracing.workspace                  = true
 tracing-subscriber.workspace       = true
+sha2.workspace                     = true
+chrono.workspace                   = true
+iso_currency.workspace             = true
+async-trait                        = "0.1"
+serial_test                        = "3"
 
 [dev-dependencies]
-# These integration tests require a running L2 node. By default they
-# are `#[ignore]`d; opt in via `cargo test -p pso-l2-e2e-tests -- --ignored`
-# and `PSO_L2_RPC=http://...` in the environment.
+# Integration tests require a running L2 node. By default they are
+# `#[ignore]`d; opt in via
+# `cargo test -p pso-l2-e2e-tests -- --ignored`
+# with `PSO_L2_RPC=http://...` / `PSO_L2_ACTOR_RPC=http://...` in env.
