@@ -61,13 +61,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     bash -euo pipefail -c '\
       if [ -s /run/secrets/gh_token ]; then \
         token=$(cat /run/secrets/gh_token); \
-        # `https://<TOKEN>@github.com/...` works for both classic
-        # and fine-grained PATs. The `x-access-token:<TOKEN>@` form
-        # only works for GitHub App installation tokens (`ghs_...`).
-        # `--add` so both rewrites coexist; default replace mode
-        # would leave only the second rule.
-        git config --global --add url."https://$${token}@github.com/".insteadOf "ssh://git@github.com/"; \
-        git config --global --add url."https://$${token}@github.com/".insteadOf "https://github.com/"; \
+        # Send the token as a Bearer header — same auth scheme the
+        # GitHub REST API uses. URL-embedded credentials route
+        # through HTTP Basic-Auth, which fine-grained PATs reject.
+        git config --global http.https://github.com/.extraheader "AUTHORIZATION: bearer $${token}"; \
+        # SSH-form deps get coerced to HTTPS so the extraheader
+        # rule applies to them too.
+        git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"; \
       fi; \
       export CARGO_NET_GIT_FETCH_WITH_CLI=true; \
       cargo build --release -p pso-e2e-testsuite --bin pso-e2e; \

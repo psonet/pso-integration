@@ -113,19 +113,20 @@ jobs:
             esac
           done
 
-          # Rewrite SSH + HTTPS git URLs to embed the token. Use
-          # `https://<TOKEN>@github.com/...` (no username) — the
-          # form that works for both classic and fine-grained PATs.
-          # The `x-access-token:<TOKEN>@` username scheme is for
-          # GitHub App installation tokens (`ghs_...`) only; with a
-          # fine-grained PAT it silently 404s.
-          #
-          # `--add` so both rewrites coexist; without it the second
-          # call overwrites the first and SSH-form deps still fail.
-          git config --global --add url."https://${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
-          git config --global --add url."https://${TOKEN}@github.com/".insteadOf "https://github.com/"
-          echo "Git insteadOf rules (token redacted):"
-          git config --global --get-all url."https://${TOKEN}@github.com/".insteadOf
+          # Authenticate git-over-HTTPS with an explicit
+          # `Authorization: Bearer <TOKEN>` header — same scheme the
+          # GitHub REST API uses, and the only form that works
+          # uniformly for fine-grained PATs. URL-embedded credentials
+          # (`https://<TOKEN>@github.com/`) are interpreted as HTTP
+          # Basic-Auth and fine-grained PATs reject that path even
+          # though the underlying token is valid. This is how
+          # `actions/checkout` itself authenticates.
+          git config --global http.https://github.com/.extraheader "AUTHORIZATION: bearer ${TOKEN}"
+          # SSH-form deps in the Cargo.toml need to be coerced to
+          # HTTPS so the extraheader rule kicks in.
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          echo "Git config (token-bearing keys redacted):"
+          git config --global --list | sed -E 's|(AUTHORIZATION: bearer ).+$|\1***|'
 
           # Per-repo reachability probe. Failures here mean the PAT
           # doesn't have `Contents: Read` on the named repo OR the
@@ -213,19 +214,20 @@ jobs:
             esac
           done
 
-          # Rewrite SSH + HTTPS git URLs to embed the token. Use
-          # `https://<TOKEN>@github.com/...` (no username) — the
-          # form that works for both classic and fine-grained PATs.
-          # The `x-access-token:<TOKEN>@` username scheme is for
-          # GitHub App installation tokens (`ghs_...`) only; with a
-          # fine-grained PAT it silently 404s.
-          #
-          # `--add` so both rewrites coexist; without it the second
-          # call overwrites the first and SSH-form deps still fail.
-          git config --global --add url."https://${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
-          git config --global --add url."https://${TOKEN}@github.com/".insteadOf "https://github.com/"
-          echo "Git insteadOf rules (token redacted):"
-          git config --global --get-all url."https://${TOKEN}@github.com/".insteadOf
+          # Authenticate git-over-HTTPS with an explicit
+          # `Authorization: Bearer <TOKEN>` header — same scheme the
+          # GitHub REST API uses, and the only form that works
+          # uniformly for fine-grained PATs. URL-embedded credentials
+          # (`https://<TOKEN>@github.com/`) are interpreted as HTTP
+          # Basic-Auth and fine-grained PATs reject that path even
+          # though the underlying token is valid. This is how
+          # `actions/checkout` itself authenticates.
+          git config --global http.https://github.com/.extraheader "AUTHORIZATION: bearer ${TOKEN}"
+          # SSH-form deps in the Cargo.toml need to be coerced to
+          # HTTPS so the extraheader rule kicks in.
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          echo "Git config (token-bearing keys redacted):"
+          git config --global --list | sed -E 's|(AUTHORIZATION: bearer ).+$|\1***|'
 
           # Per-repo reachability probe. Failures here mean the PAT
           # doesn't have `Contents: Read` on the named repo OR the
