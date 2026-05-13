@@ -13,9 +13,6 @@ rand.workspace = true
 serde.workspace = true
 bs58.workspace = true
 
-# Cryptographic utilities
-k256.workspace = true
-
 # date and time functions
 chrono.workspace = true
 # ISO 4217 currency types
@@ -24,7 +21,10 @@ generic-array.workspace = true
 
 pso-protocol.workspace = true
 pso-poseidon.workspace = true
+# Grumpkin keypair generation + Schnorr signing for the new
+# privacy-preserving L2 architecture. Owner now stores a GrumpkinKey
+# instead of a secp256k1 keypair.
+pso-integrations-shared = { workspace = true }
 
 [dev-dependencies]
 serde_json.workspace = true
-pso-integrations-shared = { workspace = true }

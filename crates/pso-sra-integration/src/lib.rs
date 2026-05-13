@@ -81,14 +81,23 @@ fn generate_ownership_inner(
     consent_pk: Vec<u8>,
     nonce_fr: ark_bn254::Fr,
 ) -> Result<GeneratedOwnership, OwnershipError> {
-    use pso_integrations_shared::witness::fr_to_le32;
+    use pso_integrations_shared::witness::{derive_grumpkin_public_key, fr_to_le32};
 
     let nonce_bytes = fr_to_le32(&nonce_fr);
-    let nft_sk = pso_integrations_shared::derive_nft_keypair(&sra_sk, &consent_pk, &nonce_bytes)?;
-    let nft_pk = nft_sk.public_key();
 
-    let ownership_fr = pso_integrations_shared::witness::ownership_from_public_key(
-        &nft_pk, nonce_fr,
+    // App. A: secp256k1 ECDH + HKDF lands a 32-byte secret. Off-chain
+    // ECDH stays on secp256k1 for wallet interop, but the resulting
+    // 32-byte scalar is then reinterpreted as a Grumpkin scalar for
+    // the in-circuit signing path.
+    let nft_sk = pso_integrations_shared::derive_nft_keypair(&sra_sk, &consent_pk, &nonce_bytes)?;
+    let nft_sk_bytes: [u8; 32] = nft_sk.to_bytes().into();
+    let grumpkin_key = derive_grumpkin_public_key(&nft_sk_bytes)
+        .map_err(|e| OwnershipError::CryptoError(format!("derive grumpkin pk: {e}")))?;
+
+    let ownership_fr = pso_protocol::ownership::compute_ownership_grumpkin(
+        grumpkin_key.pk_x,
+        grumpkin_key.pk_y,
+        nonce_fr,
     )
     .map_err(|_| OwnershipError::CryptoError("ownership hash computation failed".to_string()))?;
 

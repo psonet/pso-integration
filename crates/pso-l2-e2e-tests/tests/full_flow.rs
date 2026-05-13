@@ -142,11 +142,17 @@ async fn sra_then_wallet_full_flow() -> eyre::Result<()> {
         let su_nonce = random_secret_key();
 
         let sra_shared = derive_shared_key_sra_side(&sk_cu, &consent_pk, &su_nonce)?;
-        // Compute derivedOwner from the SRA side — this is what gets
-        // pinned in the SU's on-chain `derivedOwner` field.
+        // Reinterpret the 32-byte secp256k1 shared secret as a
+        // Grumpkin scalar (App. A reduction mod q_Grumpkin) and derive
+        // the matching Grumpkin pubkey. The derived `owner` is the
+        // Poseidon3 commitment over the Grumpkin coords + nonce.
         let nonce_fr = ark_ff::PrimeField::from_le_bytes_mod_order(&su_nonce);
-        let derived_owner_fr = pso_integrations_shared::witness::ownership_from_public_key(
-            &sra_shared.public,
+        let sra_sk_bytes: [u8; 32] = sra_shared.secret.to_bytes().into();
+        let grumpkin = pso_integrations_shared::witness::derive_grumpkin_public_key(&sra_sk_bytes)
+            .map_err(|e| eyre::eyre!("grumpkin pk: {e}"))?;
+        let derived_owner_fr = pso_protocol::ownership::compute_ownership_grumpkin(
+            grumpkin.pk_x,
+            grumpkin.pk_y,
             nonce_fr,
         )
         .map_err(|e| eyre::eyre!("ownership: {e}"))?;

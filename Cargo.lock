@@ -4103,7 +4103,9 @@ dependencies = [
  "ark-ff 0.5.0",
  "hmac 0.12.1",
  "k256 0.14.0-rc.9",
+ "noir_rs",
  "pso-protocol",
+ "pso-zk-circuit-noir",
  "rand 0.8.6",
  "sha2 0.10.9",
  "thiserror 1.0.69",
@@ -4166,6 +4168,7 @@ dependencies = [
  "generic-array",
  "iso_currency",
  "k256 0.14.0-rc.9",
+ "noir_rs",
  "once_cell",
  "pso-integrations-shared",
  "pso-nft",
@@ -4190,7 +4193,6 @@ dependencies = [
  "chrono",
  "generic-array",
  "iso_currency",
- "k256 0.14.0-rc.9",
  "pso-integrations-shared",
  "pso-poseidon",
  "pso-protocol",
@@ -4213,7 +4215,7 @@ dependencies = [
 [[package]]
 name = "pso-protocol"
 version = "0.1.0"
-source = "git+ssh://git@github.com/psonet/pso-protocol.git?branch=main#4a33be949cba2492d5db7d8bc9d58b2f20fb6dce"
+source = "git+ssh://git@github.com/psonet/pso-protocol.git?branch=main#197c17510f247d5f8110624eac3c4326b5fa62b1"
 dependencies = [
  "ark-bn254",
  "ark-ff 0.5.0",
@@ -4287,7 +4289,7 @@ dependencies = [
 [[package]]
 name = "pso-zk-canonical"
 version = "0.1.0"
-source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?branch=main#43704d9bc3db901130207d853ddd017d03701cf7"
+source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?branch=main#5655d5c3f6c194e7c2f79d59be59f2efd44227bb"
 dependencies = [
  "hex-literal",
 ]
@@ -4295,16 +4297,16 @@ dependencies = [
 [[package]]
 name = "pso-zk-circuit-noir"
 version = "0.1.0"
-source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?branch=main#43704d9bc3db901130207d853ddd017d03701cf7"
+source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?branch=main#5655d5c3f6c194e7c2f79d59be59f2efd44227bb"
 dependencies = [
  "anyhow",
  "ark-bn254",
  "ark-ff 0.5.0",
  "barretenberg-rs 5.0.0-nightly.20260512",
  "bs58",
- "k256 0.14.0-rc.9",
  "noir_rs",
  "pso-protocol",
+ "rand 0.8.6",
  "serde_json",
 ]
 

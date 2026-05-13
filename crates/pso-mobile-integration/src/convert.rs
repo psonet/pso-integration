@@ -7,20 +7,24 @@ use ark_bn254::Fr;
 use ark_ff::PrimeField;
 use chrono::NaiveDate;
 use iso_currency::Currency;
-use k256::elliptic_curve::SecretKey;
-use k256::Secp256k1;
-use pso_integrations_shared::witness::fr_to_le32;
+use pso_integrations_shared::witness::{derive_grumpkin_public_key, fr_to_le32, GrumpkinKey};
 use pso_poseidon::PoseidonHasher;
 
 use pso_protocol::merkle::{MerklePathElement, MerklePathElementIndex};
 
 use crate::types::{MerklePathElementInput, MobileError, ProofResult};
 
-// -- Secret key --
+// -- Grumpkin secret key --
 
-/// Parse a secp256k1 secret key from raw 32-byte representation.
-pub fn parse_secret_key(bytes: &[u8]) -> Result<SecretKey<Secp256k1>, MobileError> {
-    SecretKey::from_slice(bytes).map_err(|e| MobileError::InvalidSecretKey {
+/// Parse a Grumpkin secret key from raw 32-byte representation and
+/// derive the matching public key via the barretenberg-rs FFI.
+pub fn parse_secret_key(bytes: &[u8]) -> Result<GrumpkinKey, MobileError> {
+    let sk_arr: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| MobileError::InvalidSecretKey {
+            detail: format!("expected 32-byte Grumpkin secret key, got {}", bytes.len()),
+        })?;
+    derive_grumpkin_public_key(&sk_arr).map_err(|e| MobileError::InvalidSecretKey {
         detail: e.to_string(),
     })
 }

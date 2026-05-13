@@ -7,7 +7,6 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use k256::elliptic_curve::SecretKey;
 use pso_integrations_shared::witness::fr_to_le32;
 use rand::rngs::OsRng;
 
@@ -82,9 +81,8 @@ fn build_generated_output<T: serde::Serialize>(
     let nft_value =
         serde_json::to_value(&data.nft).context("Failed to serialize NFT to JSON value")?;
 
-    // Hex-encode secret key bytes.
-    let secret_key_bytes: &SecretKey<k256::Secp256k1> = &data.owner_keys.secret_key;
-    let secret_key_hex = hex::encode(secret_key_bytes.to_bytes());
+    // Hex-encode Grumpkin secret key bytes (32 bytes).
+    let secret_key_hex = hex::encode(data.owner_keys.key.sk_bytes);
 
     // Hex-encode nonce (little-endian field element bytes).
     let nonce_bytes = fr_to_le32(&data.nonce);

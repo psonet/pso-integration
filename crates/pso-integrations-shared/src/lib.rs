@@ -6,10 +6,12 @@
 //! derivation, and a high-level [`derive_nft_keypair`] function used by
 //! both `pso-mobile-integration` and `pso-sra-integration`.
 //!
-//! See [`witness`] for k256-aware ZK witness builders — the production
-//! home of the helpers that used to live in `pso-zk-core::witness`.
-//! They moved here once `pso-protocol` became the consensus-binding
-//! layer and stopped pulling in elliptic-curve dependencies.
+//! See [`witness`] for the ZK witness builders used by every prover in
+//! the wallet stack -- assemble the byte-oriented `OwnershipWitness`
+//! / `FullProofWitness` types defined in `pso-protocol` from a
+//! Grumpkin keypair + Schnorr signature, plus the helper for flat
+//! multi-SU aggregation. Off-chain Schnorr signing comes from
+//! `pso-zk-circuit-noir::schnorr_grumpkin` (barretenberg-rs FFI).
 
 pub mod witness;
 

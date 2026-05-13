@@ -1,52 +1,48 @@
-//! k256-aware ZK witness builders.
+//! ZK witness builders (Grumpkin/Schnorr era).
 //!
-//! This is the **production** home for the witness-generation helpers
-//! that used to live in `pso-zk-core::witness`. They moved here when
-//! `pso-protocol` became the consensus-binding layer: `pso-protocol`
-//! is deliberately k256-free so on-chain precompiles don't drag in
-//! elliptic-curve cryptography. The integration layer keeps the
-//! k256-bound pieces.
+//! Production home for the witness-generation helpers used by the
+//! wallet stack. Per the sec. 4.2 redesign the in-circuit signing
+//! curve is Grumpkin (Schnorr), not secp256k1 (ECDSA). Off-chain
+//! Schnorr signing lives in [`pso_zk_circuit_noir::schnorr_grumpkin`]
+//! (`barretenberg-rs` FFI); this crate just wires those primitives
+//! into the [`OwnershipWitness`] / [`FullProofWitness`] structs
+//! defined in `pso-protocol`.
 //!
 //! ## Surface
 //!
-//! - [`ownership_from_secret_key`] — compute the Poseidon5 ownership
-//!   commitment from a `SecretKey` + nonce. Mirrors the original
-//!   `pso_zk_core::generate_ownership` byte-for-byte.
-//! - [`OwnershipWitnessCtx`], [`FullProofWitnessCtx`],
-//!   [`AggregationWitnessCtx`] — context structs passed to the
-//!   builders.
-//! - [`build_ownership_witness`] and [`build_full_proof_witness`] —
-//!   free functions over `T: OwnableNFT` (and `+ HashableNFT`).
-//!   These would be blanket `GenerateWitness<Ctx>` impls if the orphan
-//!   rule allowed it; the trait and `T` are both foreign to this
-//!   crate, so we ship them as free functions instead.
-//! - [`generate_aggregation_witness`] — free function for the
-//!   SU-ownership aggregation circuit (no NFT trait needed).
-//! - [`AggregationSlot`] — re-exported from `pso_protocol::witness`
-//!   for caller convenience.
+//! - [`OwnershipWitnessCtx`], [`FullProofWitnessCtx`] -- context
+//!   structs taking a `GrumpkinKey` + nonce.
+//! - [`build_ownership_witness`], [`build_full_proof_witness`] --
+//!   free functions over `T: OwnableNFT (+ HashableNFT)`.
+//! - [`FlatAggregationSlot`], [`build_flat_aggregation_witness`] --
+//!   helper for assembling the witness vector for the
+//!   `pso-flat-aggregation-circuit-n{N}` family. Returns a
+//!   `Vec<noir_rs::FieldElement>` already in the order the circuit's
+//!   `main()` expects, ready to feed to `noir_rs::prove_ultra_honk_keccak`.
 //!
-//! Every byte layout matches the pre-extraction `pso-zk-core`
-//! implementations exactly — the underlying primitives moved, the
-//! wire format did not.
+//! ## ECDH compatibility
+//!
+//! The App. A shared-secret derivation still runs on secp256k1
+//! (`sk_consent` stays a secp256k1 key for wallet interop). Only the
+//! Schnorr signing key is Grumpkin -- the HKDF output is reduced
+//! `mod q_Grumpkin` to land a Grumpkin scalar. See the spec sec.
+//! 2.2.3 "Curve choice" subsection.
 
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField};
-use k256::ecdsa::signature::hazmat::PrehashSigner;
-use k256::ecdsa::{Signature, SigningKey};
-use k256::elliptic_curve::sec1::ToSec1Point;
-use k256::{PublicKey, SecretKey};
 
 use pso_protocol::merkle::MerklePathElement;
 use pso_protocol::witness::{
-    AggregationPrivateInputs, AggregationPublicInputs, AggregationWitness, FullProofPrivateInputs,
-    FullProofPublicInputs, FullProofWitness, HashableNFT, OwnableNFT, OwnershipPrivateInputs,
-    OwnershipPublicInputs, OwnershipWitness,
+    FullProofPrivateInputs, FullProofPublicInputs, FullProofWitness, HashableNFT, OwnableNFT,
+    OwnershipPrivateInputs, OwnershipPublicInputs, OwnershipWitness,
 };
 
-pub use pso_protocol::witness::AggregationSlot;
+pub use pso_zk_circuit_noir::schnorr_grumpkin::{
+    derive_grumpkin_public_key, random_grumpkin_key, schnorr_sign_be, GrumpkinKey,
+};
 
 // =====================================================================
-// Small byte / signing helpers
+// Encoding helpers
 // =====================================================================
 
 /// Encode an `Fr` as 32 little-endian bytes (right-padded with zeros).
@@ -58,159 +54,85 @@ pub fn fr_to_le32(value: &Fr) -> [u8; 32] {
     out
 }
 
-/// Extract the SEC1 (uncompressed) x/y coordinates of a `PublicKey`
-/// as 32-byte big-endian arrays.
-pub fn sec1_coords(public_key: &PublicKey) -> anyhow::Result<([u8; 32], [u8; 32])> {
-    let point = public_key.to_sec1_point(false);
-    let x_slice: &[u8] = point
-        .x()
-        .ok_or_else(|| anyhow::anyhow!("public key missing x coordinate"))?;
-    let y_slice: &[u8] = point
-        .y()
-        .ok_or_else(|| anyhow::anyhow!("public key missing y coordinate"))?;
-    let x: [u8; 32] = x_slice
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("x coordinate must be 32 bytes"))?;
-    let y: [u8; 32] = y_slice
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("y coordinate must be 32 bytes"))?;
-    Ok((x, y))
-}
-
-/// Compute the Poseidon5 ownership commitment from a `SecretKey` and
-/// a nonce. Byte-identical replacement for the old
-/// `pso_zk_core::generate_ownership(&public_key, nonce)`.
-pub fn ownership_from_secret_key(secret_key: &SecretKey, nonce: Fr) -> anyhow::Result<Fr> {
-    ownership_from_public_key(&secret_key.public_key(), nonce)
-}
-
-/// Same as [`ownership_from_secret_key`] but takes the `PublicKey`
-/// directly, for callers that already have one.
-pub fn ownership_from_public_key(public_key: &PublicKey, nonce: Fr) -> anyhow::Result<Fr> {
-    let (x, y) = sec1_coords(public_key)?;
-    pso_protocol::ownership::compute_ownership(&x, &y, nonce)
-        .map_err(|e| anyhow::anyhow!("compute_ownership: {e}"))
-}
-
-/// ECDSA-secp256k1 prehash signature over `digest.to_bytes_le()`.
-/// Used by every witness builder that needs an ownership-proof or
-/// aggregation-binding signature.
-pub fn sign_prehash_le(secret_key: &SecretKey, digest: &Fr) -> anyhow::Result<[u8; 64]> {
-    let signing_key = SigningKey::from_bytes(&secret_key.to_bytes())?;
-    let prehash = fr_to_le32(digest);
-    let sig: Signature = signing_key.sign_prehash(&prehash)?;
-    Ok(sig.to_bytes().into())
-}
-
 // =====================================================================
 // Witness contexts
 // =====================================================================
 
-/// Context for generating an ownership-only witness per the §4.2
-/// privacy-preserving L2 spec.
+/// Context for generating an ownership-only witness per sec. 4.2.
 pub struct OwnershipWitnessCtx<'a> {
-    /// Wallet's secret key — for SU ownership this is the per-SU
-    /// `shared_sk` reconstructed via App. A; for TD ownership this
-    /// is the wallet-rolled per-TD secret key.
-    pub secret_key: &'a SecretKey,
-    /// Nonce baked into the ownership commitment.
+    /// Wallet's Grumpkin keypair. For SU ownership this is derived
+    /// from the App. A shared secret (HKDF output mod `q_Grumpkin`);
+    /// for TD ownership this is a fresh wallet-rolled Grumpkin
+    /// keypair generated per Tribute Draft.
+    pub key: &'a GrumpkinKey,
+    /// Per-NFT nonce baked into the ownership commitment.
     pub nonce: Fr,
-    /// Per-NFT entity hash. The signature is over
-    /// `Poseidon2(nft_hash, nonce).to_le_bytes()` so the proof is
-    /// bound to a specific NFT and can't be replayed across SUs.
+    /// Per-NFT entity hash. The signature is over `Poseidon2(nft_hash,
+    /// nonce).to_be_bytes()` so the proof is bound to a specific NFT
+    /// and can't be replayed across SUs.
     pub nft_hash: Fr,
 }
 
 /// Context for generating a full proof witness (ownership + inclusion).
 pub struct FullProofWitnessCtx<'a> {
-    /// Wallet's secret key.
-    pub secret_key: &'a SecretKey,
-    /// Nonce baked into the ownership commitment.
+    pub key: &'a GrumpkinKey,
     pub nonce: Fr,
-    /// Merkle path of siblings (LE-encoded sibling hashes + side).
     pub merkle_path: &'a [MerklePathElement],
 }
 
-/// Context for the SU-ownership aggregation witness.
-pub struct AggregationWitnessCtx<'a> {
-    /// Wallet's secret key.
-    pub secret_key: &'a SecretKey,
-    /// Real (nonce, derived_owner) pairs to aggregate. Length must be
-    /// `<= tier_n`. Extra slots are zero-padded.
-    pub real_slots: &'a [AggregationSlot],
-    /// Tier size (one of 1, 2, 4, 6, 8, 16, 32, 64).
-    pub tier_n: u32,
-    /// Pre-computed `pso_protocol::binding::compute_binding_hash(...)`.
-    pub binding_hash: Fr,
-}
-
 // =====================================================================
-// Witness builders (free functions — orphan rule blocks blanket impls
-// since `GenerateWitness` and `T` are both foreign to this crate).
+// Single-SU witness builders
 // =====================================================================
 
-/// Build an `OwnershipWitness` per §4.2 of the privacy-preserving L2
-/// spec.
+/// Build an `OwnershipWitness` per sec. 4.2 of the privacy-preserving
+/// L2 spec.
 ///
-/// The signature is over `Poseidon2(nft_hash, nonce).to_le_bytes()` —
-/// bound to a specific (NFT, nonce) pair so the proof can't be
-/// replayed across SUs. `nft_hash` is added to the public inputs so
-/// the on-chain verifier can reconstruct the same prehash and bind
-/// the proof to the right NFT entity.
+/// The signature is `Schnorr_Grumpkin(Poseidon2(nft_hash,
+/// nonce).to_be_bytes(), key.sk)`. The 32-byte `(pk.x, pk.y)` bytes
+/// encoded into `OwnershipPrivateInputs` are LE Fr encodings (the
+/// witness map serialiser in `pso-zk-circuit-noir` decodes them via
+/// `FieldElement::from_le_bytes_reduce`).
 pub fn build_ownership_witness<T: OwnableNFT + ?Sized>(
     nft: &T,
     ctx: OwnershipWitnessCtx<'_>,
 ) -> anyhow::Result<OwnershipWitness> {
-    let (public_key_x, public_key_y) = sec1_coords(&ctx.secret_key.public_key())?;
     let ownership_fr = nft.ownership();
     let ownership = fr_to_le32(&ownership_fr);
 
-    // Prehash bound to (nft_hash, nonce) — the §4.2 binding.
     let prehash_fr = pso_protocol::hash::poseidon2(ctx.nft_hash, ctx.nonce)
         .map_err(|e| anyhow::anyhow!("poseidon2(nft_hash, nonce): {e}"))?;
-    let signature = sign_prehash_le(ctx.secret_key, &prehash_fr)?;
-    let nonce = fr_to_le32(&ctx.nonce);
-    let nft_hash = fr_to_le32(&ctx.nft_hash);
+    let signature = schnorr_sign_be(&ctx.key.sk_bytes, &prehash_fr)?;
 
     Ok(OwnershipWitness {
         private_inputs: OwnershipPrivateInputs {
-            nonce,
-            public_key_x,
-            public_key_y,
+            nonce: fr_to_le32(&ctx.nonce),
+            public_key_x: fr_to_le32(&ctx.key.pk_x),
+            public_key_y: fr_to_le32(&ctx.key.pk_y),
         },
         public_inputs: OwnershipPublicInputs {
             ownership,
-            nft_hash,
+            nft_hash: fr_to_le32(&ctx.nft_hash),
             signature,
         },
     })
 }
 
 /// Build a `FullProofWitness` from any `OwnableNFT + HashableNFT`.
-///
-/// Uses the same §4.2 ownership semantics as
-/// [`build_ownership_witness`] — the signature is over
-/// `Poseidon2(nft_hash, nonce)` and the witness carries `nft_hash`
-/// inside `OwnershipPublicInputs`. There is one ownership
-/// implementation across the codebase; the full proof composes it
-/// with a Merkle-inclusion check on the same `nft_hash`.
+/// Same per-SU ownership semantics as [`build_ownership_witness`],
+/// composed with a Merkle-inclusion check on the same `nft_hash`.
 pub fn build_full_proof_witness<T: OwnableNFT + HashableNFT + ?Sized>(
     nft: &T,
     ctx: FullProofWitnessCtx<'_>,
 ) -> anyhow::Result<FullProofWitness> {
-    let (public_key_x, public_key_y) = sec1_coords(&ctx.secret_key.public_key())?;
     let ownership_fr = nft.ownership();
     let ownership = fr_to_le32(&ownership_fr);
 
     let nft_hash_fr = nft.hash().map_err(|e| anyhow::anyhow!("nft hash: {e}"))?;
     let nft_hash = fr_to_le32(&nft_hash_fr);
 
-    // Same prehash the standalone ownership circuit uses — keeps the
-    // signature semantics identical across both circuits.
     let prehash_fr = pso_protocol::hash::poseidon2(nft_hash_fr, ctx.nonce)
         .map_err(|e| anyhow::anyhow!("poseidon2(nft_hash, nonce): {e}"))?;
-    let signature = sign_prehash_le(ctx.secret_key, &prehash_fr)?;
-    let nonce = fr_to_le32(&ctx.nonce);
+    let signature = schnorr_sign_be(&ctx.key.sk_bytes, &prehash_fr)?;
 
     let merkle_root_fr = pso_protocol::merkle::compute_merkle_root(
         &nft_hash_fr,
@@ -223,9 +145,9 @@ pub fn build_full_proof_witness<T: OwnableNFT + HashableNFT + ?Sized>(
     Ok(FullProofWitness {
         private_inputs: FullProofPrivateInputs {
             ownership: OwnershipPrivateInputs {
-                nonce,
-                public_key_x,
-                public_key_y,
+                nonce: fr_to_le32(&ctx.nonce),
+                public_key_x: fr_to_le32(&ctx.key.pk_x),
+                public_key_y: fr_to_le32(&ctx.key.pk_y),
             },
             merkle_path: ctx.merkle_path.to_vec(),
         },
@@ -241,52 +163,143 @@ pub fn build_full_proof_witness<T: OwnableNFT + HashableNFT + ?Sized>(
 }
 
 // =====================================================================
-// Aggregation witness — free function (no NFT trait needed)
+// Flat aggregation witness
 // =====================================================================
 
-/// Build the SU-ownership aggregation witness.
+/// One slot of a flat-aggregation witness. The wallet supplies as
+/// many real slots as it has SUs being aggregated; padded slots
+/// (nonce/owner/nft_hash = 0, signature = valid Schnorr over the
+/// zero prehash) are inserted by [`build_flat_aggregation_witness`].
+#[derive(Debug, Clone, Copy)]
+pub struct FlatAggregationSlot {
+    /// Grumpkin keypair owning this SU.
+    pub key: GrumpkinKey,
+    /// Per-SU nonce (the `su_nonce` from the SRA receipt for SU
+    /// ownership; baked into the SU's `owner` commitment).
+    pub nonce: Fr,
+    /// The SU's `derivedOwner` field (Poseidon3 of pk.x, pk.y, nonce).
+    pub owner: Fr,
+    /// The SU's entity hash (`pso_protocol::nft::compute_spending_unit_hash`).
+    pub nft_hash: Fr,
+}
+
+/// Build the witness vector for `pso-flat-aggregation-circuit-n{N}`,
+/// padded to `tier_n` slots.
 ///
-/// Fills `nonces` and `derived_owners` from `ctx.real_slots`, then
-/// zero-pads up to `ctx.tier_n`. Signs `binding_hash.to_bytes_le()`
-/// with secp256k1 ECDSA (prehash mode) — the same convention the
-/// aggregation circuit expects.
-pub fn generate_aggregation_witness(
-    ctx: AggregationWitnessCtx,
-) -> anyhow::Result<AggregationWitness> {
-    if (ctx.real_slots.len() as u32) > ctx.tier_n {
+/// Layout matches the circuit's `main()` parameter order exactly:
+/// ```text
+///   pk            : [EmbeddedCurvePoint; N]   -> 2N Fr (pk_x_0, pk_y_0, ...)
+///   signature     : [[u8; 64]; N]             -> 64N bytes (one Field per byte)
+///   nonce         : [Field; N]                -> N Fr
+///   public_inputs : pub [Field; 2 * N]        -> 2N Fr (owner_0, nft_hash_0, ...)
+/// ```
+///
+/// Returns a `Vec<noir_rs::FieldElement>` ready to feed to
+/// `noir_rs::witness::from_vec_to_witness_map`. Caller is responsible
+/// for picking the right tier circuit (`pso_zk_canonical::FLAT_AGGREGATION_N{N}`)
+/// and `tier_n`.
+///
+/// Padded slots use `(pk=(0,0), signature=[0;64], nonce=0, owner=0,
+/// nft_hash=0)`. The circuit performs identical constraint checks on
+/// padded slots, but the chain-side `TributeDraft.submit` zeroes
+/// padded `(owner, nft_hash)` pairs at the public-input boundary so
+/// they can't be conflated with real SUs.
+pub fn build_flat_aggregation_witness(
+    real_slots: &[FlatAggregationSlot],
+    tier_n: u32,
+) -> anyhow::Result<Vec<noir_rs::FieldElement>> {
+    use noir_rs::{AcirField, FieldElement};
+
+    if (real_slots.len() as u32) > tier_n {
         anyhow::bail!(
             "real slot count {} exceeds tier size {}",
-            ctx.real_slots.len(),
-            ctx.tier_n,
+            real_slots.len(),
+            tier_n,
         );
     }
 
-    let (public_key_x, public_key_y) = sec1_coords(&ctx.secret_key.public_key())?;
+    let n = tier_n as usize;
+    let mut pk_x_vals = Vec::with_capacity(n);
+    let mut pk_y_vals = Vec::with_capacity(n);
+    let mut sig_vals = Vec::with_capacity(n * 64);
+    let mut nonce_vals = Vec::with_capacity(n);
+    let mut owner_vals = Vec::with_capacity(n);
+    let mut nft_hash_vals = Vec::with_capacity(n);
 
-    let n = ctx.tier_n as usize;
-    let mut nonces: Vec<[u8; 32]> = Vec::with_capacity(n);
-    let mut derived_owners: Vec<[u8; 32]> = Vec::with_capacity(n);
-    for slot in ctx.real_slots {
-        nonces.push(fr_to_le32(&slot.nonce));
-        derived_owners.push(fr_to_le32(&slot.derived_owner));
+    for slot in real_slots {
+        pk_x_vals.push(slot.key.pk_x);
+        pk_y_vals.push(slot.key.pk_y);
+        nonce_vals.push(slot.nonce);
+        owner_vals.push(slot.owner);
+        nft_hash_vals.push(slot.nft_hash);
+
+        // Sign the binding prehash for this slot.
+        let prehash_fr = pso_protocol::hash::poseidon2(slot.nft_hash, slot.nonce)
+            .map_err(|e| anyhow::anyhow!("poseidon2(nft_hash, nonce): {e}"))?;
+        let sig = schnorr_sign_be(&slot.key.sk_bytes, &prehash_fr)?;
+        sig_vals.extend_from_slice(&sig);
     }
-    while nonces.len() < n {
-        nonces.push([0u8; 32]);
-        derived_owners.push([0u8; 32]);
+
+    // Pad up to tier_n. For padded slots we need a valid Schnorr
+    // signature over `Poseidon2(0, 0).to_be_bytes()` since the circuit
+    // runs the same verify on every slot. The signing key for padded
+    // slots is a fixed reproducible value -- generated from an
+    // all-zero secret would be invalid (sk must be non-zero); the
+    // wallet picks any fresh Grumpkin key it likes. Here we generate
+    // one fresh padding key per build call.
+    let padding_key = if real_slots.len() < n {
+        Some(random_grumpkin_key()?)
+    } else {
+        None
+    };
+
+    while pk_x_vals.len() < n {
+        let key = padding_key.expect("padding_key Some when more slots needed");
+        let nonce = Fr::from(0u64);
+        let nft_hash = Fr::from(0u64);
+        let owner = pso_protocol::ownership::compute_ownership_grumpkin(key.pk_x, key.pk_y, nonce)
+            .map_err(|e| anyhow::anyhow!("compute_ownership_grumpkin(pad): {e}"))?;
+        let prehash_fr = pso_protocol::hash::poseidon2(nft_hash, nonce)
+            .map_err(|e| anyhow::anyhow!("poseidon2(pad): {e}"))?;
+        let sig = schnorr_sign_be(&key.sk_bytes, &prehash_fr)?;
+
+        pk_x_vals.push(key.pk_x);
+        pk_y_vals.push(key.pk_y);
+        nonce_vals.push(nonce);
+        owner_vals.push(owner);
+        nft_hash_vals.push(nft_hash);
+        sig_vals.extend_from_slice(&sig);
     }
 
-    let signature = sign_prehash_le(ctx.secret_key, &ctx.binding_hash)?;
+    // Assemble the witness vector in the circuit's main() order.
+    let mut witness_vec: Vec<FieldElement> = Vec::with_capacity(2 * n + 64 * n + n + 2 * n);
 
-    Ok(AggregationWitness {
-        private_inputs: AggregationPrivateInputs {
-            public_key_x,
-            public_key_y,
-            nonces,
-            signature,
-        },
-        public_inputs: AggregationPublicInputs {
-            derived_owners,
-            binding_hash: fr_to_le32(&ctx.binding_hash),
-        },
-    })
+    // pk: [EmbeddedCurvePoint; N] -> (pk_x_i, pk_y_i) pairs.
+    for i in 0..n {
+        witness_vec.push(FieldElement::from_le_bytes_reduce(&fr_to_le32(
+            &pk_x_vals[i],
+        )));
+        witness_vec.push(FieldElement::from_le_bytes_reduce(&fr_to_le32(
+            &pk_y_vals[i],
+        )));
+    }
+    // signature: [[u8; 64]; N] -> N*64 bytes as Field elements.
+    for byte in &sig_vals {
+        witness_vec.push(FieldElement::from(*byte as u32));
+    }
+    // nonce: [Field; N].
+    for v in &nonce_vals {
+        witness_vec.push(FieldElement::from_le_bytes_reduce(&fr_to_le32(v)));
+    }
+    // public_inputs: pub [Field; 2 * N] -> interleaved (owner_i, nft_hash_i).
+    for i in 0..n {
+        witness_vec.push(FieldElement::from_le_bytes_reduce(&fr_to_le32(
+            &owner_vals[i],
+        )));
+        witness_vec.push(FieldElement::from_le_bytes_reduce(&fr_to_le32(
+            &nft_hash_vals[i],
+        )));
+    }
+
+    Ok(witness_vec)
 }

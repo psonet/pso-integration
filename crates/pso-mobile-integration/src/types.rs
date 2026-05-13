@@ -97,9 +97,20 @@ pub struct MerklePathElementInput {
 pub struct SuAggregationSlot {
     /// 32-byte little-endian Fr nonce used at SU mint time.
     pub nonce: Vec<u8>,
-    /// 32-byte little-endian Fr — the value stored at
+    /// 32-byte little-endian Fr -- the value stored at
     /// `SpendingUnit.derivedOwner` for this SU.
     pub derived_owner: Vec<u8>,
+    /// 32-byte little-endian Fr -- the SU's entity hash
+    /// (`pso_protocol::nft::compute_spending_unit_hash`). The wallet
+    /// supplies this because the off-chain prover needs it for the
+    /// per-slot binding signature; the on-chain contract independently
+    /// reconstructs it from canonical SU storage and zeros the slot if
+    /// the SU is missing.
+    pub nft_hash: Vec<u8>,
+    /// 32-byte raw Grumpkin secret key for this SU. The wallet stores
+    /// `shared_sk_hex` per `SuOwnershipWitness` from
+    /// `pso-l2-client::wallet`; this is the same value.
+    pub grumpkin_sk: Vec<u8>,
 }
 
 /// Canonical descriptor for an SU-ownership aggregation circuit tier,

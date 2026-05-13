@@ -5,19 +5,27 @@ edition = "2021"
 description = "Shared cryptographic operations for PSO integration crates"
 
 [dependencies]
-k256.workspace = true
-hmac.workspace = true
-sha2.workspace = true
+# secp256k1 ECDH + HKDF for the App. A shared-key derivation. The
+# in-circuit signing key is Grumpkin (not secp256k1) -- only off-chain
+# ECDH stays on secp256k1.
+k256.workspace      = true
+hmac.workspace      = true
+sha2.workspace      = true
 thiserror.workspace = true
 
-# Used by the `witness` module to build ZK witnesses from k256 keypairs
-# against `pso-protocol`'s byte-oriented APIs. This is the production
-# home for the witness builders that used to live in `pso-zk-core` —
-# they need k256, which `pso-protocol` deliberately avoids.
-pso-protocol = { workspace = true }
-ark-ff       = { workspace = true }
-ark-bn254    = { workspace = true }
-anyhow       = { workspace = true }
+# Witness builders against `pso-protocol`'s byte-oriented APIs.
+# Grumpkin Schnorr signing primitives live in
+# `pso-zk-circuit-noir::schnorr_grumpkin`; we depend on that crate so
+# consumers share one barretenberg-rs FFI backend.
+pso-protocol        = { workspace = true }
+pso-zk-circuit-noir = { workspace = true }
+ark-ff              = { workspace = true }
+ark-bn254           = { workspace = true }
+anyhow              = { workspace = true }
+# `noir_rs::FieldElement` is the witness wire format the flat
+# aggregation assembler emits. Pulled in transitively via
+# pso-zk-circuit-noir but listed here for clarity.
+noir_rs = { git = "https://github.com/zkpassport/noir_rs", tag = "v1.0.0-beta.20-1", features = ["barretenberg"] }
 
 [dev-dependencies]
 rand.workspace = true

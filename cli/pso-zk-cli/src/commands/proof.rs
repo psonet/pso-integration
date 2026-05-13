@@ -12,11 +12,10 @@ use std::path::Path;
 use anyhow::{anyhow, Context, Result};
 use ark_bn254::Fr;
 use ark_ff::PrimeField;
-use k256::elliptic_curve::SecretKey;
-use k256::Secp256k1;
 
 use pso_integrations_shared::witness::{
-    build_full_proof_witness, build_ownership_witness, FullProofWitnessCtx, OwnershipWitnessCtx,
+    build_full_proof_witness, build_ownership_witness, derive_grumpkin_public_key,
+    FullProofWitnessCtx, GrumpkinKey, OwnershipWitnessCtx,
 };
 use pso_nft::{SpendingUnit, TributeDraft};
 use pso_protocol::witness::HashableNFT;
@@ -54,11 +53,14 @@ pub fn handle_proof_generate(
     let generated_output: GeneratedOutput = serde_json::from_str(&nft_content)
         .context("Failed to parse NFT file as GeneratedOutput")?;
 
-    // 2. Reconstruct the secret key from hex.
+    // 2. Reconstruct the Grumpkin secret key from hex (32 bytes).
     let secret_key_bytes = hex::decode(&generated_output.secret_key_hex)
         .context("Failed to decode secret_key_hex as hex")?;
-    let secret_key: SecretKey<Secp256k1> =
-        SecretKey::from_slice(&secret_key_bytes).context("Invalid secp256k1 secret key")?;
+    let sk_arr: [u8; 32] = secret_key_bytes
+        .try_into()
+        .map_err(|_| anyhow!("secret_key_hex must decode to exactly 32 bytes"))?;
+    let grumpkin_key = derive_grumpkin_public_key(&sk_arr)
+        .context("Failed to derive Grumpkin public key from secret key bytes")?;
 
     // 3. Reconstruct the nonce from hex with field validation.
     let nonce_bytes =
@@ -85,13 +87,13 @@ pub fn handle_proof_generate(
     let serializable_proof = match mode {
         ProofMode::Full => generate_full_proof(
             &generated_output,
-            &secret_key,
+            &grumpkin_key,
             nonce,
             &merkle_path,
             circuit_bytecode,
         )?,
         ProofMode::Ownership => {
-            generate_ownership_proof(&generated_output, &secret_key, nonce, circuit_bytecode)?
+            generate_ownership_proof(&generated_output, &grumpkin_key, nonce, circuit_bytecode)?
         }
     };
 
@@ -210,7 +212,7 @@ pub fn handle_proof_verify(proof_path: &Path, circuit_path: &Path) -> Result<()>
 /// Generate a full proof (ownership + Merkle inclusion) for the given NFT data.
 fn generate_full_proof(
     generated_output: &GeneratedOutput,
-    secret_key: &SecretKey<Secp256k1>,
+    key: &GrumpkinKey,
     nonce: Fr,
     merkle_path: &[pso_protocol::merkle::MerklePathElement],
     circuit_bytecode: pso_zk_circuit_noir::CircuitBytecode,
@@ -221,7 +223,7 @@ fn generate_full_proof(
             let nft: TributeDraft = serde_json::from_value(generated_output.nft.clone())
                 .context("Failed to deserialize NFT as TributeDraft")?;
             let ctx = FullProofWitnessCtx {
-                secret_key,
+                key,
                 nonce,
                 merkle_path,
             };
@@ -232,7 +234,7 @@ fn generate_full_proof(
             let nft: SpendingUnit = serde_json::from_value(generated_output.nft.clone())
                 .context("Failed to deserialize NFT as SpendingUnit")?;
             let ctx = FullProofWitnessCtx {
-                secret_key,
+                key,
                 nonce,
                 merkle_path,
             };
@@ -262,7 +264,7 @@ fn generate_full_proof(
 /// Generate an ownership-only proof for the given NFT data.
 fn generate_ownership_proof(
     generated_output: &GeneratedOutput,
-    secret_key: &SecretKey<Secp256k1>,
+    key: &GrumpkinKey,
     nonce: Fr,
     circuit_bytecode: pso_zk_circuit_noir::CircuitBytecode,
 ) -> Result<SerializableProof> {
@@ -273,7 +275,7 @@ fn generate_ownership_proof(
                 .context("Failed to deserialize NFT as TributeDraft")?;
             let nft_hash = HashableNFT::hash(&nft).context("td hash")?;
             let ctx = OwnershipWitnessCtx {
-                secret_key,
+                key,
                 nonce,
                 nft_hash,
             };
@@ -285,7 +287,7 @@ fn generate_ownership_proof(
                 .context("Failed to deserialize NFT as SpendingUnit")?;
             let nft_hash = HashableNFT::hash(&nft).context("su hash")?;
             let ctx = OwnershipWitnessCtx {
-                secret_key,
+                key,
                 nonce,
                 nft_hash,
             };

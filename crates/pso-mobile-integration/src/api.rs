@@ -18,7 +18,8 @@ use ark_ff::UniformRand;
 use rand::rngs::OsRng;
 
 use pso_integrations_shared::witness::{
-    build_full_proof_witness, build_ownership_witness, FullProofWitnessCtx, OwnershipWitnessCtx,
+    build_full_proof_witness, build_ownership_witness, derive_grumpkin_public_key,
+    FullProofWitnessCtx, GrumpkinKey, OwnershipWitnessCtx,
 };
 use pso_protocol::witness::HashableNFT;
 use pso_zk_circuit_noir::ZKCircuit;
@@ -33,19 +34,34 @@ use crate::types::{
     SpendingUnitInput, SuAggregationSlot, TributeInput, TributeOwnership,
 };
 
-// -- 0. Derive NFT keypair --
+// -- 0. Derive NFT keypair (Grumpkin) --
+//
+// App. A: secp256k1 ECDH between `consent_sk` and `sra_pk` plus HKDF
+// over `nft_nonce` lands a 32-byte shared secret. We reinterpret it
+// as a Grumpkin scalar for the in-circuit Schnorr signing path. The
+// returned `pk` is `pk_x_le || pk_y_le` (64 bytes, two 32-byte LE Fr
+// encodings concatenated).
 #[uniffi::export]
 pub fn derive_nft_keypair(
-    consent_sk: Vec<u8>, // Secp256k1 private key
-    sra_pk: Vec<u8>,     // Secp256k1 public key
-    nft_nonce: Vec<u8>,  // 32-byte nonce (should be valid Fr)
+    consent_sk: Vec<u8>, // secp256k1 private key
+    sra_pk: Vec<u8>,     // secp256k1 public key
+    nft_nonce: Vec<u8>,  // 32-byte nonce
 ) -> Result<NftKeypair, MobileError> {
     let nft_sk = pso_integrations_shared::derive_nft_keypair(&consent_sk, &sra_pk, &nft_nonce)?;
-    let nft_pk = nft_sk.public_key();
-
+    let sk_bytes: [u8; 32] = nft_sk.to_bytes().into();
+    let grumpkin = derive_grumpkin_public_key(&sk_bytes).map_err(|e| MobileError::Internal {
+        detail: format!("derive grumpkin pk: {e}"),
+    })?;
+    let mut pk = Vec::with_capacity(64);
+    pk.extend_from_slice(&pso_integrations_shared::witness::fr_to_le32(
+        &grumpkin.pk_x,
+    ));
+    pk.extend_from_slice(&pso_integrations_shared::witness::fr_to_le32(
+        &grumpkin.pk_y,
+    ));
     Ok(NftKeypair {
-        sk: nft_sk.to_bytes().to_vec(),
-        pk: nft_pk.to_sec1_bytes().to_vec(),
+        sk: sk_bytes.to_vec(),
+        pk,
     })
 }
 
@@ -71,11 +87,10 @@ pub fn compute_tribute_ownership(
 
     let nonce = Fr::rand(&mut OsRng);
 
-    let ownership =
-        pso_integrations_shared::witness::ownership_from_public_key(&sk.public_key(), nonce)
-            .map_err(|e| MobileError::Internal {
-                detail: e.to_string(),
-            })?;
+    let ownership = pso_protocol::ownership::compute_ownership_grumpkin(sk.pk_x, sk.pk_y, nonce)
+        .map_err(|e| MobileError::Internal {
+            detail: e.to_string(),
+        })?;
 
     let tribute_draft_id = compute_tribute_draft_id(&ownership, &wwd_fr)?;
 
@@ -106,7 +121,7 @@ pub fn prove_spending_unit_ownership(
     let witness = build_ownership_witness(
         &su,
         OwnershipWitnessCtx {
-            secret_key: &sk,
+            key: &sk,
             nonce,
             nft_hash: su_nft_hash,
         },
@@ -146,7 +161,7 @@ pub fn prove_tribute_ownership(
     let witness = build_ownership_witness(
         &td,
         OwnershipWitnessCtx {
-            secret_key: &sk,
+            key: &sk,
             nonce: nonce_fr,
             nft_hash: td_nft_hash,
         },
@@ -182,7 +197,7 @@ pub fn prove_spending_unit_full(
     let witness = build_full_proof_witness(
         &su,
         FullProofWitnessCtx {
-            secret_key: &sk,
+            key: &sk,
             nonce,
             merkle_path: &path,
         },
@@ -221,7 +236,7 @@ pub fn prove_tribute_full(
     let witness = build_full_proof_witness(
         &td,
         FullProofWitnessCtx {
-            secret_key: &sk,
+            key: &sk,
             nonce: nonce_fr,
             merkle_path: &path,
         },
@@ -244,7 +259,7 @@ pub fn prove_tribute_full(
 
 /// Build a `pso_nft::SpendingUnit` from FFI inputs.
 fn build_spending_unit(
-    sk: &k256::elliptic_curve::SecretKey<k256::Secp256k1>,
+    sk: &GrumpkinKey,
     nonce: Fr,
     input: &SpendingUnitInput,
 ) -> Result<pso_nft::SpendingUnit, MobileError> {
@@ -254,11 +269,10 @@ fn build_spending_unit(
     let sr_fps = bytes_vec_to_fr_vec(&input.spending_records_fingerprints)?;
     let ar_fps = bytes_vec_to_fr_vec(&input.amendment_records_fingerprints)?;
 
-    let ownership =
-        pso_integrations_shared::witness::ownership_from_public_key(&sk.public_key(), nonce)
-            .map_err(|e| MobileError::Internal {
-                detail: e.to_string(),
-            })?;
+    let ownership = pso_protocol::ownership::compute_ownership_grumpkin(sk.pk_x, sk.pk_y, nonce)
+        .map_err(|e| MobileError::Internal {
+            detail: e.to_string(),
+        })?;
 
     Ok(pso_nft::SpendingUnit {
         id,
@@ -274,7 +288,7 @@ fn build_spending_unit(
 
 /// Build a `pso_nft::TributeDraft` from FFI inputs.
 fn build_tribute_draft(
-    sk: &k256::elliptic_curve::SecretKey<k256::Secp256k1>,
+    sk: &GrumpkinKey,
     nonce: Fr,
     input: &TributeInput,
 ) -> Result<pso_nft::TributeDraft, MobileError> {
@@ -284,11 +298,10 @@ fn build_tribute_draft(
     let wwd = worldwide_day_count(&date);
     let wwd_fr = Fr::from(wwd);
 
-    let ownership =
-        pso_integrations_shared::witness::ownership_from_public_key(&sk.public_key(), nonce)
-            .map_err(|e| MobileError::Internal {
-                detail: e.to_string(),
-            })?;
+    let ownership = pso_protocol::ownership::compute_ownership_grumpkin(sk.pk_x, sk.pk_y, nonce)
+        .map_err(|e| MobileError::Internal {
+            detail: e.to_string(),
+        })?;
 
     let id = compute_tribute_draft_id(&ownership, &wwd_fr)?;
 
@@ -376,66 +389,118 @@ pub fn su_aggregation_tier_sizes() -> Vec<u32> {
 /// - `tribute_draft_id`: 32-byte uint256 value (big-endian, matching
 ///   Solidity `bytes32`/`uint256` natural encoding).
 /// - `chain_id`: chain id the contract sees as `block.chainid`.
+/// Build a flat-aggregation proof for `su_slots`. The wallet picks the
+/// smallest canonical tier ≥ `su_slots.len()`; unused slots are
+/// zero-padded inside the witness builder.
+///
+/// **Note**: the `secret_key`/`sender`/`tribute_draft_id`/`chain_id`
+/// args from the pre-Schnorr API are now unused -- each slot carries
+/// its own per-SU Grumpkin secret key, and the consensus binding is
+/// done on-chain by reading per-SU `(owner, nft_hash)` from canonical
+/// SU storage. They're kept for FFI compatibility but ignored.
 #[uniffi::export]
 pub fn prove_su_ownership_aggregation(
-    secret_key: Vec<u8>,
+    _secret_key: Vec<u8>,
     su_slots: Vec<SuAggregationSlot>,
-    sender: Vec<u8>,
-    tribute_draft_id: Vec<u8>,
-    chain_id: u64,
+    _sender: Vec<u8>,
+    _tribute_draft_id: Vec<u8>,
+    _chain_id: u64,
 ) -> Result<ProofResult, MobileError> {
-    // Surface-level validation kept so callers get consistent errors
-    // while the recursive-aggregation wrapper is pending.
-    let _ = (secret_key, su_slots, sender, tribute_draft_id, chain_id);
-    Err(MobileError::AggregationTierUnavailable {
-        detail: "recursive aggregation wrapper pending; see docs/aggregation-redesign.md"
-            .to_string(),
-    })
-}
+    use pso_integrations_shared::witness::{build_flat_aggregation_witness, FlatAggregationSlot};
 
-/// Off-chain mirror of `TributeDraft._bindingHash`. Thin wrapper around
-/// `pso_protocol::binding::compute_binding_hash` — the consensus-binding
-/// formula lives there. We keep this wrapper to translate the slice
-/// inputs (and `ProtocolError`) into the FFI shape.
-#[allow(dead_code)] // wired back up by the recursive-aggregation work
-fn compute_binding_hash(
-    sender: &[u8],           // 20 bytes BE
-    tribute_draft_id: &[u8], // 32 bytes BE
-    chain_id: u64,
-) -> Result<Fr, MobileError> {
-    let sender_arr: &[u8; 20] = sender.try_into().map_err(|_| MobileError::Internal {
-        detail: format!("sender must be 20 bytes, got {}", sender.len()),
-    })?;
-    let tdid_arr: &[u8; 32] = tribute_draft_id
-        .try_into()
-        .map_err(|_| MobileError::Internal {
-            detail: format!(
-                "tribute_draft_id must be 32 bytes, got {}",
-                tribute_draft_id.len()
-            ),
+    // Resolve the canonical tier for this SU count.
+    let tier =
+        pso_zk_canonical::select_aggregation_tier(su_slots.len() as u32).ok_or_else(|| {
+            MobileError::AggregationTierUnavailable {
+                detail: format!(
+                    "no aggregation tier for n_su={} (must be 1..=64)",
+                    su_slots.len()
+                ),
+            }
         })?;
-    pso_protocol::binding::compute_binding_hash(sender_arr, tdid_arr, chain_id).map_err(|e| {
-        MobileError::Internal {
+
+    // Decode each slot's Grumpkin sk + per-SU material.
+    let mut slots: Vec<FlatAggregationSlot> = Vec::with_capacity(su_slots.len());
+    for s in &su_slots {
+        let sk_arr: [u8; 32] =
+            s.grumpkin_sk
+                .as_slice()
+                .try_into()
+                .map_err(|_| MobileError::InvalidSecretKey {
+                    detail: format!("grumpkin_sk must be 32 bytes, got {}", s.grumpkin_sk.len()),
+                })?;
+        let key =
+            derive_grumpkin_public_key(&sk_arr).map_err(|e| MobileError::InvalidSecretKey {
+                detail: format!("derive grumpkin pk: {e}"),
+            })?;
+        let nonce = bytes_to_fr(&s.nonce)?;
+        let owner = bytes_to_fr(&s.derived_owner)?;
+        let nft_hash = bytes_to_fr(&s.nft_hash)?;
+        slots.push(FlatAggregationSlot {
+            key,
+            nonce,
+            owner,
+            nft_hash,
+        });
+    }
+
+    let witness_vec = build_flat_aggregation_witness(&slots, tier.tier_n).map_err(|e| {
+        MobileError::WitnessGenerationFailed {
             detail: e.to_string(),
         }
-    })
+    })?;
+    let witness_map = noir_rs::witness::from_vec_to_witness_map(witness_vec).map_err(|e| {
+        MobileError::WitnessGenerationFailed {
+            detail: format!("witness map: {e}"),
+        }
+    })?;
+
+    // Load the bytecode for this tier and prove against the canonical
+    // VK from `pso_zk_canonical`.
+    let bytecode = circuits::flat_aggregation_bytecode(tier.tier_n)?;
+    let _ = noir_rs::barretenberg::srs::setup_srs_from_bytecode(&bytecode.bytecode, None, true)
+        .map_err(|e| MobileError::CircuitInitFailed {
+            detail: format!("setup_srs: {e}"),
+        })?;
+    let proof = noir_rs::barretenberg::prove::prove_ultra_honk_keccak(
+        &bytecode.bytecode,
+        witness_map,
+        tier.descriptor.vk_bytes.to_vec(),
+        false, // disable_zk
+        true,  // low_memory
+        None,
+    )
+    .map_err(|e| MobileError::ProofFailed {
+        detail: e.to_string(),
+    })?;
+
+    let (public_inputs, proof_bytes) =
+        pso_zk_circuit_noir::split_proof(&proof).map_err(|e| MobileError::Internal {
+            detail: format!("split_proof: {e}"),
+        })?;
+
+    Ok(noir_proof_to_result(&pso_zk_circuit_noir::NoirProof {
+        proof: proof_bytes,
+        public_inputs,
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::RngCore;
 
-    fn random_secret_key() -> k256::SecretKey {
-        let mut b = [0u8; 32];
-        OsRng.fill_bytes(&mut b);
-        k256::SecretKey::from_slice(&b).expect("random bytes should form a valid key")
+    fn random_secret_key() -> GrumpkinKey {
+        pso_integrations_shared::witness::random_grumpkin_key().expect("random Grumpkin key")
+    }
+
+    fn sk_bytes_of(key: &GrumpkinKey) -> Vec<u8> {
+        key.sk_bytes.to_vec()
     }
 
     #[test]
     fn test_compute_tribute_ownership_returns_valid_data() {
         let sk = random_secret_key();
-        let result = compute_tribute_ownership(sk.to_bytes().to_vec(), 20260305).unwrap();
+        let result = compute_tribute_ownership(sk_bytes_of(&sk), 20260305).unwrap();
         assert_eq!(result.nonce.len(), 32);
         assert_eq!(result.ownership.len(), 32);
         assert_eq!(result.tribute_draft_id.len(), 32);
@@ -444,8 +509,8 @@ mod tests {
     #[test]
     fn test_compute_tribute_ownership_different_nonces() {
         let sk = random_secret_key();
-        let r1 = compute_tribute_ownership(sk.to_bytes().to_vec(), 20260305).unwrap();
-        let r2 = compute_tribute_ownership(sk.to_bytes().to_vec(), 20260305).unwrap();
+        let r1 = compute_tribute_ownership(sk_bytes_of(&sk), 20260305).unwrap();
+        let r2 = compute_tribute_ownership(sk_bytes_of(&sk), 20260305).unwrap();
         // Nonces should differ (random)
         assert_ne!(r1.nonce, r2.nonce);
         // Ownership hashes should differ (different nonces)
@@ -455,7 +520,7 @@ mod tests {
     #[test]
     fn test_build_tribute_draft_id_matches_compute() {
         let sk = random_secret_key();
-        let sk_bytes = sk.to_bytes().to_vec();
+        let sk_bytes = sk_bytes_of(&sk);
 
         let ownership_result = compute_tribute_ownership(sk_bytes.clone(), 20260305).unwrap();
 
@@ -499,8 +564,8 @@ mod tests {
     #[test]
     fn test_select_su_aggregation_tier_rounds_up() {
         let info = select_su_aggregation_tier(5).unwrap();
-        assert_eq!(info.tier_n, 6, "5 SUs should fit the N=6 tier");
-        assert_eq!(info.label, "pso.su_ownership_aggregation.n6");
+        assert_eq!(info.tier_n, 8, "5 SUs should fit the N=8 tier");
+        assert_eq!(info.label, "pso.flat_aggregation.n8");
         assert_eq!(info.circuit_hash.len(), 32);
         assert_eq!(info.vk_hash.len(), 32);
     }
@@ -509,7 +574,7 @@ mod tests {
     fn test_select_su_aggregation_tier_exact_match() {
         let info = select_su_aggregation_tier(8).unwrap();
         assert_eq!(info.tier_n, 8);
-        assert_eq!(info.label, "pso.su_ownership_aggregation.n8");
+        assert_eq!(info.label, "pso.flat_aggregation.n8");
     }
 
     #[test]
@@ -533,7 +598,7 @@ mod tests {
     #[test]
     fn test_su_aggregation_tier_sizes_matches_canonical() {
         let sizes = su_aggregation_tier_sizes();
-        assert_eq!(sizes, vec![1, 2, 4, 6, 8, 16, 32, 64]);
+        assert_eq!(sizes, vec![1, 2, 4, 8, 16, 32, 64]);
     }
 
     #[test]
@@ -544,12 +609,14 @@ mod tests {
 
         let nonce = Fr::rand(&mut OsRng);
         let derived_owner =
-            pso_integrations_shared::witness::ownership_from_public_key(&sk.public_key(), nonce)
-                .unwrap();
+            pso_protocol::ownership::compute_ownership_grumpkin(sk.pk_x, sk.pk_y, nonce).unwrap();
 
         let slot = SuAggregationSlot {
             nonce: fr_to_bytes(&nonce),
             derived_owner: fr_to_bytes(&derived_owner),
+
+            nft_hash: vec![0u8; 32],
+            grumpkin_sk: sk_bytes_of(&sk),
         };
 
         let sender = vec![0x11u8; 20];
@@ -557,7 +624,7 @@ mod tests {
         let chain_id: u64 = 19_280_501;
 
         let result = prove_su_ownership_aggregation(
-            sk.to_bytes().to_vec(),
+            sk_bytes_of(&sk),
             vec![slot],
             sender,
             tribute_draft_id,
@@ -573,14 +640,18 @@ mod tests {
             "tier=1 should produce 2 public inputs (1 derived_owner + binding_hash)",
         );
 
-        // Verify against the canonical VK via the same circuit instance.
-        let circuit = crate::circuits::su_aggregation_circuit(1).unwrap();
-        // Reconstruct a NoirProof from the FFI ProofResult.
-        let noir_proof = pso_zk_circuit_noir::NoirProof {
-            proof: result.proof,
-            public_inputs: result.public_inputs,
-        };
-        let ok = circuit.verify(noir_proof).expect("verify must succeed");
+        // Round-trip verify against the canonical VK from
+        // pso_zk_canonical using noir_rs directly (the flat-aggregation
+        // tier circuits don't have a NoirCircuit trait wrapper).
+        let mut combined: Vec<u8> = Vec::new();
+        combined.extend_from_slice(&(result.public_inputs.len() as u32).to_be_bytes());
+        for pi in &result.public_inputs {
+            combined.extend_from_slice(pi);
+        }
+        combined.extend_from_slice(&result.proof);
+        let vk = pso_zk_canonical::FLAT_AGGREGATION_N1.vk_bytes.to_vec();
+        let ok = noir_rs::barretenberg::verify::verify_ultra_honk_keccak(combined, vk, false)
+            .expect("verify must succeed");
         assert!(ok, "round trip: prove + verify against canonical VK");
     }
 
@@ -588,7 +659,7 @@ mod tests {
     fn test_prove_su_ownership_aggregation_rejects_zero_slots() {
         let sk = random_secret_key();
         let err = prove_su_ownership_aggregation(
-            sk.to_bytes().to_vec(),
+            sk_bytes_of(&sk),
             vec![], // no SUs
             vec![0x00u8; 20],
             vec![0x00u8; 32],
@@ -609,10 +680,13 @@ mod tests {
             .map(|_| SuAggregationSlot {
                 nonce: vec![0u8; 32],
                 derived_owner: vec![0u8; 32],
+
+                nft_hash: vec![0u8; 32],
+                grumpkin_sk: sk_bytes_of(&sk),
             })
             .collect();
         let err = prove_su_ownership_aggregation(
-            sk.to_bytes().to_vec(),
+            sk_bytes_of(&sk),
             slots,
             vec![0x00u8; 20],
             vec![0x00u8; 32],
@@ -631,9 +705,12 @@ mod tests {
         let slot = SuAggregationSlot {
             nonce: vec![0u8; 32],
             derived_owner: vec![0u8; 32],
+
+            nft_hash: vec![0u8; 32],
+            grumpkin_sk: sk_bytes_of(&sk),
         };
         let err = prove_su_ownership_aggregation(
-            sk.to_bytes().to_vec(),
+            sk_bytes_of(&sk),
             vec![slot],
             vec![0x00u8; 19], // wrong length
             vec![0x00u8; 32],

@@ -43,13 +43,12 @@
 use alloy::primitives::{Bytes, FixedBytes, TxHash, U256};
 use ark_bn254::Fr;
 use ark_ff::PrimeField;
-use k256::elliptic_curve::sec1::ToSec1Point;
 use k256::{PublicKey, SecretKey};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
-use pso_integrations_shared::witness::{fr_to_le32, ownership_from_public_key};
+use pso_integrations_shared::witness::{derive_grumpkin_public_key, fr_to_le32, GrumpkinKey};
 
 use crate::abi::{ITributeDraft, TRIBUTE_DRAFT};
 use crate::artifacts::{AggregationProofBundle, AggregationTier};
@@ -72,46 +71,38 @@ pub struct SuOwnershipWitness {
     pub su_id: String,
     /// 32-byte LE Fr nonce used during owner derivation.
     pub su_nonce_le_hex: String,
-    /// 32-byte LE Fr `derivedOwner` value — matches the SU's on-chain
-    /// `derivedOwner` field. The wallet stores this so it doesn't
-    /// have to re-derive at proving time, and so a corrupted shared
-    /// key surfaces immediately (mismatch with the on-chain value).
+    /// 32-byte LE Fr `derivedOwner` value -- matches the SU's
+    /// on-chain `derivedOwner` field. The wallet stores this so it
+    /// doesn't have to re-derive at proving time, and so a corrupted
+    /// shared key surfaces immediately (mismatch with the on-chain
+    /// value).
     pub derived_owner_le_hex: String,
-    /// 33-byte SEC1-compressed `shared_pk` — kept as serialized
-    /// bytes so the wallet can persist between sessions. Decompose
-    /// back to `(shared_pk_x, shared_pk_y)` via
-    /// [`SuOwnershipWitness::shared_pk_coords`].
-    pub shared_pk_sec1_hex: String,
-    /// 32-byte raw `shared_sk`. **Sensitive.** Persist in keystore
-    /// only — never write to plain disk. The shared key is the
-    /// signing key the proof's ECDSA verification cares about; if
-    /// it leaks the SU becomes claimable by anyone holding the
-    /// material.
+    /// Grumpkin public-key x coordinate, 32-byte LE Fr hex. (Was a
+    /// SEC1-compressed secp256k1 pubkey in the pre-Schnorr design.)
+    pub shared_pk_x_le_hex: String,
+    /// Grumpkin public-key y coordinate, 32-byte LE Fr hex.
+    pub shared_pk_y_le_hex: String,
+    /// 32-byte raw Grumpkin secret-key bytes. **Sensitive.** Persist
+    /// in keystore only -- never write to plain disk. This is the
+    /// signing key the in-circuit Schnorr verification cares about;
+    /// leak ⇒ anyone holding it can claim the SU.
     pub shared_sk_hex: String,
 }
 
 impl SuOwnershipWitness {
-    /// SEC1-decompose the stored shared public key into its
-    /// big-endian `(x, y)` coordinates — the byte form
-    /// `pso_protocol::ownership::compute_ownership` expects.
-    pub fn shared_pk_coords(&self) -> Result<([u8; 32], [u8; 32]), L2ClientError> {
-        let bytes = hex_to_vec(&self.shared_pk_sec1_hex)?;
-        let pk = PublicKey::from_sec1_bytes(&bytes)
-            .map_err(|e| L2ClientError::InvalidInput(format!("shared_pk: {e}")))?;
-        // sec1_point(false) ⇒ uncompressed `0x04 || x || y` = 65 bytes.
-        let sec1 = pk.as_affine().to_sec1_point(false);
-        let bytes = sec1.as_bytes();
-        if bytes.len() != 65 {
+    /// Reconstruct the Grumpkin key from the persisted hex fields.
+    pub fn grumpkin_key(&self) -> Result<GrumpkinKey, L2ClientError> {
+        let sk_vec = hex_to_vec(&self.shared_sk_hex)?;
+        if sk_vec.len() != 32 {
             return Err(L2ClientError::InvalidInput(format!(
-                "expected 65-byte uncompressed SEC1 point, got {}",
-                bytes.len()
+                "shared_sk_hex must be 32 bytes, got {}",
+                sk_vec.len()
             )));
         }
-        let mut x = [0u8; 32];
-        let mut y = [0u8; 32];
-        x.copy_from_slice(&bytes[1..33]);
-        y.copy_from_slice(&bytes[33..65]);
-        Ok((x, y))
+        let mut sk_bytes = [0u8; 32];
+        sk_bytes.copy_from_slice(&sk_vec);
+        derive_grumpkin_public_key(&sk_bytes)
+            .map_err(|e| L2ClientError::Witness(format!("derive grumpkin pk: {e}")))
     }
 }
 
@@ -132,21 +123,28 @@ pub fn prepare_su_ownership_material(
     su_nonce: [u8; 32],
     su_id: U256,
 ) -> Result<SuOwnershipWitness, L2ClientError> {
-    let SharedKey { secret, public } = derive_shared_key(consent_sk, pk_cu, &su_nonce)?;
+    // App. A: secp256k1 ECDH + HKDF lands a 32-byte secret (`shared_sk_bytes`).
+    // Off-chain ECDH stays on secp256k1 for wallet interop; the
+    // resulting 32-byte scalar is reinterpreted as a Grumpkin scalar
+    // for the in-circuit Schnorr signing path.
+    let SharedKey { secret, public: _ } = derive_shared_key(consent_sk, pk_cu, &su_nonce)?;
+    let sk_bytes: [u8; 32] = secret.to_bytes().into();
+    let grumpkin = derive_grumpkin_public_key(&sk_bytes)
+        .map_err(|e| L2ClientError::Witness(format!("derive grumpkin pk: {e}")))?;
 
-    // The `su_nonce` is a 32-byte LE-encoded BN254 Fr. Reduce it
-    // mod the BN254 scalar field for the Poseidon hash. Same lossy
-    // reduction the on-chain side and the original mobile flow use.
+    // The `su_nonce` is a 32-byte LE-encoded BN254 Fr.
     let nonce_fr = Fr::from_le_bytes_mod_order(&su_nonce);
-    let owner_fr = ownership_from_public_key(&public, nonce_fr)
-        .map_err(|e| L2ClientError::Witness(format!("compute_ownership: {e}")))?;
+    let owner_fr =
+        pso_protocol::ownership::compute_ownership_grumpkin(grumpkin.pk_x, grumpkin.pk_y, nonce_fr)
+            .map_err(|e| L2ClientError::Witness(format!("compute_ownership: {e}")))?;
 
     Ok(SuOwnershipWitness {
         su_id: format!("0x{:064x}", su_id),
         su_nonce_le_hex: format!("0x{}", hex::encode(su_nonce)),
         derived_owner_le_hex: format!("0x{}", hex::encode(fr_to_le32(&owner_fr))),
-        shared_pk_sec1_hex: format!("0x{}", hex::encode(public.to_sec1_bytes())),
-        shared_sk_hex: format!("0x{}", hex::encode(secret.to_bytes())),
+        shared_pk_x_le_hex: format!("0x{}", hex::encode(fr_to_le32(&grumpkin.pk_x))),
+        shared_pk_y_le_hex: format!("0x{}", hex::encode(fr_to_le32(&grumpkin.pk_y))),
+        shared_sk_hex: format!("0x{}", hex::encode(sk_bytes)),
     })
 }
 
@@ -282,19 +280,21 @@ pub async fn submit_tribute_draft(
 // Phase 2 — post-mint TD ownership proof (wallet-local artifact).
 // =====================================================================
 
-/// TD-level keypair + nonce material the wallet rolls before
-/// submitting a TributeDraft. The wallet persists this; it's
-/// needed in Phase 2 to produce the TD ownership proof for L1
+/// TD-level Grumpkin keypair + nonce material the wallet rolls
+/// before submitting a TributeDraft. The wallet persists this;
+/// it's needed in Phase 2 to produce the TD ownership proof for L1
 /// redemption.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TdOwnershipMaterial {
-    /// 32-byte raw `td_sk`. **Sensitive.**
+    /// 32-byte raw Grumpkin `td_sk`. **Sensitive.**
     pub td_sk_hex: String,
-    /// 33-byte SEC1-compressed `td_pk`.
-    pub td_pk_sec1_hex: String,
+    /// Grumpkin x coordinate of `td_pk` (32-byte LE Fr hex).
+    pub td_pk_x_le_hex: String,
+    /// Grumpkin y coordinate of `td_pk` (32-byte LE Fr hex).
+    pub td_pk_y_le_hex: String,
     /// 32-byte LE Fr nonce used during owner derivation.
     pub td_nonce_le_hex: String,
-    /// 32-byte LE Fr `derivedOwner` value — what the wallet passes
+    /// 32-byte LE Fr `derivedOwner` value -- what the wallet passes
     /// to `TributeDraft.submit`'s `derivedOwner` argument.
     pub td_derived_owner_le_hex: String,
 }
@@ -308,20 +308,21 @@ pub struct TdOwnershipMaterial {
 pub fn prepare_td_keypair() -> Result<TdOwnershipMaterial, L2ClientError> {
     let mut sk_bytes = [0u8; 32];
     OsRng.fill_bytes(&mut sk_bytes);
-    let td_sk = SecretKey::from_slice(&sk_bytes)
-        .map_err(|e| L2ClientError::InvalidInput(format!("td_sk: {e}")))?;
-    let td_pk = td_sk.public_key();
+    let td_key = derive_grumpkin_public_key(&sk_bytes)
+        .map_err(|e| L2ClientError::Witness(format!("derive grumpkin td pk: {e}")))?;
 
     let mut nonce_bytes = [0u8; 32];
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce_fr = Fr::from_le_bytes_mod_order(&nonce_bytes);
 
-    let owner_fr = ownership_from_public_key(&td_pk, nonce_fr)
-        .map_err(|e| L2ClientError::Witness(format!("compute_ownership: {e}")))?;
+    let owner_fr =
+        pso_protocol::ownership::compute_ownership_grumpkin(td_key.pk_x, td_key.pk_y, nonce_fr)
+            .map_err(|e| L2ClientError::Witness(format!("compute_ownership: {e}")))?;
 
     Ok(TdOwnershipMaterial {
-        td_sk_hex: format!("0x{}", hex::encode(td_sk.to_bytes())),
-        td_pk_sec1_hex: format!("0x{}", hex::encode(td_pk.to_sec1_bytes())),
+        td_sk_hex: format!("0x{}", hex::encode(sk_bytes)),
+        td_pk_x_le_hex: format!("0x{}", hex::encode(fr_to_le32(&td_key.pk_x))),
+        td_pk_y_le_hex: format!("0x{}", hex::encode(fr_to_le32(&td_key.pk_y))),
         td_nonce_le_hex: format!("0x{}", hex::encode(nonce_bytes)),
         td_derived_owner_le_hex: format!("0x{}", hex::encode(fr_to_le32(&owner_fr))),
     })
@@ -461,8 +462,9 @@ mod tests {
         )
         .unwrap();
 
-        // SRA side: derive shared_pk from its own ephemeral_sk + the
-        // wallet's consent_pk, then compute the same owner.
+        // SRA side: derive the same 32-byte shared secret from its
+        // own ephemeral_sk + the wallet's consent_pk, then reinterpret
+        // as a Grumpkin scalar and compute the same owner.
         let sra_side = crate::shared_key::derive_shared_key_sra_side(
             &sra_ephemeral_sk,
             &consent_sk.public_key(),
@@ -470,7 +472,14 @@ mod tests {
         )
         .unwrap();
         let nonce_fr = Fr::from_le_bytes_mod_order(&su_nonce);
-        let sra_owner = ownership_from_public_key(&sra_side.public, nonce_fr).unwrap();
+        let sra_sk_bytes: [u8; 32] = sra_side.secret.to_bytes().into();
+        let sra_key = derive_grumpkin_public_key(&sra_sk_bytes).unwrap();
+        let sra_owner = pso_protocol::ownership::compute_ownership_grumpkin(
+            sra_key.pk_x,
+            sra_key.pk_y,
+            nonce_fr,
+        )
+        .unwrap();
         let sra_owner_hex = format!("0x{}", hex::encode(fr_to_le32(&sra_owner)));
 
         assert_eq!(

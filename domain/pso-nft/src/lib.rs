@@ -9,12 +9,11 @@ use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField, UniformRand};
 use chrono::{NaiveDate, TimeDelta, Utc};
 use iso_currency::Currency;
-use k256::elliptic_curve::{PublicKey, SecretKey};
-use k256::Secp256k1;
 use rand::rngs::OsRng;
-use rand::{Rng, RngCore};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
+use pso_integrations_shared::witness::GrumpkinKey;
 use pso_protocol::merkle::{MerklePathElement, MerklePathElementIndex};
 use pso_protocol::witness::{HashableNFT, OwnableNFT};
 
@@ -31,27 +30,12 @@ fn fr_to_le32(value: &Fr) -> [u8; 32] {
     out
 }
 
-/// Compute the Poseidon5 ownership commitment from a secp256k1 public
-/// key and a nonce. Local mirror of
-/// `pso_integrations_shared::witness::ownership_from_public_key`; we
-/// can't depend on that crate without creating a cycle.
-fn ownership_from_public_key(public_key: &PublicKey<Secp256k1>, nonce: Fr) -> anyhow::Result<Fr> {
-    use k256::elliptic_curve::sec1::ToSec1Point;
-    let point = public_key.to_sec1_point(false);
-    let x_slice: &[u8] = point
-        .x()
-        .ok_or_else(|| anyhow!("public key missing x coordinate"))?;
-    let y_slice: &[u8] = point
-        .y()
-        .ok_or_else(|| anyhow!("public key missing y coordinate"))?;
-    let x: [u8; 32] = x_slice
-        .try_into()
-        .map_err(|_| anyhow!("x coordinate must be 32 bytes"))?;
-    let y: [u8; 32] = y_slice
-        .try_into()
-        .map_err(|_| anyhow!("y coordinate must be 32 bytes"))?;
-    pso_protocol::ownership::compute_ownership(&x, &y, nonce)
-        .map_err(|e| anyhow!("compute_ownership: {e}"))
+/// Compute the Poseidon3 ownership commitment from a Grumpkin keypair
+/// and a nonce. Thin wrapper around
+/// `pso_protocol::ownership::compute_ownership_grumpkin`.
+fn ownership_from_grumpkin_key(key: &GrumpkinKey, nonce: Fr) -> anyhow::Result<Fr> {
+    pso_protocol::ownership::compute_ownership_grumpkin(key.pk_x, key.pk_y, nonce)
+        .map_err(|e| anyhow!("compute_ownership_grumpkin: {e}"))
 }
 
 // -- Test data generation types --
@@ -103,22 +87,22 @@ pub fn generate_test_merkle_path(rng: &mut OsRng) -> Vec<MerklePathElement> {
 
 // -- Owner key pair --
 
-/// Wrapper around secp256k1 key pair for NFT ownership.
-#[derive(Debug)]
+/// Wrapper around a Grumpkin key pair for NFT ownership.
+///
+/// Grumpkin coords fit a single `Fr` each (the embedded curve's base
+/// field is BN254's scalar field), and the in-circuit Schnorr verify
+/// is a native foreign-call gate -- the per-SU constraint is ~6k
+/// gates, vs ~47k for the secp256k1 ECDSA scheme this replaces.
+#[derive(Debug, Clone, Copy)]
 pub struct Owner {
-    pub secret_key: SecretKey<Secp256k1>,
-    pub public_key: PublicKey<Secp256k1>,
+    pub key: GrumpkinKey,
 }
 
 impl Owner {
-    pub fn generate(rng: &mut OsRng) -> Self {
-        let mut b = [0u8; 32];
-        rng.fill_bytes(&mut b);
-        let secret_key = SecretKey::from_slice(&b).expect("random bytes should form a valid key");
-        let public_key = secret_key.public_key();
+    pub fn generate(_rng: &mut OsRng) -> Self {
         Self {
-            secret_key,
-            public_key,
+            key: pso_integrations_shared::witness::random_grumpkin_key()
+                .expect("random Grumpkin key"),
         }
     }
 }
@@ -188,7 +172,7 @@ impl OwnerGenerated for TributeDraft {
         let su_ids: Vec<Fr> = (0..number_of_su_ids).map(|_| Fr::rand(&mut *rng)).collect();
 
         let nonce = Fr::rand(rng);
-        let ownership = ownership_from_public_key(&owner.public_key, nonce)?;
+        let ownership = ownership_from_grumpkin_key(&owner.key, nonce)?;
 
         let wwd = worldwide_day_count(&worldwide_day)?;
         let id = compute_tribute_draft_id(&ownership, &Fr::from(wwd))?;
@@ -289,7 +273,7 @@ impl OwnerGenerated for SpendingUnit {
             (0..num_ar).map(|_| Fr::rand(&mut *rng)).collect();
 
         let nonce = Fr::rand(&mut *rng);
-        let ownership = ownership_from_public_key(&owner.public_key, nonce)?;
+        let ownership = ownership_from_grumpkin_key(&owner.key, nonce)?;
 
         let id = Fr::rand(&mut *rng);
 
@@ -557,7 +541,7 @@ mod tests {
         let witness = build_full_proof_witness(
             &data.nft,
             FullProofWitnessCtx {
-                secret_key: &data.owner_keys.secret_key,
+                key: &data.owner_keys.key,
                 nonce: data.nonce,
                 merkle_path: &merkle_path,
             },
@@ -577,7 +561,7 @@ mod tests {
         let witness = build_ownership_witness(
             &data.nft,
             OwnershipWitnessCtx {
-                secret_key: &data.owner_keys.secret_key,
+                key: &data.owner_keys.key,
                 nonce: data.nonce,
                 nft_hash,
             },
@@ -608,7 +592,7 @@ mod tests {
         let witness = build_full_proof_witness(
             &data.nft,
             FullProofWitnessCtx {
-                secret_key: &data.owner_keys.secret_key,
+                key: &data.owner_keys.key,
                 nonce: data.nonce,
                 merkle_path: &merkle_path,
             },
@@ -628,7 +612,7 @@ mod tests {
         let witness = build_ownership_witness(
             &data.nft,
             OwnershipWitnessCtx {
-                secret_key: &data.owner_keys.secret_key,
+                key: &data.owner_keys.key,
                 nonce: data.nonce,
                 nft_hash,
             },
