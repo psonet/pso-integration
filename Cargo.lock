@@ -1279,21 +1279,6 @@ dependencies = [
 
 [[package]]
 name = "barretenberg-rs"
-version = "4.2.0-aztecnr-rc.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c244bbd116be1c35671e9285671c34b90a2af64e895c60cc622109f5f7545b30"
-dependencies = [
- "hex",
- "libc",
- "rmp",
- "rmp-serde",
- "rmpv",
- "serde",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "barretenberg-rs"
 version = "5.0.0-nightly.20260512"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf336aad600b7b347b775da3f3b0fe764f73d388ea93bd3a4565603fa367b689"
@@ -3494,11 +3479,10 @@ dependencies = [
 [[package]]
 name = "noir_rs"
 version = "1.0.0-beta.20"
-source = "git+https://github.com/zkpassport/noir_rs?tag=v1.0.0-beta.20-1#d2bb6e513981d3c0266f79816b68e130a030aefd"
 dependencies = [
  "acvm",
  "acvm_blackbox_solver",
- "barretenberg-rs 4.2.0-aztecnr-rc.2",
+ "barretenberg-rs",
  "base64",
  "bincode",
  "bn254_blackbox_solver",
@@ -4303,7 +4287,7 @@ dependencies = [
  "anyhow",
  "ark-bn254",
  "ark-ff 0.5.0",
- "barretenberg-rs 5.0.0-nightly.20260512",
+ "barretenberg-rs",
  "bs58",
  "noir_rs",
  "pso-protocol",

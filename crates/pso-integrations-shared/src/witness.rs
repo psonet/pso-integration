@@ -54,6 +54,42 @@ pub fn fr_to_le32(value: &Fr) -> [u8; 32] {
     out
 }
 
+/// Encode an `Fr` as 32 big-endian bytes (left-padded with zeros).
+///
+/// Use this at the on-chain `bytes32` boundary (e.g. `derivedOwner`
+/// stored in SU/TD storage). The barretenberg-emitted public inputs
+/// and the `0x0212` SU-hash precompile both treat the slot as BE; if
+/// callers store the LE encoding, the precompile reads a totally
+/// different Fr and the aggregation proof's public-input prefix
+/// won't match the on-chain reconstruction.
+pub fn fr_to_be32(value: &Fr) -> [u8; 32] {
+    let be = value.into_bigint().to_bytes_be();
+    let mut out = [0u8; 32];
+    let off = 32 - be.len().min(32);
+    out[off..].copy_from_slice(&be[be.len().saturating_sub(32)..]);
+    out
+}
+
+/// Reduce raw 32-byte input (e.g. an HKDF output) modulo the Grumpkin
+/// scalar field order so it's a valid Grumpkin secret key.
+///
+/// The Grumpkin scalar field is BN254's base field `Fq`. Bare
+/// `barretenberg-rs`/`schnorr_compute_public_key` since the bb 5.x
+/// bump rejects (with an uncatchable C++ exception that aborts the
+/// process) inputs `>= q_Grumpkin`. App. A ECDH/HKDF outputs are
+/// uniform over `[0, 2^256)`, so ~63% of unreduced outputs trip that
+/// path. Every caller that feeds an external random source into
+/// `derive_grumpkin_public_key` must run it through here first.
+pub fn reduce_to_grumpkin_sk(bytes: &[u8; 32]) -> [u8; 32] {
+    use ark_bn254::Fq;
+    let reduced = Fq::from_be_bytes_mod_order(bytes);
+    let be = reduced.into_bigint().to_bytes_be();
+    let mut out = [0u8; 32];
+    let off = 32 - be.len().min(32);
+    out[off..].copy_from_slice(&be[be.len().saturating_sub(32)..]);
+    out
+}
+
 // =====================================================================
 // Witness contexts
 // =====================================================================

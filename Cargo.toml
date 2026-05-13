@@ -74,6 +74,20 @@ eyre  = "0.6"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Mirror pso-zk-circuits' and pso-chain's noir_rs override so the
+# prover here shares the same barretenberg-rs (5.x) backend the
+# canonical VKs were generated against. Without this we silently link
+# bb 4.2 via the upstream zkpassport tag and proofs don't verify
+# against the chain's canonical VK.
+#
+# TODO(ci): this `path` patch only resolves on workspaces that have
+# `../vendor/noir_rs` next to the repo. CI runners building
+# pso-integration standalone need either a public git ref for the
+# fork or a published `noir_rs-pso` crate — see the matching note in
+# `pso-chain/Cargo.toml`.
+[patch."https://github.com/zkpassport/noir_rs"]
+noir_rs = { path = "../vendor/noir_rs" }
+
 # Same profile shape as pso-zk-circuits — proving times collapse
 # under opt-level=3 even in dev.
 [profile.dev]

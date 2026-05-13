@@ -120,9 +120,13 @@ pub fn prepare_su_ownership_material(
     // App. A: secp256k1 ECDH + HKDF lands a 32-byte secret (`shared_sk_bytes`).
     // Off-chain ECDH stays on secp256k1 for wallet interop; the
     // resulting 32-byte scalar is reinterpreted as a Grumpkin scalar
-    // for the in-circuit Schnorr signing path.
+    // for the in-circuit Schnorr signing path. Reduce mod
+    // `q_Grumpkin` before handing to barretenberg — bb 5.x's
+    // `schnorr_compute_public_key` throws an uncatchable C++
+    // exception for inputs >= q.
     let SharedKey { secret, public: _ } = derive_shared_key(consent_sk, pk_cu, &su_nonce)?;
-    let sk_bytes: [u8; 32] = secret.to_bytes().into();
+    let sk_raw: [u8; 32] = secret.to_bytes().into();
+    let sk_bytes = pso_integrations_shared::witness::reduce_to_grumpkin_sk(&sk_raw);
     let grumpkin = derive_grumpkin_public_key(&sk_bytes)
         .map_err(|e| L2ClientError::Witness(format!("derive grumpkin pk: {e}")))?;
 
@@ -392,8 +396,11 @@ pub struct TdOwnershipMaterial {
 /// recursive proof binds against the same TD owner) and stored
 /// locally for Phase 2.
 pub fn prepare_td_keypair() -> Result<TdOwnershipMaterial, L2ClientError> {
-    let mut sk_bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut sk_bytes);
+    let mut sk_raw = [0u8; 32];
+    OsRng.fill_bytes(&mut sk_raw);
+    // bb 5.x's schnorr_compute_public_key rejects sk >= q_Grumpkin
+    // with an uncatchable C++ abort; reduce the random source.
+    let sk_bytes = pso_integrations_shared::witness::reduce_to_grumpkin_sk(&sk_raw);
     let td_key = derive_grumpkin_public_key(&sk_bytes)
         .map_err(|e| L2ClientError::Witness(format!("derive grumpkin td pk: {e}")))?;
 

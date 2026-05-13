@@ -12,10 +12,20 @@ use rand::RngCore;
 /// Environment variable the e2e tests read for the L2 RPC URL.
 pub const PSO_L2_RPC_ENV: &str = "PSO_L2_RPC";
 
-/// Hardhat default mnemonic account #0 — prefunded in pso-chain dev
-/// genesis. Used as the SRA signer in tests (the SRA must be a
-/// registered registrar with token balance to pay gas).
+/// Hardhat default mnemonic account #1 — prefunded in pso-chain dev
+/// genesis. Used as the SRA signer in tests; the SR / AR / SU / TD
+/// `submit` paths gate on `SRARegistry.isActive(sender)`, so the test
+/// bootstrap step (`bootstrap_register_sra`) must call
+/// `SRARegistry.register(this_address, …)` as the admin first.
 pub const ADMIN_SECRET_KEY: [u8; 32] = [
+    0x59, 0xc6, 0x99, 0x5e, 0x99, 0x8f, 0x97, 0xa5, 0xa0, 0x04, 0x49, 0x66, 0xf0, 0x94, 0x53, 0x89,
+    0xdc, 0x9e, 0x86, 0xda, 0xe8, 0x8c, 0x7a, 0x84, 0x12, 0xf4, 0x60, 0x3b, 0x6b, 0x78, 0x69, 0x0d,
+];
+
+/// Hardhat default mnemonic account #0 — the registry admin baked into
+/// the devnet genesis at `SRARegistry` slot 0. Used only by the e2e
+/// bootstrap to register the SRA signer; never an SRA itself.
+pub const REGISTRY_ADMIN_SECRET_KEY: [u8; 32] = [
     0xac, 0x09, 0x74, 0xbe, 0xc3, 0x9a, 0x17, 0xe3, 0x6b, 0xa4, 0xa6, 0xb4, 0xd2, 0x38, 0xff, 0x94,
     0x4b, 0xac, 0xb4, 0x78, 0xcb, 0xed, 0x5e, 0xfc, 0xae, 0x78, 0x4d, 0x7b, 0xf4, 0xf2, 0xff, 0x80,
 ];
