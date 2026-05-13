@@ -61,10 +61,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     bash -euo pipefail -c '\
       if [ -s /run/secrets/gh_token ]; then \
         token=$(cat /run/secrets/gh_token); \
-        # `--add` so both rewrites coexist; without it the second
-        # call overwrites the first and SSH-form deps still 404.
-        git config --global --add url."https://x-access-token:$${token}@github.com/".insteadOf "ssh://git@github.com/"; \
-        git config --global --add url."https://x-access-token:$${token}@github.com/".insteadOf "https://github.com/"; \
+        # `https://<TOKEN>@github.com/...` works for both classic
+        # and fine-grained PATs. The `x-access-token:<TOKEN>@` form
+        # only works for GitHub App installation tokens (`ghs_...`).
+        # `--add` so both rewrites coexist; default replace mode
+        # would leave only the second rule.
+        git config --global --add url."https://$${token}@github.com/".insteadOf "ssh://git@github.com/"; \
+        git config --global --add url."https://$${token}@github.com/".insteadOf "https://github.com/"; \
       fi; \
       export CARGO_NET_GIT_FETCH_WITH_CLI=true; \
       cargo build --release -p pso-e2e-testsuite --bin pso-e2e; \
