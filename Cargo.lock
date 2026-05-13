@@ -4122,6 +4122,7 @@ dependencies = [
  "hex",
  "hmac 0.12.1",
  "k256 0.14.0-rc.9",
+ "noir_rs",
  "once_cell",
  "pso-integrations-shared",
  "pso-protocol",

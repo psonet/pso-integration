@@ -1,44 +1,38 @@
 //! Wallet-side flow per the privacy-preserving L2 architecture spec.
 //!
-//! This module replaces the earlier `aggregate_ownership` design,
-//! which was structurally incompatible with §4.1, §4.2, and App. A.
-//! See `docs/aggregation-redesign.md` for the rationale and the
-//! current state of the cross-repo work.
-//!
 //! ## Two phases
 //!
-//! **Phase 1 — Submit TributeDraft on L2.** Wallet builds N per-SU
-//! ownership proofs (each with the SU's own `shared_sk` derived via
-//! App. A) and folds them via a recursion circuit into one
-//! aggregation proof. Calls `TributeDraft.submit(...)` with the
-//! recursive proof in the `aggregationProof` slot — same contract
-//! signature as today.
+//! **Phase 1 — Submit TributeDraft on L2.** Wallet runs App. A per
+//! SU, assembles the per-SU material (Grumpkin sk, nonce,
+//! derivedOwner, SU entity hash), and produces a single
+//! flat-aggregation proof via [`prove_su_aggregation`]. The chosen
+//! tier circuit duplicates the per-SU ownership constraint set
+//! inline -- no recursive proof verification. Calls
+//! `TributeDraft.submit(...)` with the bundle.
 //!
 //! **Phase 2 — Post-mint TD ownership proof.** Wallet generates a
-//! separate ownership proof over the minted TD, using a fresh
-//! per-TD keypair. The proof is **not** consumed by L2; it's a
+//! separate ownership proof over the minted TD using a fresh per-TD
+//! Grumpkin keypair. The proof is **not** consumed by L2; it's a
 //! wallet-local artifact for later L1-redemption tooling.
 //!
-//! ## What's implemented today
+//! ## What's implemented
 //!
 //! - [`derive_shared_key`] — App. A shared-key reconstruction
 //!   (`pso-l2-client::shared_key` module).
 //! - [`prepare_su_ownership_material`] — wallet-side counterpart to
 //!   the SRA receipt: turns `(consent_sk, pk_cu, su_nonce)` into the
-//!   data needed to prove ownership of one SU. The Poseidon5 owner
-//!   computation re-uses `pso_protocol::ownership::compute_ownership`.
-//! - [`SuOwnershipWitness`] / [`AggregationRequest`] / [`AggregationProofBundle`]
-//!   types — the data shape every flow function operates on.
-//! - [`prove_su_ownership`], [`aggregate_su_proofs`],
-//!   [`prove_td_ownership`] — function signatures match the spec
-//!   shape, but the prover call currently returns
-//!   `L2ClientError::CircuitNotAvailable`. The Noir circuits these
-//!   functions need (per-SU ownership rewritten per §4.2, recursive
-//!   aggregation, TD ownership) live in `psonet/pso-zk-circuits` and
-//!   are a separate piece of work — see `docs/aggregation-redesign.md`.
-//! - [`submit_tribute_draft`] — broadcasts the recursive proof on L2
-//!   via the existing `TributeDraft.submit` ABI. Will work once
-//!   [`aggregate_su_proofs`] produces real bytes.
+//!   Grumpkin signing material needed to prove ownership of one SU.
+//! - [`SuOwnershipWitness`], [`SuAggregationInput`],
+//!   [`AggregationProofBundle`] — the data shape every flow function
+//!   operates on.
+//! - [`prove_su_aggregation`] — drives the flat-aggregation prove
+//!   call end-to-end against the canonical
+//!   `FLAT_AGGREGATION_N{N}` VK. Single prove pass; no per-SU
+//!   intermediate proofs.
+//! - [`submit_tribute_draft`] — broadcasts the bundle's proof bytes
+//!   on L2 via the existing `TributeDraft.submit` ABI. Goes live
+//!   once the contract switches its `zk_verify` lookup to
+//!   `FLAT_AGGREGATION_N*` (pso-chain side, separate workstream).
 
 use alloy::primitives::{Bytes, FixedBytes, TxHash, U256};
 use ark_bn254::Fr;
@@ -152,87 +146,179 @@ pub fn prepare_su_ownership_material(
 // Phase 1, step B — prove SU ownership (one inner proof per SU).
 // =====================================================================
 
-/// A single SU-ownership proof. The wallet generates N of these,
-/// then folds them via [`aggregate_su_proofs`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SuOwnershipProof {
-    /// Which SU this proof attests.
-    pub su_id: String,
-    /// `derivedOwner` value the proof is bound to (32-byte LE hex).
-    pub derived_owner_le_hex: String,
-    /// `su_hash` value the proof is bound to (32-byte LE hex).
-    /// Computed off-chain via
-    /// `pso_protocol::nft::compute_spending_unit_hash`. The on-chain
-    /// `TributeDraft.submit` reconstructs the same value and matches.
-    pub su_hash_le_hex: String,
-    /// Raw proof bytes (UltraHonkKeccak combined format).
-    pub proof_bytes_hex: String,
-}
-
-/// Generate the SU ownership proof for one SU.
-///
-/// **Not yet implemented at the prover level.** The per-SU ownership
-/// Noir circuit needs to be rewritten per §4.2 of the spec (signature
-/// over `Poseidon(su_hash || su_nonce)` instead of over the owner
-/// directly, with both `owner` and `su_hash` as public inputs). See
-/// `docs/aggregation-redesign.md`. This function will start producing
-/// real proofs once that circuit lands in `pso-zk-circuits`.
-///
-/// The signature shape is final — only the implementation body is
-/// pending.
-pub fn prove_su_ownership(
-    _witness: &SuOwnershipWitness,
-    _su_hash: Fr,
-) -> Result<SuOwnershipProof, L2ClientError> {
-    Err(L2ClientError::CircuitNotAvailable {
-        detail: "per-SU ownership Noir circuit needs rewrite per §4.2 \
-             (signature over Poseidon(su_hash || su_nonce) with su_hash + \
-             owner as public inputs). See docs/aggregation-redesign.md."
-            .into(),
-    })
-}
-
-// =====================================================================
-// Phase 1, step C — fold N SU proofs into one recursive proof.
-// =====================================================================
-
-/// Inputs to [`aggregate_su_proofs`].
+/// Per-SU input bundle for [`prove_su_aggregation`]. The wallet
+/// assembles one of these per Spending Unit it's aggregating into a
+/// Tribute Draft, drawing from material it persisted after
+/// [`prepare_su_ownership_material`] plus the SU hash recomputed via
+/// `pso_protocol::nft::compute_spending_unit_hash` (or from the
+/// canonical on-chain state via the SU hash precompile).
 #[derive(Debug, Clone)]
-pub struct AggregationRequest<'a> {
-    /// Per-SU ownership proofs, in the order they'll appear in the
-    /// recursive proof's public inputs and the `TributeDraft.submit`
-    /// `suIds` calldata. Length ≥ 1.
-    pub su_proofs: &'a [SuOwnershipProof],
-    /// TD-level commitment the wallet picked for this TributeDraft.
-    /// Computed by [`prepare_td_keypair`] before aggregation.
-    pub td_derived_owner_le: [u8; 32],
+pub struct SuAggregationInput {
+    /// On-chain SU id, hex-encoded `0x` + 32-byte big-endian uint256.
+    pub su_id: String,
+    /// Grumpkin secret-key bytes for this SU (= `shared_sk_hex` from
+    /// the persisted [`SuOwnershipWitness`]).
+    pub grumpkin_sk: [u8; 32],
+    /// SU nonce as a BN254 Fr.
+    pub nonce: Fr,
+    /// SU `derivedOwner` as a BN254 Fr.
+    pub derived_owner: Fr,
+    /// SU entity hash (`compute_spending_unit_hash`) as a BN254 Fr.
+    pub nft_hash: Fr,
 }
 
-/// Fold N SU ownership proofs into one recursive proof via the
-/// Noir recursion pattern (each inner proof is verified in-circuit
-/// using a compile-time-pinned VK).
+// =====================================================================
+// Phase 1, step B+C -- prove all N SUs in a single flat-aggregation
+// circuit pass. No per-SU intermediate proofs; the per-SU constraint
+// set is duplicated inline inside the chosen tier circuit.
+// =====================================================================
+
+/// Build the flat-aggregation proof the wallet submits to
+/// `TributeDraft.submit` as the `aggregationProof` calldata.
 ///
-/// **Not yet implemented.** The recursion aggregation circuit
-/// (`pso-recursive-aggregation-circuit-n*`) needs to be added to
-/// `pso-zk-circuits` — there's no current Noir circuit that does
-/// this folding. See `docs/aggregation-redesign.md`. The function
-/// signature is final.
-pub fn aggregate_su_proofs(
-    request: AggregationRequest<'_>,
+/// Picks the smallest canonical tier `>= inputs.len()`, builds the
+/// witness via
+/// [`pso_integrations_shared::witness::build_flat_aggregation_witness`]
+/// (zero-padding unused slots), loads the tier bytecode from
+/// `pso-zk-circuit-noir`'s embedded data, and calls
+/// `noir_rs::prove_ultra_honk_keccak` against the canonical
+/// `FLAT_AGGREGATION_N{N}` VK.
+///
+/// The returned [`AggregationProofBundle`] is ready for
+/// [`submit_tribute_draft`].
+pub fn prove_su_aggregation(
+    inputs: &[SuAggregationInput],
+    tribute_draft_id: U256,
+    td_derived_owner: Fr,
 ) -> Result<AggregationProofBundle, L2ClientError> {
-    if request.su_proofs.is_empty() {
+    use pso_integrations_shared::witness::{
+        build_flat_aggregation_witness, derive_grumpkin_public_key, FlatAggregationSlot,
+    };
+
+    if inputs.is_empty() {
         return Err(L2ClientError::InvalidInput(
-            "at least one SU ownership proof required".into(),
+            "at least one SU input required".into(),
         ));
     }
-    Err(L2ClientError::CircuitNotAvailable {
-        detail: format!(
-            "recursive aggregation Noir circuit not yet built (would aggregate \
-             {} SU proofs into one recursive proof). See \
-             docs/aggregation-redesign.md.",
-            request.su_proofs.len()
-        ),
+
+    let tier_resolved =
+        pso_zk_canonical::select_aggregation_tier(inputs.len() as u32).ok_or_else(|| {
+            L2ClientError::InvalidInput(format!(
+                "no aggregation tier for n_su={} (must be 1..=64)",
+                inputs.len()
+            ))
+        })?;
+
+    // Build slots.
+    let mut slots: Vec<FlatAggregationSlot> = Vec::with_capacity(inputs.len());
+    for inp in inputs {
+        let key = derive_grumpkin_public_key(&inp.grumpkin_sk)
+            .map_err(|e| L2ClientError::Witness(format!("grumpkin pk: {e}")))?;
+        slots.push(FlatAggregationSlot {
+            key,
+            nonce: inp.nonce,
+            owner: inp.derived_owner,
+            nft_hash: inp.nft_hash,
+        });
+    }
+
+    let witness_vec = build_flat_aggregation_witness(&slots, tier_resolved.tier_n)
+        .map_err(|e| L2ClientError::Witness(format!("flat witness: {e}")))?;
+    let witness_map = noir_rs::witness::from_vec_to_witness_map(witness_vec)
+        .map_err(|e| L2ClientError::Witness(format!("witness map: {e}")))?;
+
+    // Load the bytecode for this tier from the embedded canonical JSON.
+    let bytecode_b64 = flat_aggregation_bytecode_b64(tier_resolved.tier_n)?;
+    let _ = noir_rs::barretenberg::srs::setup_srs_from_bytecode(bytecode_b64, None, true)
+        .map_err(|e| L2ClientError::Witness(format!("setup_srs: {e}")))?;
+    let proof_bytes = noir_rs::barretenberg::prove::prove_ultra_honk_keccak(
+        bytecode_b64,
+        witness_map,
+        tier_resolved.descriptor.vk_bytes.to_vec(),
+        false, // disable_zk
+        false, // low_memory — desktop path; mobile uses its own
+        None,
+    )
+    .map_err(|e| L2ClientError::Witness(format!("prove: {e}")))?;
+
+    // Assemble the bundle the on-chain TributeDraft.submit takes.
+    let _ = td_derived_owner; // bound on-chain via TributeDraft's stored `derivedOwner`; carried for clarity here.
+    Ok(AggregationProofBundle {
+        tribute_draft_id: format!("0x{:064x}", tribute_draft_id),
+        td_derived_owner: format!("0x{}", hex::encode(fr_to_le32(&td_derived_owner))),
+        su_ids: inputs.iter().map(|i| i.su_id.clone()).collect(),
+        tier: AggregationTier {
+            tier_n: tier_resolved.tier_n,
+            label: tier_resolved.descriptor.label.to_string(),
+            circuit_hash: format!("0x{}", hex::encode(tier_resolved.descriptor.circuit_hash)),
+        },
+        proof_bytes_hex: format!("0x{}", hex::encode(proof_bytes)),
     })
+}
+
+/// Return the embedded base64 ACIR bytecode for the chosen
+/// flat-aggregation tier. Mirrors the tier dispatch in
+/// `pso-mobile-integration::circuits::flat_aggregation_bytecode`,
+/// but as a `&'static str` (the noir_rs `setup_srs_from_bytecode`
+/// and `prove_ultra_honk_keccak` calls accept the base64 string
+/// directly, no JSON parsing needed).
+fn flat_aggregation_bytecode_b64(tier_n: u32) -> Result<&'static str, L2ClientError> {
+    macro_rules! tier_json {
+        ($n:literal) => {
+            include_str!(concat!(
+                "../../../../pso-zk-circuits/crates/pso-zk-circuit-noir/data/flat_aggregation_n",
+                $n,
+                ".json"
+            ))
+        };
+    }
+    // The data JSON is `{"bytecode": "<base64>", "hash": "..."}`. Parse
+    // out the bytecode field once at startup; cache via `OnceLock`.
+    static N1: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static N2: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static N4: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static N8: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static N16: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static N32: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static N64: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+    fn extract_b64(raw: &str) -> Result<String, L2ClientError> {
+        let v: serde_json::Value = serde_json::from_str(raw)
+            .map_err(|e| L2ClientError::InvalidInput(format!("parse circuit json: {e}")))?;
+        v.get("bytecode")
+            .and_then(|x| x.as_str())
+            .map(|s| s.trim().to_string())
+            .ok_or_else(|| L2ClientError::InvalidInput("missing bytecode field".into()))
+    }
+
+    let cell = match tier_n {
+        1 => &N1,
+        2 => &N2,
+        4 => &N4,
+        8 => &N8,
+        16 => &N16,
+        32 => &N32,
+        64 => &N64,
+        other => {
+            return Err(L2ClientError::InvalidInput(format!(
+                "no flat-aggregation circuit for tier_n={other}"
+            )))
+        }
+    };
+    let s = cell.get_or_init(|| {
+        let raw = match tier_n {
+            1 => tier_json!("1"),
+            2 => tier_json!("2"),
+            4 => tier_json!("4"),
+            8 => tier_json!("8"),
+            16 => tier_json!("16"),
+            32 => tier_json!("32"),
+            64 => tier_json!("64"),
+            _ => unreachable!(),
+        };
+        extract_b64(raw).expect("embedded circuit JSON has a bytecode field")
+    });
+    Ok(s.as_str())
 }
 
 // =====================================================================
@@ -362,36 +448,6 @@ pub fn prove_td_ownership(
 }
 
 // =====================================================================
-// Convenience: assemble the bundle once both proofs are built.
-// =====================================================================
-
-/// Bundle the recursive proof + per-SU + TD material into the
-/// `AggregationProofBundle` the on-chain `TributeDraft.submit`
-/// consumes. Until the prover steps work, this stays unused; kept
-/// here so the call graph from CLI → library is complete.
-pub fn assemble_aggregation_bundle(
-    tribute_draft_id: U256,
-    td_material: &TdOwnershipMaterial,
-    su_proofs: &[SuOwnershipProof],
-    recursive_proof_bytes: &[u8],
-    tier_label: &str,
-    tier_n: u32,
-    circuit_hash_be: [u8; 32],
-) -> AggregationProofBundle {
-    AggregationProofBundle {
-        tribute_draft_id: format!("0x{:064x}", tribute_draft_id),
-        td_derived_owner: td_material.td_derived_owner_le_hex.clone(),
-        su_ids: su_proofs.iter().map(|p| p.su_id.clone()).collect(),
-        tier: AggregationTier {
-            tier_n,
-            label: tier_label.to_string(),
-            circuit_hash: format!("0x{}", hex::encode(circuit_hash_be)),
-        },
-        proof_bytes_hex: format!("0x{}", hex::encode(recursive_proof_bytes)),
-    }
-}
-
-// =====================================================================
 // Helpers
 // =====================================================================
 
@@ -489,30 +545,9 @@ mod tests {
     }
 
     #[test]
-    fn prove_su_ownership_signals_circuit_not_available() {
-        let consent_sk = random_secret_key();
-        let sra_eph = random_secret_key();
-        let witness = prepare_su_ownership_material(
-            &consent_sk,
-            &sra_eph.public_key(),
-            [0xcc; 32],
-            U256::from(1u64),
-        )
-        .unwrap();
-        let su_hash = Fr::from(1u64);
-        match prove_su_ownership(&witness, su_hash) {
-            Err(L2ClientError::CircuitNotAvailable { .. }) => {}
-            other => panic!("expected CircuitNotAvailable, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn aggregate_rejects_empty_input() {
-        let req = AggregationRequest {
-            su_proofs: &[],
-            td_derived_owner_le: [0u8; 32],
-        };
-        match aggregate_su_proofs(req) {
+    fn prove_aggregation_rejects_empty_input() {
+        let r = prove_su_aggregation(&[], U256::from(1u64), Fr::from(0u64));
+        match r {
             Err(L2ClientError::InvalidInput(_)) => {}
             other => panic!("expected InvalidInput, got {other:?}"),
         }
