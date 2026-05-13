@@ -37,6 +37,8 @@ async fn submit_record_like(
     let inst = ISpendingRecord::new(contract, provider);
     let pending = inst
         .submit(record_id, keys, values)
+        .max_fee_per_gas(0)
+        .max_priority_fee_per_gas(0)
         .send()
         .await
         .map_err(|e| L2ClientError::Contract(format!("submit: {e}")))?;
@@ -69,6 +71,8 @@ pub async fn register_amendment_record(
     let inst = ISpendingRecordAmendment::new(SPENDING_RECORD_AMENDMENT, provider);
     let pending = inst
         .submit(sr_id, keys, values)
+        .max_fee_per_gas(0)
+        .max_priority_fee_per_gas(0)
         .send()
         .await
         .map_err(|e| L2ClientError::Contract(format!("amendment submit: {e}")))?;
@@ -118,6 +122,8 @@ pub async fn mint_spending_unit(
             args.sr_ids,
             args.amendment_sr_ids,
         )
+        .max_fee_per_gas(0)
+        .max_priority_fee_per_gas(0)
         .send()
         .await
         .map_err(|e| L2ClientError::Contract(format!("SU submit: {e}")))?;

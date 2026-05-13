@@ -223,6 +223,8 @@ async fn bootstrap_register_sra(rpc: &str) -> eyre::Result<()> {
     let registry_w = ISRARegistry::new(SRA_REGISTRY, &write_provider);
     let pending = registry_w
         .register(sra_addr, u32::MAX, 1_000_000u64, true)
+        .max_fee_per_gas(0)
+        .max_priority_fee_per_gas(0)
         .send()
         .await?;
     pending.get_receipt().await?;

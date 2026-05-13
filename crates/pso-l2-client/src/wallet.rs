@@ -360,6 +360,8 @@ pub async fn submit_tribute_draft(
     let inst = ITributeDraft::new(TRIBUTE_DRAFT, provider);
     let pending = inst
         .submit(tdid, derived_owner, su_ids, Bytes::from(proof_bytes))
+        .max_fee_per_gas(0)
+        .max_priority_fee_per_gas(0)
         .send()
         .await
         .map_err(|e| L2ClientError::Contract(format!("TD submit: {e}")))?;
