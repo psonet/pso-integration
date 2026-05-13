@@ -166,9 +166,8 @@ alloy::sol! {
     }
 }
 
-const SRA_REGISTRY: Address = alloy::primitives::address!(
-    "5200000000000000000000000000000000000001"
-);
+const SRA_REGISTRY: Address =
+    alloy::primitives::address!("5200000000000000000000000000000000000001");
 
 /// Register `target_secret_key`'s address with the SRA registry,
 /// signing with `admin_secret_key` (the registry admin's secret key
@@ -184,8 +183,8 @@ pub async fn bootstrap_register_sra(
     target_secret_key: &[u8; 32],
     admin_secret_key: &[u8; 32],
 ) -> eyre::Result<()> {
-    let target_client = L2Client::connect_with_signer(rpc, chain_id, target_secret_key)
-        .map_err(map_l2_err)?;
+    let target_client =
+        L2Client::connect_with_signer(rpc, chain_id, target_secret_key).map_err(map_l2_err)?;
     let target_addr = target_client
         .signer_address()
         .ok_or_else(|| eyre::eyre!("SRA signer missing"))?;
@@ -196,8 +195,8 @@ pub async fn bootstrap_register_sra(
         return Ok(());
     }
 
-    let admin_client = L2Client::connect_with_signer(rpc, chain_id, admin_secret_key)
-        .map_err(map_l2_err)?;
+    let admin_client =
+        L2Client::connect_with_signer(rpc, chain_id, admin_secret_key).map_err(map_l2_err)?;
     let write_provider = admin_client.write_provider().map_err(map_l2_err)?;
     let registry_w = ISRARegistry::new(SRA_REGISTRY, &write_provider);
     let pending = registry_w

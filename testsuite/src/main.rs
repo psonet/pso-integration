@@ -109,10 +109,20 @@ fn apply_filters(
     skip: Option<&str>,
 ) -> Vec<Box<dyn Scenario>> {
     let only_tokens: Vec<&str> = only
-        .map(|s| s.split(',').map(str::trim).filter(|s| !s.is_empty()).collect())
+        .map(|s| {
+            s.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
     let skip_tokens: Vec<&str> = skip
-        .map(|s| s.split(',').map(str::trim).filter(|s| !s.is_empty()).collect())
+        .map(|s| {
+            s.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
 
     scenarios

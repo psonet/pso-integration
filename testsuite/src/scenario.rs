@@ -224,8 +224,7 @@ impl Report {
     pub fn write_json(&self, path: &Path) -> eyre::Result<()> {
         let doc = self.to_json_doc();
         let s = serde_json::to_string_pretty(&doc)?;
-        std::fs::write(path, s)
-            .map_err(|e| eyre::eyre!("write {}: {e}", path.display()))?;
+        std::fs::write(path, s).map_err(|e| eyre::eyre!("write {}: {e}", path.display()))?;
         Ok(())
     }
 
@@ -243,8 +242,7 @@ impl Report {
     /// produce; tested against `dorny/test-reporter@v1`.
     pub fn write_junit(&self, path: &Path) -> eyre::Result<()> {
         let xml = self.to_junit_xml();
-        std::fs::write(path, xml)
-            .map_err(|e| eyre::eyre!("write {}: {e}", path.display()))?;
+        std::fs::write(path, xml).map_err(|e| eyre::eyre!("write {}: {e}", path.display()))?;
         Ok(())
     }
 

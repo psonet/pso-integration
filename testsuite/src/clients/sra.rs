@@ -138,10 +138,8 @@ impl SraClient {
     ) -> eyre::Result<()> {
         let provider = self.inner.read_provider();
         let sr = ISpendingRecord::new(pso_l2_client::abi::SPENDING_RECORD, &provider);
-        let ar = ISpendingRecordAmendment::new(
-            pso_l2_client::abi::SPENDING_RECORD_AMENDMENT,
-            &provider,
-        );
+        let ar =
+            ISpendingRecordAmendment::new(pso_l2_client::abi::SPENDING_RECORD_AMENDMENT, &provider);
         let deadline = Instant::now() + timeout;
         let mut last_missing: Option<U256> = None;
         loop {

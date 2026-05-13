@@ -34,7 +34,9 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use tokio::sync::{mpsc, oneshot};
 
-use pso_integrations_shared::witness::{derive_grumpkin_public_key, fr_to_be32, reduce_to_grumpkin_sk};
+use pso_integrations_shared::witness::{
+    derive_grumpkin_public_key, fr_to_be32, reduce_to_grumpkin_sk,
+};
 use pso_l2_client::shared_key::derive_shared_key_sra_side;
 use pso_l2_client::sra::MintSpendingUnitArgs;
 
@@ -198,12 +200,9 @@ async fn handle_mint(sra: &SraClient, args: SuMintArgs) -> Result<SuMintReceipt,
         .map_err(|e| BridgeError::Crypto(format!("grumpkin join: {e}")))?
         .map_err(|e| BridgeError::Crypto(format!("grumpkin pk: {e}")))?;
     let nonce_fr = ark_ff::PrimeField::from_le_bytes_mod_order(&su_nonce);
-    let owner_fr = pso_protocol::ownership::compute_ownership_grumpkin(
-        grumpkin.pk_x,
-        grumpkin.pk_y,
-        nonce_fr,
-    )
-    .map_err(|e| BridgeError::Crypto(format!("ownership: {e}")))?;
+    let owner_fr =
+        pso_protocol::ownership::compute_ownership_grumpkin(grumpkin.pk_x, grumpkin.pk_y, nonce_fr)
+            .map_err(|e| BridgeError::Crypto(format!("ownership: {e}")))?;
     // `derivedOwner` is consumed (a) by the `0x0212` SU-hash
     // precompile (which parses BE) and (b) copied verbatim into the
     // aggregation proof's public-input prefix (also BE per

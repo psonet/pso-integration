@@ -168,9 +168,9 @@ mod tests {
 
     #[test]
     fn parse_hex32_rejects_non_hex() {
-        assert!(parse_hex32(
-            "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
-        )
-        .is_err());
+        assert!(
+            parse_hex32("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
+                .is_err()
+        );
     }
 }

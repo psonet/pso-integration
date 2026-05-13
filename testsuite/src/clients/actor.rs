@@ -85,7 +85,11 @@ impl std::error::Error for ActorClientError {}
 
 impl ActorClient {
     /// Construct an actor-pool client.
-    pub fn new(rpc_url: &str, chain_id: u64, secret_key: &[u8; 32]) -> Result<Self, ActorClientError> {
+    pub fn new(
+        rpc_url: &str,
+        chain_id: u64,
+        secret_key: &[u8; 32],
+    ) -> Result<Self, ActorClientError> {
         let url = rpc_url
             .parse::<Url>()
             .map_err(|e| ActorClientError::Config(format!("rpc url: {e}")))?;
@@ -124,9 +128,11 @@ impl ActorClient {
         let diff = resp
             .get("difficulty")
             .and_then(|v| v.as_u64())
-            .ok_or_else(|| ActorClientError::Transport(format!(
-                "pso_epochDifficulty: missing/invalid 'difficulty' field in {resp}"
-            )))?;
+            .ok_or_else(|| {
+                ActorClientError::Transport(format!(
+                    "pso_epochDifficulty: missing/invalid 'difficulty' field in {resp}"
+                ))
+            })?;
         Ok(diff)
     }
 
@@ -207,11 +213,11 @@ impl ActorClient {
         let resp = self
             .raw_json_rpc("eth_sendRawTransaction", json!([raw_hex]))
             .await?;
-        let s = resp
-            .as_str()
-            .ok_or_else(|| ActorClientError::Transport(format!(
+        let s = resp.as_str().ok_or_else(|| {
+            ActorClientError::Transport(format!(
                 "eth_sendRawTransaction returned non-string: {resp}"
-            )))?;
+            ))
+        })?;
         let bytes = hex::decode(s.trim_start_matches("0x"))
             .map_err(|e| ActorClientError::Transport(format!("tx-hash hex: {e}")))?;
         if bytes.len() != 32 {
@@ -280,10 +286,9 @@ impl ActorClient {
         if let Some(err) = parsed.get("error") {
             return Err(json_rpc_error_to_typed(err));
         }
-        parsed
-            .get("result")
-            .cloned()
-            .ok_or_else(|| ActorClientError::Transport(format!("{method} missing 'result': {text}")))
+        parsed.get("result").cloned().ok_or_else(|| {
+            ActorClientError::Transport(format!("{method} missing 'result': {text}"))
+        })
     }
 }
 

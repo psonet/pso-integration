@@ -45,9 +45,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .call()
         .await;
     let err = match result {
-        Ok(_) => {
-            return Err(eyre::eyre!("S012: expected EmptyArray revert on eth_call"))
-        }
+        Ok(_) => return Err(eyre::eyre!("S012: expected EmptyArray revert on eth_call")),
         Err(e) => e,
     };
     let typed = decode_text(&err.to_string());

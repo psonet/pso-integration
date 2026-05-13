@@ -182,7 +182,11 @@ impl std::fmt::Display for PsoContractError {
             }
             PsoContractError::PoolRejection(s) => write!(f, "PoolRejection({s})"),
             PsoContractError::MethodNotPermitted(to, sel) => {
-                write!(f, "MethodNotPermitted(to={to:#x}, selector=0x{})", hex::encode(sel))
+                write!(
+                    f,
+                    "MethodNotPermitted(to={to:#x}, selector=0x{})",
+                    hex::encode(sel)
+                )
             }
             PsoContractError::Other(s) => write!(f, "Other({s})"),
         }
@@ -291,10 +295,7 @@ pub fn decode_from_bytes(data: &[u8]) -> PsoContractError {
             amendmentSrHashes,
         }) = SpendingRecordsNotOwnedBySender::abi_decode_raw(body)
         {
-            return PsoContractError::SpendingRecordsNotOwnedBySender(
-                srHashes,
-                amendmentSrHashes,
-            );
+            return PsoContractError::SpendingRecordsNotOwnedBySender(srHashes, amendmentSrHashes);
         }
     }
     if selector == SpendingRecordsAlreadyExist::SELECTOR {

@@ -129,7 +129,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             .register_spending_record(
                 sr1,
                 vec!["merchant".into(), "amount".into()],
-                vec![FixedBytes::from([0xa1u8; 32]), FixedBytes::from([0xa2u8; 32])],
+                vec![
+                    FixedBytes::from([0xa1u8; 32]),
+                    FixedBytes::from([0xa2u8; 32]),
+                ],
             )
             .await?;
         env.sra
@@ -141,7 +144,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             .register_spending_record(
                 sr2,
                 vec!["merchant".into(), "amount".into()],
-                vec![FixedBytes::from([0xb1u8; 32]), FixedBytes::from([0xb2u8; 32])],
+                vec![
+                    FixedBytes::from([0xb1u8; 32]),
+                    FixedBytes::from([0xb2u8; 32]),
+                ],
             )
             .await?;
         env.sra
@@ -230,8 +236,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let su_view = ISpendingUnitView::new(SPENDING_UNIT_ADDR, &read_provider);
     let mut su_inputs: Vec<SuAggregationInput> = Vec::with_capacity(receipts.len());
     for r in &receipts {
-        let witness =
-            prepare_su_ownership_material(&consent_sk, &r.pk_cu, r.su_nonce, r.su_id)?;
+        let witness = prepare_su_ownership_material(&consent_sk, &r.pk_cu, r.su_nonce, r.su_id)?;
 
         // Read the on-chain SU back and verify the stored
         // `derivedOwner` equals what the wallet's witness asserts.
@@ -295,9 +300,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     //    submits the TributeDraft.
     // -----------------------------------------------------------------
     let td_material = prepare_td_keypair()?;
-    let td_owner_le_hex = td_material
-        .td_derived_owner_le_hex
-        .trim_start_matches("0x");
+    let td_owner_le_hex = td_material.td_derived_owner_le_hex.trim_start_matches("0x");
     let td_owner_le = hex::decode(td_owner_le_hex)?;
     let td_owner_fr = Fr::from_le_bytes_mod_order(&td_owner_le);
 
