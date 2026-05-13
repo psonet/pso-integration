@@ -75,8 +75,20 @@ jobs:
             echo "::error::PSONET_REPO_TOKEN secret is not set; private git deps will 404"
             exit 1
           fi
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          # `--add` (not the default replace-mode) is mandatory: two
+          # rewrites under the same `url.X.insteadOf` key need two
+          # entries. The default mode of `git config X Y` overwrites
+          # the previous value, which would leave only the second
+          # rule in effect and SSH-form deps would 404.
+          git config --global --add url."https://x-access-token:${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+          git config --global --add url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          # Sanity-print so a future failure mode is one log line
+          # away from the root cause.
+          echo "Git insteadOf rules:"
+          git config --global --get-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf | sed 's|x-access-token:[^@]*@|x-access-token:***@|'
+          # Smoke: prove we can reach a private dep before cargo does.
+          git ls-remote https://github.com/psonet/pso-protocol.git HEAD >/dev/null
+          echo "psonet/pso-protocol is reachable"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -103,8 +115,20 @@ jobs:
             echo "::error::PSONET_REPO_TOKEN secret is not set; private git deps will 404"
             exit 1
           fi
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          # `--add` (not the default replace-mode) is mandatory: two
+          # rewrites under the same `url.X.insteadOf` key need two
+          # entries. The default mode of `git config X Y` overwrites
+          # the previous value, which would leave only the second
+          # rule in effect and SSH-form deps would 404.
+          git config --global --add url."https://x-access-token:${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+          git config --global --add url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          # Sanity-print so a future failure mode is one log line
+          # away from the root cause.
+          echo "Git insteadOf rules:"
+          git config --global --get-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf | sed 's|x-access-token:[^@]*@|x-access-token:***@|'
+          # Smoke: prove we can reach a private dep before cargo does.
+          git ls-remote https://github.com/psonet/pso-protocol.git HEAD >/dev/null
+          echo "psonet/pso-protocol is reachable"
 
       - uses: Swatinem/rust-cache@v2
 
