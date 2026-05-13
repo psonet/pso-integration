@@ -81,16 +81,23 @@ fn generate_ownership_inner(
     consent_pk: Vec<u8>,
     nonce_fr: ark_bn254::Fr,
 ) -> Result<GeneratedOwnership, OwnershipError> {
-    use pso_integrations_shared::witness::{derive_grumpkin_public_key, fr_to_le32};
+    use pso_integrations_shared::witness::{
+        derive_grumpkin_public_key, fr_to_le32, reduce_to_grumpkin_sk,
+    };
 
     let nonce_bytes = fr_to_le32(&nonce_fr);
 
     // App. A: secp256k1 ECDH + HKDF lands a 32-byte secret. Off-chain
     // ECDH stays on secp256k1 for wallet interop, but the resulting
     // 32-byte scalar is then reinterpreted as a Grumpkin scalar for
-    // the in-circuit signing path.
+    // the in-circuit signing path. Reduce mod `q_Grumpkin` before
+    // handing to barretenberg — bb 5.x's `schnorr_compute_public_key`
+    // aborts the process on inputs >= q. Most valid secp256k1 keys
+    // (the input distribution here) are above q_Grumpkin, so without
+    // this reduction every call has ~80% probability of aborting.
     let nft_sk = pso_integrations_shared::derive_nft_keypair(&sra_sk, &consent_pk, &nonce_bytes)?;
-    let nft_sk_bytes: [u8; 32] = nft_sk.to_bytes().into();
+    let nft_sk_raw: [u8; 32] = nft_sk.to_bytes().into();
+    let nft_sk_bytes = reduce_to_grumpkin_sk(&nft_sk_raw);
     let grumpkin_key = derive_grumpkin_public_key(&nft_sk_bytes)
         .map_err(|e| OwnershipError::CryptoError(format!("derive grumpkin pk: {e}")))?;
 
@@ -127,11 +134,17 @@ mod tests {
         let result =
             generate_nft_ownership_with_nonce(sra_sk, test_consent_pk(), vec![42u8; 32]).unwrap();
 
-        // Cross-validated with Kotlin integration test
+        // Expected outputs were regenerated after `generate_ownership_inner`
+        // started reducing the HKDF/secp256k1 key mod `q_Grumpkin` before
+        // the barretenberg call (bb 5.x aborts on out-of-range inputs;
+        // most valid secp256k1 keys are above q_Grumpkin). Any downstream
+        // cross-language consumer (the Kotlin integration test referenced
+        // by the prior fixture string) needs to apply the same reduction
+        // to match these values.
         assert_eq!(result.nonce, "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh");
         assert_eq!(
             result.ownership,
-            "UhZHAW9tEdWgNuhpG97MkjR11zk4YQn1R4QGdhExH4s"
+            "4JHqQcrjkRMy6pBNFKHBVoVCMEquq3rbXVBo3eX7h68d"
         );
     }
 
@@ -141,11 +154,13 @@ mod tests {
             generate_nft_ownership_with_nonce(vec![1u8; 32], test_consent_pk(), vec![42u8; 32])
                 .unwrap();
 
-        // Same inputs produce the same result regardless of key format
+        // Same inputs produce the same result regardless of key format.
+        // See `test_deterministic_ownership_with_der_key` for why these
+        // fixtures changed (mod-reduction added before bb FFI).
         assert_eq!(result.nonce, "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh");
         assert_eq!(
             result.ownership,
-            "UhZHAW9tEdWgNuhpG97MkjR11zk4YQn1R4QGdhExH4s"
+            "4JHqQcrjkRMy6pBNFKHBVoVCMEquq3rbXVBo3eX7h68d"
         );
     }
 }

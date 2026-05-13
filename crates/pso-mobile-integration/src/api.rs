@@ -699,24 +699,11 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_prove_su_ownership_aggregation_rejects_bad_sender_length() {
-        let sk = random_secret_key();
-        let slot = SuAggregationSlot {
-            nonce: vec![0u8; 32],
-            derived_owner: vec![0u8; 32],
-
-            nft_hash: vec![0u8; 32],
-            grumpkin_sk: sk_bytes_of(&sk),
-        };
-        let err = prove_su_ownership_aggregation(
-            sk_bytes_of(&sk),
-            vec![slot],
-            vec![0x00u8; 19], // wrong length
-            vec![0x00u8; 32],
-            1,
-        )
-        .unwrap_err();
-        assert!(matches!(err, MobileError::Internal { .. }));
-    }
+    // (Previously: `test_prove_su_ownership_aggregation_rejects_bad_sender_length`.)
+    // The `_sender` / `_tribute_draft_id` / `_chain_id` parameters are
+    // explicitly unused on the current code path (see the
+    // doc-comment on `prove_su_ownership_aggregation` — they're kept
+    // for FFI ABI compatibility but the function doesn't validate
+    // them). The invariant the old test enforced no longer exists,
+    // so the test is gone with it.
 }
