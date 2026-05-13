@@ -47,8 +47,16 @@ jobs:
       contents: read
       packages: write   # required to push to ghcr.io
     steps:
+      # `persist-credentials: false`: the workspace gets COPYed into
+      # the docker builder. If actions/checkout writes its
+      # `http.extraheader` into the workspace's `.git/config`, the
+      # in-container cargo fetch sees both that header AND our
+      # explicit Bearer PAT, and GitHub returns 400 "Duplicate
+      # Authorization header". Keep the workspace's git config clean.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # buildx enables BuildKit features (cache mounts in the
       # Dockerfile, multi-platform, etc.). The testsuite Dockerfile

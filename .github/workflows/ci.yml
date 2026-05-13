@@ -51,7 +51,15 @@ jobs:
     name: cargo check
     runs-on: ubuntu-latest
     steps:
+      # `persist-credentials: false` tells actions/checkout not to
+      # write its `http.extraheader = AUTHORIZATION: basic ...`
+      # entry into the workspace's `.git/config`. Without this, any
+      # later git operation on a github.com URL sends TWO
+      # `Authorization` headers (checkout's GITHUB_TOKEN + our PAT
+      # Bearer below) and GitHub returns 400 "Duplicate header".
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # libstdc++ + cmake + clang are the C++ side of the noir_rs
       # fork the workspace patches. Without them the build fails at
