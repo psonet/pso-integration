@@ -4283,7 +4283,7 @@ dependencies = [
 [[package]]
 name = "pso-zk-canonical"
 version = "0.1.0"
-source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?branch=main#5655d5c3f6c194e7c2f79d59be59f2efd44227bb"
+source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?branch=main#39c369992497aa9cd5f6b4265b4b0388ec68caba"
 dependencies = [
  "hex-literal",
 ]
@@ -4291,7 +4291,7 @@ dependencies = [
 [[package]]
 name = "pso-zk-circuit-noir"
 version = "0.1.0"
-source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?branch=main#5655d5c3f6c194e7c2f79d59be59f2efd44227bb"
+source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?branch=main#39c369992497aa9cd5f6b4265b4b0388ec68caba"
 dependencies = [
  "anyhow",
  "ark-bn254",

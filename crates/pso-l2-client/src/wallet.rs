@@ -267,17 +267,12 @@ pub fn prove_su_aggregation(
 /// and `prove_ultra_honk_keccak` calls accept the base64 string
 /// directly, no JSON parsing needed).
 fn flat_aggregation_bytecode_b64(tier_n: u32) -> Result<&'static str, L2ClientError> {
-    macro_rules! tier_json {
-        ($n:literal) => {
-            include_str!(concat!(
-                "../../../../pso-zk-circuits/crates/pso-zk-circuit-noir/data/flat_aggregation_n",
-                $n,
-                ".json"
-            ))
-        };
-    }
-    // The data JSON is `{"bytecode": "<base64>", "hash": "..."}`. Parse
-    // out the bytecode field once at startup; cache via `OnceLock`.
+    // Pull the canonical JSON document from pso-zk-circuit-noir's
+    // public API (introduced after the prior `include_str!` form
+    // proved fragile in CI — it required pso-zk-circuits checked
+    // out as a sibling directory). The document is
+    // `{"bytecode": "<base64>", "hash": "..."}`; we parse the
+    // bytecode field once per tier and cache.
     static N1: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     static N2: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     static N4: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -310,16 +305,8 @@ fn flat_aggregation_bytecode_b64(tier_n: u32) -> Result<&'static str, L2ClientEr
         }
     };
     let s = cell.get_or_init(|| {
-        let raw = match tier_n {
-            1 => tier_json!("1"),
-            2 => tier_json!("2"),
-            4 => tier_json!("4"),
-            8 => tier_json!("8"),
-            16 => tier_json!("16"),
-            32 => tier_json!("32"),
-            64 => tier_json!("64"),
-            _ => unreachable!(),
-        };
+        let raw = pso_zk_circuit_noir::flat_aggregation_json(tier_n)
+            .expect("tier_n already gated by the match above");
         extract_b64(raw).expect("embedded circuit JSON has a bytecode field")
     });
     Ok(s.as_str())
