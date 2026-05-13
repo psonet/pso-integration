@@ -19,10 +19,9 @@ use async_trait::async_trait;
 
 use pso_l2_client::abi::{ITributeDraft, TRIBUTE_DRAFT};
 
-use pso_l2_e2e_tests::errors::decode_text;
-use pso_l2_e2e_tests::{PsoContractError, Scenario, TestEnv};
+use crate::errors::decode_text;
+use crate::{PsoContractError, Scenario, TestEnv};
 
-#[allow(dead_code)]
 pub struct S012;
 
 #[async_trait]
@@ -59,22 +58,4 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         PsoContractError::MalformedAggregationProof => Ok(()),
         other => Err(eyre::eyre!("S012: expected EmptyArray, got {other}")),
     }
-}
-
-#[tokio::test]
-#[ignore = "requires a running PSO L2 node — opt-in via `cargo test -- --ignored`"]
-#[serial_test::serial]
-async fn s012_td_empty_array_rejected() -> eyre::Result<()> {
-    pso_l2_e2e_tests::env::init_tracing();
-    // Per-scenario test bootstraps its own env: when this file is
-    // also included into the  binary via #[path] we end up
-    // with two #[tokio::test]s — the runner sets up the shared env in
-    // its own tokio runtime, then this body runs under a *fresh*
-    // runtime that has already torn down the bridge background task
-    // owned by the cached env. Bootstrap-per-call is the simplest
-    // path that keeps both binaries green; the bootstrap step is
-    // idempotent and the extra ~5s is acceptable for the 12-scenario
-    // standalone surface.
-    let env = TestEnv::bootstrap().await?;
-    run(&env).await
 }

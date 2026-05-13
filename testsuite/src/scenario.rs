@@ -1,8 +1,10 @@
 //! Scenario trait — the unit of e2e coverage.
 //!
 //! Each invariant we want enforced lives in a single
-//! `tests/scenarios/sNNN_*.rs` file as a `#[test]` (one-shot) and as
-//! a struct implementing [`Scenario`] for the runner's bulk mode.
+//! `scenarios/sNNN_*.rs` file as a `pub struct` implementing
+//! [`Scenario`]. The CLI binary collects them via
+//! [`scenarios::all`](crate::scenarios::all) and runs them in order,
+//! producing a [`Report`].
 //!
 //! The trait is intentionally minimal: an id, a human-readable
 //! description, and an async `run(&TestEnv)`. The shared
@@ -11,9 +13,11 @@
 //! NOT spawn extra global state — anything new should land on the env
 //! so the cleanup path stays uniform.
 
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use serde::Serialize;
 
 use crate::env::TestEnv;
 
@@ -25,7 +29,7 @@ use crate::env::TestEnv;
 #[async_trait]
 pub trait Scenario: Send + Sync {
     /// Short stable id, e.g. `"S001"`. Used as a key in CI reporting
-    /// and to match against the file-per-scenario layout.
+    /// and to match against the `--only` / `--skip` filters.
     fn id(&self) -> &'static str;
 
     /// Single-sentence description of the invariant the scenario
@@ -82,8 +86,37 @@ impl ScenarioResult {
     }
 }
 
+// -----------------------------------------------------------------
+// JSON projection. We deliberately don't `Serialize`-derive the live
+// `ScenarioResult` (which holds an `eyre::Report` — not serialisable
+// out of the box) and instead lower into a flat shape at print time.
+// -----------------------------------------------------------------
+
+/// Wire-shape of a single scenario row in the JSON report.
+#[derive(Serialize)]
+struct ScenarioRowJson<'a> {
+    id: &'a str,
+    description: &'a str,
+    /// `"pass"` or `"fail"`.
+    outcome: &'static str,
+    duration_ms: u128,
+    /// `None` on pass; `Some(error_text)` on fail.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+/// Wire-shape of the report root.
+#[derive(Serialize)]
+struct ReportJson<'a> {
+    total: usize,
+    passed: usize,
+    failed: usize,
+    total_duration_ms: u128,
+    results: Vec<ScenarioRowJson<'a>>,
+}
+
 /// Collected results from a runner invocation. Printable as
-/// GitHub-flavoured markdown for CI artifacts.
+/// GitHub-flavoured markdown or one JSON document.
 pub struct Report {
     /// In submission order.
     pub results: Vec<ScenarioResult>,
@@ -107,9 +140,42 @@ impl Report {
         self.results.iter().filter(|r| !r.passed()).count()
     }
 
+    /// Count of passed rows.
+    pub fn passed(&self) -> usize {
+        self.results.iter().filter(|r| r.passed()).count()
+    }
+
     /// Aggregate wall-clock time.
     pub fn total_duration(&self) -> Duration {
         Duration::from_millis(self.results.iter().map(|r| r.duration_ms as u64).sum())
+    }
+
+    /// Build the JSON-shape rows (lazy — only when we're actually
+    /// printing or writing JSON).
+    fn json_rows(&self) -> Vec<ScenarioRowJson<'_>> {
+        self.results
+            .iter()
+            .map(|r| ScenarioRowJson {
+                id: r.id,
+                description: r.description,
+                outcome: if r.passed() { "pass" } else { "fail" },
+                duration_ms: r.duration_ms,
+                error: match &r.outcome {
+                    Outcome::Pass => None,
+                    Outcome::Fail(e) => Some(format!("{e}")),
+                },
+            })
+            .collect()
+    }
+
+    fn to_json_doc(&self) -> ReportJson<'_> {
+        ReportJson {
+            total: self.results.len(),
+            passed: self.passed(),
+            failed: self.failed(),
+            total_duration_ms: self.total_duration().as_millis(),
+            results: self.json_rows(),
+        }
     }
 
     /// Emit a markdown table on stdout. Designed to be pasted into
@@ -138,6 +204,29 @@ impl Report {
             );
         }
         println!();
+    }
+
+    /// Emit the report as a single pretty-printed JSON document on
+    /// stdout.
+    pub fn print_json(&self) {
+        let doc = self.to_json_doc();
+        // `serde_json::to_string_pretty` only fails on user-supplied
+        // serializer types; our shape is `derive(Serialize)` so the
+        // unwrap is well-defined.
+        match serde_json::to_string_pretty(&doc) {
+            Ok(s) => println!("{s}"),
+            Err(e) => eprintln!("report JSON serialise failed: {e}"),
+        }
+    }
+
+    /// Write the report to a file as pretty-printed JSON. Used by
+    /// `--json-output PATH` regardless of the stdout report format.
+    pub fn write_json(&self, path: &Path) -> eyre::Result<()> {
+        let doc = self.to_json_doc();
+        let s = serde_json::to_string_pretty(&doc)?;
+        std::fs::write(path, s)
+            .map_err(|e| eyre::eyre!("write {}: {e}", path.display()))?;
+        Ok(())
     }
 }
 

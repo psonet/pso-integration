@@ -1,0 +1,76 @@
+[package]
+name        = "pso-e2e-testsuite"
+version.workspace = true
+edition.workspace = true
+description = "Standalone CLI binary that exercises the PSO L2 end-to-end against a running devnet (agents pool + actor pool)."
+publish     = false
+
+# Two-surface crate: a `lib` exposing the scenario framework (so the
+# unit tests under `tests/` can re-use the same modules), plus a
+# `bin` driving the suite from the CLI. The bin is the artifact
+# pso-chain CI packages as a Docker image.
+[lib]
+name = "pso_e2e_testsuite"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pso-e2e"
+path = "src/main.rs"
+
+[dependencies]
+# In-workspace dependency tree mirroring the legacy
+# `crates/pso-l2-e2e-tests` crate. `pso-mobile-integration` stays as a
+# path dep so the wider workspace can iterate the VDF helper in lockstep.
+pso-l2-client.workspace            = true
+pso-integrations-shared.workspace  = true
+pso-protocol.workspace             = true
+pso-vdf.workspace                  = true
+pso-nft.workspace                  = true
+pso-mobile-integration             = { path = "../crates/pso-mobile-integration" }
+
+# RPC / signing / ABI.
+alloy.workspace                    = true
+
+# BN254 / Grumpkin scalar math (Fr <-> bytes conversions in S001).
+ark-bn254.workspace                = true
+ark-ff.workspace                   = true
+
+# secp256k1 key material for the wallet path.
+k256.workspace                     = true
+
+# Random generators (su_nonce, nullifier, test ids).
+rand.workspace                     = true
+
+# Hex / JSON utility belt.
+hex.workspace                      = true
+serde_json.workspace               = true
+
+# Async runtime + error glue at binary edges.
+tokio.workspace                    = true
+eyre.workspace                     = true
+
+# Tracing — `init_tracing` wires the binary's `-v/-vv/-vvv` flags into
+# the standard `tracing_subscriber` filter.
+tracing.workspace                  = true
+tracing-subscriber.workspace       = true
+
+# Hash + currency helpers used by the data generators.
+sha2.workspace                     = true
+chrono.workspace                   = true
+iso_currency.workspace             = true
+
+# CLI parsing.
+clap.workspace                     = true
+
+# Scenario trait (`#[async_trait]`) — same crate the legacy
+# `pso-l2-e2e-tests` used.
+async-trait                        = "0.1"
+
+# `Serialize` derives for the JSON report.
+serde = { workspace = true }
+
+[dev-dependencies]
+# Unit tests under `tests/framework.rs` exercise envelope encoding,
+# the typed error decoder, and the data generators. They do NOT
+# require a running L2 node; `cargo test -p pso-e2e-testsuite --lib`
+# stays useful in dev.

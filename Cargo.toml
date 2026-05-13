@@ -8,11 +8,11 @@ members = [
     "crates/pso-integrations-shared",
     "crates/pso-sra-integration",
     "crates/pso-l2-client",
-    "crates/pso-l2-e2e-tests",
     "cli/pso-zk-cli",
     "cli/pso-sra-cli",
     "cli/pso-wallet-cli",
     "domain/pso-nft",
+    "testsuite",
 ]
 resolver = "2"
 

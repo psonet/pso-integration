@@ -7,10 +7,9 @@
 use alloy::primitives::{FixedBytes, U256};
 use async_trait::async_trait;
 
-use pso_l2_e2e_tests::clients::sra::into_pso_error;
-use pso_l2_e2e_tests::{PsoContractError, Scenario, TestEnv};
+use crate::clients::sra::into_pso_error;
+use crate::{PsoContractError, Scenario, TestEnv};
 
-#[allow(dead_code)]
 pub struct S008;
 
 #[async_trait]
@@ -42,22 +41,4 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         PsoContractError::InvalidTokenId => Ok(()),
         other => Err(eyre::eyre!("S008: expected InvalidTokenId, got {other}")),
     }
-}
-
-#[tokio::test]
-#[ignore = "requires a running PSO L2 node — opt-in via `cargo test -- --ignored`"]
-#[serial_test::serial]
-async fn s008_sr_id_zero_rejected() -> eyre::Result<()> {
-    pso_l2_e2e_tests::env::init_tracing();
-    // Per-scenario test bootstraps its own env: when this file is
-    // also included into the  binary via #[path] we end up
-    // with two #[tokio::test]s — the runner sets up the shared env in
-    // its own tokio runtime, then this body runs under a *fresh*
-    // runtime that has already torn down the bridge background task
-    // owned by the cached env. Bootstrap-per-call is the simplest
-    // path that keeps both binaries green; the bootstrap step is
-    // idempotent and the extra ~5s is acceptable for the 12-scenario
-    // standalone surface.
-    let env = TestEnv::bootstrap().await?;
-    run(&env).await
 }

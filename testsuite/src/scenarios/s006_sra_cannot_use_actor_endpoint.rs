@@ -35,12 +35,10 @@ use async_trait::async_trait;
 
 use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
 
-use pso_l2_e2e_tests::clients::actor::{ActorClient, ActorClientError};
-use pso_l2_e2e_tests::data::random_id;
-use pso_l2_e2e_tests::hardhat::signer_key;
-use pso_l2_e2e_tests::{actor_rpc_url, Scenario, TestEnv, DEVNET_CHAIN_ID};
+use crate::clients::actor::{ActorClient, ActorClientError};
+use crate::data::random_id;
+use crate::{Scenario, TestEnv};
 
-#[allow(dead_code)]
 pub struct S006;
 
 #[async_trait]
@@ -56,13 +54,13 @@ impl Scenario for S006 {
     }
 }
 
-async fn run(_env: &TestEnv) -> eyre::Result<()> {
-    // Build an actor client bound to the SRA signer (Hardhat #1)
-    // rather than the wallet (Hardhat #2). Same magic envelope, same
-    // VDF, different `from`.
-    let actor_sra =
-        ActorClient::new(&actor_rpc_url(), DEVNET_CHAIN_ID, &signer_key(1))
-            .map_err(|e| eyre::eyre!("ActorClient: {e}"))?;
+async fn run(env: &TestEnv) -> eyre::Result<()> {
+    // Build an actor client bound to the SRA signer (CLI's
+    // `--sra-key`) rather than the wallet (`--wallet-key`). Same
+    // magic envelope, same VDF, different `from`. The env hands
+    // over the secret bytes so we don't reach for a Hardhat fixture.
+    let actor_sra = ActorClient::new(&env.actor_rpc_url, env.chain_id, &env.sra_key)
+        .map_err(|e| eyre::eyre!("ActorClient: {e}"))?;
 
     let sr_id = random_id();
     let call = ISpendingRecord::submitCall {
@@ -105,22 +103,4 @@ async fn run(_env: &TestEnv) -> eyre::Result<()> {
             }
         }
     }
-}
-
-#[tokio::test]
-#[ignore = "requires a running PSO L2 node — opt-in via `cargo test -- --ignored`"]
-#[serial_test::serial]
-async fn s006_sra_cannot_use_actor_endpoint() -> eyre::Result<()> {
-    pso_l2_e2e_tests::env::init_tracing();
-    // Per-scenario test bootstraps its own env: when this file is
-    // also included into the  binary via #[path] we end up
-    // with two #[tokio::test]s — the runner sets up the shared env in
-    // its own tokio runtime, then this body runs under a *fresh*
-    // runtime that has already torn down the bridge background task
-    // owned by the cached env. Bootstrap-per-call is the simplest
-    // path that keeps both binaries green; the bootstrap step is
-    // idempotent and the extra ~5s is acceptable for the 12-scenario
-    // standalone surface.
-    let env = TestEnv::bootstrap().await?;
-    run(&env).await
 }

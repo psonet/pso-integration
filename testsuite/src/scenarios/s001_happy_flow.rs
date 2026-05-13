@@ -29,11 +29,12 @@ use pso_l2_client::wallet::{
     prepare_su_ownership_material, prepare_td_keypair, submit_tribute_draft, SuAggregationInput,
 };
 
-use pso_l2_e2e_tests::bridge::SuMintArgs;
-use pso_l2_e2e_tests::data::{random_id, random_secret_key, random_su_args};
-use pso_l2_e2e_tests::{Scenario, TestEnv};
+use crate::bridge::SuMintArgs;
+use crate::data::{random_id, random_secret_key, random_su_args};
+use crate::{Scenario, TestEnv};
 
-#[allow(dead_code)]
+/// Unit struct implementing [`Scenario`]; the binary boxes it via
+/// `scenarios::all`.
 pub struct S001;
 
 #[async_trait]
@@ -346,22 +347,4 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     }
 
     Ok(())
-}
-
-#[tokio::test]
-#[ignore = "requires a running PSO L2 node — opt-in via `cargo test -- --ignored`"]
-#[serial_test::serial]
-async fn s001_happy_flow() -> eyre::Result<()> {
-    pso_l2_e2e_tests::env::init_tracing();
-    // Per-scenario test bootstraps its own env: when this file is
-    // also included into the  binary via #[path] we end up
-    // with two #[tokio::test]s — the runner sets up the shared env in
-    // its own tokio runtime, then this body runs under a *fresh*
-    // runtime that has already torn down the bridge background task
-    // owned by the cached env. Bootstrap-per-call is the simplest
-    // path that keeps both binaries green; the bootstrap step is
-    // idempotent and the extra ~5s is acceptable for the 12-scenario
-    // standalone surface.
-    let env = TestEnv::bootstrap().await?;
-    run(&env).await
 }

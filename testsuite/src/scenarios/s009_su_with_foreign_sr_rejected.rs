@@ -1,9 +1,9 @@
 //! S009 — SRA#2 cannot mint an SU referencing SRA#1's SR.
 //!
-//! Two distinct SRAs are active simultaneously. SRA#1 (Hardhat #1)
-//! registers an SR; admin promotes Hardhat #2 to an active SRA via
-//! `register_extra_sra`. SRA#2 then tries to mint an SU referencing
-//! SRA#1's SR. The on-chain
+//! Two distinct SRAs are active simultaneously. SRA#1 (the env's
+//! primary SRA) registers an SR; admin promotes a freshly rolled
+//! second SRA via [`TestEnv::register_random_sra`]. SRA#2 then tries
+//! to mint an SU referencing SRA#1's SR. The on-chain
 //! `_validateSenderOwnership` step compares `srSubmittedBy == sender`
 //! and reverts with `SpendingRecordsNotOwnedBySender(...)`.
 
@@ -14,11 +14,10 @@ use async_trait::async_trait;
 
 use pso_l2_client::sra::MintSpendingUnitArgs;
 
-use pso_l2_e2e_tests::clients::sra::into_pso_error;
-use pso_l2_e2e_tests::data::{random_id, random_su_args};
-use pso_l2_e2e_tests::{PsoContractError, Scenario, TestEnv};
+use crate::clients::sra::into_pso_error;
+use crate::data::{random_id, random_su_args};
+use crate::{PsoContractError, Scenario, TestEnv};
 
-#[allow(dead_code)]
 pub struct S009;
 
 #[async_trait]
@@ -52,9 +51,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .wait_for_sr_existence(&[sr_id], &[], Duration::from_secs(30))
         .await?;
 
-    // Admin promotes Hardhat #2 to active SRA, then SRA#2 attempts
-    // to mint an SU referencing SRA#1's SR.
-    let sra2 = env.register_extra_sra(2).await?;
+    // Admin promotes a fresh secret-key address to active SRA, then
+    // SRA#2 attempts to mint an SU referencing SRA#1's SR.
+    let sra2 = env.register_random_sra().await?;
     let shape = random_su_args();
     let err = sra2
         .mint_spending_unit(MintSpendingUnitArgs {
@@ -85,22 +84,4 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             "S009: expected SpendingRecordsNotOwnedBySender, got {other}"
         )),
     }
-}
-
-#[tokio::test]
-#[ignore = "requires a running PSO L2 node — opt-in via `cargo test -- --ignored`"]
-#[serial_test::serial]
-async fn s009_su_with_foreign_sr_rejected() -> eyre::Result<()> {
-    pso_l2_e2e_tests::env::init_tracing();
-    // Per-scenario test bootstraps its own env: when this file is
-    // also included into the  binary via #[path] we end up
-    // with two #[tokio::test]s — the runner sets up the shared env in
-    // its own tokio runtime, then this body runs under a *fresh*
-    // runtime that has already torn down the bridge background task
-    // owned by the cached env. Bootstrap-per-call is the simplest
-    // path that keeps both binaries green; the bootstrap step is
-    // idempotent and the extra ~5s is acceptable for the 12-scenario
-    // standalone surface.
-    let env = TestEnv::bootstrap().await?;
-    run(&env).await
 }

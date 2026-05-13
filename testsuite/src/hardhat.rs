@@ -1,22 +1,29 @@
-//! Canonical Hardhat-mnemonic key table.
+//! Canonical Hardhat-mnemonic key table — local-dev fixture.
 //!
 //! pso-chain's `--dev` genesis pre-funds the first ten accounts derived
 //! from the well-known mnemonic
 //! `"test test test test test test test test test test test junk"`
-//! over BIP-44 path `m/44'/60'/0'/0/{i}`. Tests need stable indices for
-//! "the admin", "the SRA signer", "a non-SRA wallet", etc. — hard-coding
-//! the raw 32-byte secret keys here avoids dragging a BIP-39 dependency
-//! into the test binary just to re-derive them at every startup.
+//! over BIP-44 path `m/44'/60'/0'/0/{i}`. The scenario surface itself
+//! is fully CLI-driven (admin / SRA / wallet keys come in as
+//! `--*-key` args), so the binary does NOT depend on these constants
+//! at runtime.
 //!
-//! Index conventions:
+//! What this module is for now:
 //!
-//! - `0` — Registry admin (Hardhat #0, `0xf39Fd6…`). Owns
-//!   `SRARegistry`; used only to register/promote SRA signers.
-//! - `1` — Primary SRA signer (Hardhat #1, `0x7099…`). The default
-//!   `agents` lane sender across the suite.
-//! - `2..=9` — General-purpose wallets. S009 promotes `#2` to a second
-//!   SRA on demand; S003/S004/S005 use a non-promoted account from this
-//!   range as a "wallet".
+//! - Local-dev convenience: a developer running the binary by hand
+//!   against `pso-chain --dev` can paste the canonical values into
+//!   `--admin-key` / `--sra-key`. The constants are kept here as the
+//!   documented source.
+//! - Internal sanity tests (`canonical_first_two_addresses` below)
+//!   pin the table against drift — if either key ever decodes to a
+//!   different address, the embedded values silently went bad and
+//!   the test fails.
+//!
+//! Conventions kept for readability of the table:
+//!
+//! - `0` — Registry admin (Hardhat #0, `0xf39Fd6…`).
+//! - `1` — Primary SRA signer (Hardhat #1, `0x7099…`).
+//! - `2..=9` — General-purpose wallets.
 
 use alloy::primitives::Address;
 use alloy::signers::local::PrivateKeySigner;
