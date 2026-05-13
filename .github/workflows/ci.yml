@@ -121,20 +121,38 @@ jobs:
             esac
           done
 
-          # Title-case `Authorization: Bearer` per RFC 6750 — some
-          # HTTP libs along the path are case-strict.
-          git config --global http.https://github.com/.extraheader "Authorization: Bearer ${TOKEN}"
-          # SSH-form deps in the Cargo.toml get rewritten to HTTPS
-          # so the extraheader rule covers them.
+          # Auth via a credentials file + `credential.helper store`.
+          # This is HTTP Basic Auth with the PAT issuer's GitHub
+          # username + the PAT as the password — the form
+          # fine-grained PATs actually accept on the git HTTP
+          # transport. Earlier attempts (URL-embedded credentials,
+          # http.extraheader Bearer) failed because (a) git's
+          # transport needs primary credentials regardless, and
+          # (b) the `x-access-token` username convention is for
+          # `ghs_` GitHub-App tokens, not PATs.
+          #
+          # We discover the issuer's login dynamically (already
+          # printed above) so this works for any PAT, not just
+          # tonyvelichko's.
+          login=$(jq -r '.login' < /tmp/who.json)
+          if [ -z "$login" ] || [ "$login" = "null" ]; then
+            echo "::error::Could not resolve token owner from api.github.com/user"
+            exit 1
+          fi
+          umask 077
+          printf "https://%s:%s@github.com\n" "$login" "$TOKEN" > "$HOME/.git-credentials"
+          git config --global credential.helper "store --file=$HOME/.git-credentials"
+          # SSH-form deps get rewritten to HTTPS so the credential
+          # helper applies to them too.
           git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
           echo "Git config:"
-          git config --global --list | sed -E 's|(Authorization: Bearer ).+$|\1***|'
+          git config --global --list
 
-          # Verbose probe: print what git actually sends + receives
-          # so we can see if the Bearer header is on the wire.
+          # Verbose probe: confirm git is now sending Basic auth
+          # with the resolved username and getting 200 back.
           echo "--- GIT_CURL_VERBOSE probe ---"
           GIT_CURL_VERBOSE=1 git ls-remote https://github.com/psonet/pso-protocol.git HEAD 2>&1 \
-            | sed -E 's|(Authorization: Bearer ).+$|\1***|; s|(authorization: bearer ).+$|\1***|' \
+            | sed -E "s|(Authorization: Basic ).+$|\1***|; s|https://${login}:[^@]+@|https://${login}:***@|g" \
             | grep -iE "^(\* |> |< |fatal|remote)" \
             | head -40 \
             || true
@@ -226,20 +244,38 @@ jobs:
             esac
           done
 
-          # Title-case `Authorization: Bearer` per RFC 6750 — some
-          # HTTP libs along the path are case-strict.
-          git config --global http.https://github.com/.extraheader "Authorization: Bearer ${TOKEN}"
-          # SSH-form deps in the Cargo.toml get rewritten to HTTPS
-          # so the extraheader rule covers them.
+          # Auth via a credentials file + `credential.helper store`.
+          # This is HTTP Basic Auth with the PAT issuer's GitHub
+          # username + the PAT as the password — the form
+          # fine-grained PATs actually accept on the git HTTP
+          # transport. Earlier attempts (URL-embedded credentials,
+          # http.extraheader Bearer) failed because (a) git's
+          # transport needs primary credentials regardless, and
+          # (b) the `x-access-token` username convention is for
+          # `ghs_` GitHub-App tokens, not PATs.
+          #
+          # We discover the issuer's login dynamically (already
+          # printed above) so this works for any PAT, not just
+          # tonyvelichko's.
+          login=$(jq -r '.login' < /tmp/who.json)
+          if [ -z "$login" ] || [ "$login" = "null" ]; then
+            echo "::error::Could not resolve token owner from api.github.com/user"
+            exit 1
+          fi
+          umask 077
+          printf "https://%s:%s@github.com\n" "$login" "$TOKEN" > "$HOME/.git-credentials"
+          git config --global credential.helper "store --file=$HOME/.git-credentials"
+          # SSH-form deps get rewritten to HTTPS so the credential
+          # helper applies to them too.
           git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
           echo "Git config:"
-          git config --global --list | sed -E 's|(Authorization: Bearer ).+$|\1***|'
+          git config --global --list
 
-          # Verbose probe: print what git actually sends + receives
-          # so we can see if the Bearer header is on the wire.
+          # Verbose probe: confirm git is now sending Basic auth
+          # with the resolved username and getting 200 back.
           echo "--- GIT_CURL_VERBOSE probe ---"
           GIT_CURL_VERBOSE=1 git ls-remote https://github.com/psonet/pso-protocol.git HEAD 2>&1 \
-            | sed -E 's|(Authorization: Bearer ).+$|\1***|; s|(authorization: bearer ).+$|\1***|' \
+            | sed -E "s|(Authorization: Basic ).+$|\1***|; s|https://${login}:[^@]+@|https://${login}:***@|g" \
             | grep -iE "^(\* |> |< |fatal|remote)" \
             | head -40 \
             || true

@@ -61,12 +61,17 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     bash -euo pipefail -c '\
       if [ -s /run/secrets/gh_token ]; then \
         token=$(cat /run/secrets/gh_token); \
-        # Send the token as a Bearer header — same auth scheme the
-        # GitHub REST API uses. URL-embedded credentials route
-        # through HTTP Basic-Auth, which fine-grained PATs reject.
-        git config --global http.https://github.com/.extraheader "AUTHORIZATION: bearer $${token}"; \
-        # SSH-form deps get coerced to HTTPS so the extraheader
-        # rule applies to them too.
+        # Discover the token's GitHub login — fine-grained PATs
+        # authenticate as the issuing user and the git HTTP path
+        # demands that real login in the Basic-Auth username.
+        login=$(curl -fsSL \
+                  -H "Accept: application/vnd.github+json" \
+                  -H "Authorization: Bearer $${token}" \
+                  https://api.github.com/user \
+                | python3 -c "import sys,json;print(json.load(sys.stdin)[\"login\"])"); \
+        umask 077; \
+        printf "https://%s:%s@github.com\n" "$${login}" "$${token}" > /root/.git-credentials; \
+        git config --global credential.helper "store --file=/root/.git-credentials"; \
         git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"; \
       fi; \
       export CARGO_NET_GIT_FETCH_WITH_CLI=true; \
