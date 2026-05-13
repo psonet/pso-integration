@@ -113,20 +113,24 @@ jobs:
             esac
           done
 
-          # Authenticate git-over-HTTPS with an explicit
-          # `Authorization: Bearer <TOKEN>` header — same scheme the
-          # GitHub REST API uses, and the only form that works
-          # uniformly for fine-grained PATs. URL-embedded credentials
-          # (`https://<TOKEN>@github.com/`) are interpreted as HTTP
-          # Basic-Auth and fine-grained PATs reject that path even
-          # though the underlying token is valid. This is how
-          # `actions/checkout` itself authenticates.
-          git config --global http.https://github.com/.extraheader "AUTHORIZATION: bearer ${TOKEN}"
-          # SSH-form deps in the Cargo.toml need to be coerced to
-          # HTTPS so the extraheader rule kicks in.
+          # Title-case `Authorization: Bearer` per RFC 6750 — some
+          # HTTP libs along the path are case-strict.
+          git config --global http.https://github.com/.extraheader "Authorization: Bearer ${TOKEN}"
+          # SSH-form deps in the Cargo.toml get rewritten to HTTPS
+          # so the extraheader rule covers them.
           git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-          echo "Git config (token-bearing keys redacted):"
-          git config --global --list | sed -E 's|(AUTHORIZATION: bearer ).+$|\1***|'
+          echo "Git config:"
+          git config --global --list | sed -E 's|(Authorization: Bearer ).+$|\1***|'
+
+          # Verbose probe: print what git actually sends + receives
+          # so we can see if the Bearer header is on the wire.
+          echo "--- GIT_CURL_VERBOSE probe ---"
+          GIT_CURL_VERBOSE=1 git ls-remote https://github.com/psonet/pso-protocol.git HEAD 2>&1 \
+            | sed -E 's|(Authorization: Bearer ).+$|\1***|; s|(authorization: bearer ).+$|\1***|' \
+            | grep -iE "^(\* |> |< |fatal|remote)" \
+            | head -40 \
+            || true
+          echo "--- /probe ---"
 
           # Per-repo reachability probe. Failures here mean the PAT
           # doesn't have `Contents: Read` on the named repo OR the
@@ -214,20 +218,24 @@ jobs:
             esac
           done
 
-          # Authenticate git-over-HTTPS with an explicit
-          # `Authorization: Bearer <TOKEN>` header — same scheme the
-          # GitHub REST API uses, and the only form that works
-          # uniformly for fine-grained PATs. URL-embedded credentials
-          # (`https://<TOKEN>@github.com/`) are interpreted as HTTP
-          # Basic-Auth and fine-grained PATs reject that path even
-          # though the underlying token is valid. This is how
-          # `actions/checkout` itself authenticates.
-          git config --global http.https://github.com/.extraheader "AUTHORIZATION: bearer ${TOKEN}"
-          # SSH-form deps in the Cargo.toml need to be coerced to
-          # HTTPS so the extraheader rule kicks in.
+          # Title-case `Authorization: Bearer` per RFC 6750 — some
+          # HTTP libs along the path are case-strict.
+          git config --global http.https://github.com/.extraheader "Authorization: Bearer ${TOKEN}"
+          # SSH-form deps in the Cargo.toml get rewritten to HTTPS
+          # so the extraheader rule covers them.
           git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-          echo "Git config (token-bearing keys redacted):"
-          git config --global --list | sed -E 's|(AUTHORIZATION: bearer ).+$|\1***|'
+          echo "Git config:"
+          git config --global --list | sed -E 's|(Authorization: Bearer ).+$|\1***|'
+
+          # Verbose probe: print what git actually sends + receives
+          # so we can see if the Bearer header is on the wire.
+          echo "--- GIT_CURL_VERBOSE probe ---"
+          GIT_CURL_VERBOSE=1 git ls-remote https://github.com/psonet/pso-protocol.git HEAD 2>&1 \
+            | sed -E 's|(Authorization: Bearer ).+$|\1***|; s|(authorization: bearer ).+$|\1***|' \
+            | grep -iE "^(\* |> |< |fatal|remote)" \
+            | head -40 \
+            || true
+          echo "--- /probe ---"
 
           # Per-repo reachability probe. Failures here mean the PAT
           # doesn't have `Contents: Read` on the named repo OR the
