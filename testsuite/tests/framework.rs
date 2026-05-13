@@ -116,3 +116,50 @@ fn cli_parse_hex32_round_trip() {
     assert!(parse_hex32("0x1234").is_err());
     assert!(parse_hex32("not-hex").is_err());
 }
+
+/// JUnit emitter renders a pass + a fail case in the canonical
+/// Surefire shape `dorny/test-reporter` consumes:
+///
+///   <testsuites name="pso-e2e" tests="N" failures="M" time="T">
+///     <testsuite ...>
+///       <testcase name="..." time="..."/>
+///       <testcase ...><failure message="..." type="...">...</failure></testcase>
+///     </testsuite>
+///   </testsuites>
+///
+/// The failure message attribute must carry only the first line of the
+/// report; the body holds the full eyre-rendered chain. XML entities in
+/// either side are escaped.
+#[test]
+fn report_junit_shape_pass_and_fail() {
+    use pso_e2e_testsuite::scenario::{Outcome, Report, ScenarioResult};
+
+    let mut report = Report::new();
+    report.push(ScenarioResult {
+        id: "S001",
+        description: "happy flow",
+        duration_ms: 1234,
+        outcome: Outcome::Pass,
+    });
+    report.push(ScenarioResult {
+        id: "S002",
+        description: "<edge> & \"weird\" chars",
+        duration_ms: 5,
+        outcome: Outcome::Fail(eyre::eyre!("first line of error\nsecond line")),
+    });
+
+    let xml = report.to_junit_xml();
+    // Header.
+    assert!(xml.starts_with("<?xml version=\"1.0\""));
+    assert!(xml.contains("tests=\"2\""));
+    assert!(xml.contains("failures=\"1\""));
+
+    // Pass row — self-closing testcase, no <failure> nested.
+    assert!(xml.contains("name=\"S001 - happy flow\""));
+    assert!(xml.contains("time=\"1.234\""));
+
+    // Fail row — failure message holds first line only.
+    assert!(xml.contains("name=\"S002 - &lt;edge&gt; &amp; &quot;weird&quot; chars\""));
+    assert!(xml.contains("message=\"first line of error\""));
+    assert!(xml.contains("first line of error\nsecond line"));
+}

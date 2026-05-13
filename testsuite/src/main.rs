@@ -89,6 +89,9 @@ async fn run(cli: Cli) -> eyre::Result<usize> {
     if let Some(path) = &cli.json_output {
         report.write_json(path)?;
     }
+    if let Some(path) = &cli.junit_output {
+        report.write_junit(path)?;
+    }
 
     // Flush the bridge so its tracing line ("loop exiting") drains
     // before we exit — keeps `-vv` logs tidy.

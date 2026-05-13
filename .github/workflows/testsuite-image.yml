@@ -1,0 +1,111 @@
+# Build and publish the `pso-e2e` test-suite container to GitHub
+# Container Registry. The image is what pso-chain CI consumes to run
+# the scenario suite against its freshly-spun-up devnet — see
+# `testsuite/README.md` and pso-chain's `.github/workflows/e2e.yml`.
+#
+# Triggers:
+# - `push` to `main`  -> publish as `:main` and `:sha-<short>`
+# - `release` (published) -> publish as `:<tag>` AND `:latest`
+# - manual `workflow_dispatch` -> publish as `:<short-sha>`
+#
+# Auth: the workflow uses the auto-provisioned `GITHUB_TOKEN` with
+# `packages: write`. No long-lived PAT.
+name: testsuite-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'testsuite/**'
+      - 'crates/**'
+      - 'domain/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/testsuite-image.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Cancel obsolete builds on rapid pushes — the registry only cares
+# about the latest tip of `main`.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  # Lowercased owner/repo — GHCR demands lowercase. The repo name
+  # ("pso-integration") is the canonical e2e suite home; the image
+  # name ("pso-e2e") matches the binary the Dockerfile ships.
+  IMAGE_NAME: ${{ github.repository_owner }}/pso-e2e
+
+jobs:
+  build-and-push:
+    name: build & push pso-e2e
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # required to push to ghcr.io
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # buildx enables BuildKit features (cache mounts in the
+      # Dockerfile, multi-platform, etc.). The testsuite Dockerfile
+      # already declares `# syntax=docker/dockerfile:1.7` so this
+      # just turns the engine on.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Resolve tags + labels from the trigger. The action handles:
+      #  - main pushes        -> :main + :sha-<short>
+      #  - release            -> :<semver> + :latest
+      #  - workflow_dispatch  -> :sha-<short>
+      - name: Resolve tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+
+      # The Dockerfile copies the entire workspace, so the build
+      # context has to be the repo root (not `testsuite/`).
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: testsuite/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=pso-e2e
+          cache-to: type=gha,mode=max,scope=pso-e2e
+
+      - name: Image summary
+        run: |
+          {
+            echo "### Published image"
+            echo ""
+            echo "**Tags:**"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo ""
+            echo "Run locally:"
+            echo '```'
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

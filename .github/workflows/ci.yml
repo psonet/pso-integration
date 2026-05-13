@@ -1,0 +1,85 @@
+# Pull-request guard for pso-integration.
+#
+# Three independent jobs:
+#   - `fmt`     — rustfmt clean
+#   - `check`   — cargo check across the workspace (no test gates)
+#   - `unit`    — cargo test, network-free unit tests only
+#
+# The full live-chain scenario run (`testsuite/src/scenarios/*`) is
+# *not* exercised here because the test environment needs a running
+# pso-chain devnet container — that drives pso-chain's own CI (see
+# `pso-chain/.github/workflows/ci.yml::e2e`).
+#
+# Publishing the suite as a Docker image is a separate workflow:
+# `.github/workflows/testsuite-image.yml`. It only runs on
+# `push: main`, `release`, and `workflow_dispatch`.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Treat warnings as errors so a clippy / cargo regression surfaces
+  # at PR time, not at release-build time.
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          rustup show
+          rustup component add rustfmt
+      - run: cargo fmt --all -- --check
+
+  check:
+    name: cargo check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # libstdc++ + cmake + clang are the C++ side of the noir_rs
+      # fork the workspace patches. Without them the build fails at
+      # the barretenberg-rs FFI link step.
+      - name: Install C++ toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang libstdc++-12-dev pkg-config libssl-dev
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo check --workspace --tests
+        run: cargo check --workspace --tests
+
+  unit:
+    name: cargo test (network-free)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install C++ toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang libstdc++-12-dev pkg-config libssl-dev
+
+      - uses: Swatinem/rust-cache@v2
+
+      # `cargo test --lib --tests` excludes integration tests that
+      # need a live PSO L2 node. The testsuite's own integration
+      # tests under `testsuite/tests/framework.rs` are network-free
+      # by construction (envelope encoding, errors decoder, data
+      # shape) so they participate here.
+      - name: cargo test (workspace, --lib + tests/)
+        run: cargo test --workspace --lib --tests

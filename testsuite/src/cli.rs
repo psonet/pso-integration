@@ -88,6 +88,12 @@ pub struct Cli {
     #[arg(long)]
     pub json_output: Option<PathBuf>,
 
+    /// Additionally write the report as a JUnit XML file. Consumed by
+    /// `dorny/test-reporter` and similar CI dashboards so each
+    /// scenario shows up as its own pass/fail check on the PR.
+    #[arg(long)]
+    pub junit_output: Option<PathBuf>,
+
     /// Verbosity. `-v` info, `-vv` debug, `-vvv` trace.
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub verbose: u8,

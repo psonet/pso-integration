@@ -228,6 +228,95 @@ impl Report {
             .map_err(|e| eyre::eyre!("write {}: {e}", path.display()))?;
         Ok(())
     }
+
+    /// Write the report to a file as a JUnit XML test report.
+    ///
+    /// One `<testsuite>` ("pso-e2e") with one `<testcase>` per
+    /// scenario. The `name` field carries `"{id} - {description}"`
+    /// so per-scenario rows in CI tooling read cleanly. Failed cases
+    /// emit a `<failure message="...">` with the eyre report's
+    /// `Display` rendering as the body text.
+    ///
+    /// Consumed by `dorny/test-reporter` (or any JUnit-aware CI
+    /// dashboard) so each scenario shows up as its own green/red row
+    /// in the GitHub Checks tab. Schema mirrors what Surefire / Jest
+    /// produce; tested against `dorny/test-reporter@v1`.
+    pub fn write_junit(&self, path: &Path) -> eyre::Result<()> {
+        let xml = self.to_junit_xml();
+        std::fs::write(path, xml)
+            .map_err(|e| eyre::eyre!("write {}: {e}", path.display()))?;
+        Ok(())
+    }
+
+    /// Render the report as a JUnit XML string. Kept separate from
+    /// `write_junit` so the unit tests can assert against it without
+    /// a temp-file dance.
+    pub fn to_junit_xml(&self) -> String {
+        let total = self.results.len();
+        let failures = self.failed();
+        // Seconds with millisecond precision — Surefire convention.
+        let total_seconds = self.total_duration().as_secs_f64();
+
+        let mut out = String::new();
+        out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        out.push_str(&format!(
+            "<testsuites name=\"pso-e2e\" tests=\"{total}\" failures=\"{failures}\" time=\"{total_seconds:.3}\">\n"
+        ));
+        out.push_str(&format!(
+            "  <testsuite name=\"pso-e2e\" tests=\"{total}\" failures=\"{failures}\" errors=\"0\" skipped=\"0\" time=\"{total_seconds:.3}\">\n"
+        ));
+        for r in &self.results {
+            let case_seconds = (r.duration_ms as f64) / 1000.0;
+            let case_name = format!("{} - {}", r.id, r.description);
+            match &r.outcome {
+                Outcome::Pass => {
+                    out.push_str(&format!(
+                        "    <testcase classname=\"pso-e2e\" name=\"{}\" time=\"{:.3}\"/>\n",
+                        xml_escape(&case_name),
+                        case_seconds,
+                    ));
+                }
+                Outcome::Fail(err) => {
+                    let body = format!("{err}");
+                    out.push_str(&format!(
+                        "    <testcase classname=\"pso-e2e\" name=\"{}\" time=\"{:.3}\">\n",
+                        xml_escape(&case_name),
+                        case_seconds,
+                    ));
+                    // The `message` attribute carries a one-line
+                    // summary (CI dashboards show it inline);
+                    // the element body carries the full rendering.
+                    let summary = body.lines().next().unwrap_or("scenario failed");
+                    out.push_str(&format!(
+                        "      <failure message=\"{}\" type=\"AssertionError\">{}</failure>\n",
+                        xml_escape(summary),
+                        xml_escape(&body),
+                    ));
+                    out.push_str("    </testcase>\n");
+                }
+            }
+        }
+        out.push_str("  </testsuite>\n");
+        out.push_str("</testsuites>\n");
+        out
+    }
+}
+
+/// Minimal XML escaper. Only the five entities XML 1.0 requires —
+/// JUnit consumers are forgiving about anything else.
+fn xml_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 impl Default for Report {
