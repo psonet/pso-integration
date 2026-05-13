@@ -75,14 +75,43 @@ jobs:
             echo "::error::PSONET_REPO_TOKEN secret is not set; private git deps will 404"
             exit 1
           fi
-          # Token-shape probe. Safe to log: prefix only, last 4 chars
-          # masked. GitHub PAT prefixes:
-          #   - `github_pat_` : fine-grained PAT (preferred)
+          # Token-shape probe. Safe to log: prefix only.
+          #   - `github_pat_` : fine-grained PAT
           #   - `ghp_`        : classic PAT
           #   - `ghs_`        : GitHub App installation token
           # Anything else => the secret was pasted wrong.
           prefix=$(printf '%s' "$TOKEN" | cut -c1-12)
           echo "PSONET_REPO_TOKEN prefix: ${prefix}…  (length ${#TOKEN})"
+
+          # GitHub API probe — distinguishes 401 (invalid token) /
+          # 403 (token valid but lacks scope) / 404 (token valid but
+          # the issuing account can't see the repo). Stronger signal
+          # than `git ls-remote`'s monolithic "Repository not found."
+          echo "Token identity (api.github.com/user):"
+          curl -sS -o /tmp/who.json -w "  http=%{http_code}\n" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/user
+          jq -r '"  login=\(.login)  type=\(.type // "?")"' < /tmp/who.json 2>/dev/null || cat /tmp/who.json
+
+          echo "Per-repo API probe:"
+          for repo in psonet/pso-protocol psonet/pso-zk-circuits psonet/noir_rs; do
+            code=$(curl -sS -o /tmp/r.json -w '%{http_code}' \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $TOKEN" \
+              "https://api.github.com/repos/${repo}")
+            case "$code" in
+              200) name=$(jq -r '.full_name' /tmp/r.json)
+                   visibility=$(jq -r '.visibility' /tmp/r.json)
+                   echo "  $repo — 200 OK ($name, $visibility)" ;;
+              401) echo "  $repo — 401 UNAUTHORIZED (token invalid/revoked)" ;;
+              403) reason=$(jq -r '.message' /tmp/r.json 2>/dev/null)
+                   echo "  $repo — 403 FORBIDDEN ($reason)" ;;
+              404) echo "  $repo — 404 NOT FOUND (token issuer can't see this repo, or PAT scope excludes it)" ;;
+              *)   echo "  $repo — http=$code"
+                   cat /tmp/r.json ;;
+            esac
+          done
 
           # `--add` so both rewrites coexist; without it the second
           # call overwrites the first and SSH-form deps still 404.
@@ -139,14 +168,43 @@ jobs:
             echo "::error::PSONET_REPO_TOKEN secret is not set; private git deps will 404"
             exit 1
           fi
-          # Token-shape probe. Safe to log: prefix only, last 4 chars
-          # masked. GitHub PAT prefixes:
-          #   - `github_pat_` : fine-grained PAT (preferred)
+          # Token-shape probe. Safe to log: prefix only.
+          #   - `github_pat_` : fine-grained PAT
           #   - `ghp_`        : classic PAT
           #   - `ghs_`        : GitHub App installation token
           # Anything else => the secret was pasted wrong.
           prefix=$(printf '%s' "$TOKEN" | cut -c1-12)
           echo "PSONET_REPO_TOKEN prefix: ${prefix}…  (length ${#TOKEN})"
+
+          # GitHub API probe — distinguishes 401 (invalid token) /
+          # 403 (token valid but lacks scope) / 404 (token valid but
+          # the issuing account can't see the repo). Stronger signal
+          # than `git ls-remote`'s monolithic "Repository not found."
+          echo "Token identity (api.github.com/user):"
+          curl -sS -o /tmp/who.json -w "  http=%{http_code}\n" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/user
+          jq -r '"  login=\(.login)  type=\(.type // "?")"' < /tmp/who.json 2>/dev/null || cat /tmp/who.json
+
+          echo "Per-repo API probe:"
+          for repo in psonet/pso-protocol psonet/pso-zk-circuits psonet/noir_rs; do
+            code=$(curl -sS -o /tmp/r.json -w '%{http_code}' \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $TOKEN" \
+              "https://api.github.com/repos/${repo}")
+            case "$code" in
+              200) name=$(jq -r '.full_name' /tmp/r.json)
+                   visibility=$(jq -r '.visibility' /tmp/r.json)
+                   echo "  $repo — 200 OK ($name, $visibility)" ;;
+              401) echo "  $repo — 401 UNAUTHORIZED (token invalid/revoked)" ;;
+              403) reason=$(jq -r '.message' /tmp/r.json 2>/dev/null)
+                   echo "  $repo — 403 FORBIDDEN ($reason)" ;;
+              404) echo "  $repo — 404 NOT FOUND (token issuer can't see this repo, or PAT scope excludes it)" ;;
+              *)   echo "  $repo — http=$code"
+                   cat /tmp/r.json ;;
+            esac
+          done
 
           # `--add` so both rewrites coexist; without it the second
           # call overwrites the first and SSH-form deps still 404.
