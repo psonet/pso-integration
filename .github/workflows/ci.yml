@@ -64,11 +64,18 @@ jobs:
       # libstdc++ + cmake + clang are the C++ side of the noir_rs
       # fork the workspace patches. Without them the build fails at
       # the barretenberg-rs FFI link step.
+      # barretenberg-rs links against LLVM's libc++ (the `-lc++`
+      # flag), not GCC's libstdc++. Both need their `-dev` packages
+      # for headers + shared-object resolution. Without `libc++-dev`
+      # rust-lld fails: "unable to find library -lc++".
       - name: Install C++ toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake clang libstdc++-12-dev pkg-config libssl-dev
+            cmake clang \
+            libstdc++-12-dev \
+            libc++-dev libc++abi-dev \
+            pkg-config libssl-dev
 
       # Map the SSH-form `ssh://git@github.com/` deps the workspace
       # pins onto HTTPS-with-token so cargo can resolve them from
@@ -198,11 +205,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # barretenberg-rs links against LLVM's libc++ (the `-lc++`
+      # flag), not GCC's libstdc++. Both need their `-dev` packages
+      # for headers + shared-object resolution. Without `libc++-dev`
+      # rust-lld fails: "unable to find library -lc++".
       - name: Install C++ toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake clang libstdc++-12-dev pkg-config libssl-dev
+            cmake clang \
+            libstdc++-12-dev \
+            libc++-dev libc++abi-dev \
+            pkg-config libssl-dev
 
       - name: Configure git auth for private psonet/* repos
         env:

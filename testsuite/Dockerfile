@@ -11,11 +11,17 @@
 FROM rust:1.94-bookworm AS builder
 
 # C++ toolchain + git for the noir_rs fork the workspace patches in.
+# barretenberg-rs links against LLVM's libc++ (not GCC's libstdc++);
+# both -dev packages are required so headers + shared objects
+# resolve. Missing libc++-dev surfaces as "rust-lld: unable to find
+# library -lc++" at the link step.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         cmake \
         clang \
         libstdc++-12-dev \
+        libc++-dev \
+        libc++abi-dev \
         pkg-config \
         git \
         libssl-dev \
