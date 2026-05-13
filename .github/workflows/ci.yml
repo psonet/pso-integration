@@ -75,20 +75,44 @@ jobs:
             echo "::error::PSONET_REPO_TOKEN secret is not set; private git deps will 404"
             exit 1
           fi
-          # `--add` (not the default replace-mode) is mandatory: two
-          # rewrites under the same `url.X.insteadOf` key need two
-          # entries. The default mode of `git config X Y` overwrites
-          # the previous value, which would leave only the second
-          # rule in effect and SSH-form deps would 404.
+          # Token-shape probe. Safe to log: prefix only, last 4 chars
+          # masked. GitHub PAT prefixes:
+          #   - `github_pat_` : fine-grained PAT (preferred)
+          #   - `ghp_`        : classic PAT
+          #   - `ghs_`        : GitHub App installation token
+          # Anything else => the secret was pasted wrong.
+          prefix=$(printf '%s' "$TOKEN" | cut -c1-12)
+          echo "PSONET_REPO_TOKEN prefix: ${prefix}…  (length ${#TOKEN})"
+
+          # `--add` so both rewrites coexist; without it the second
+          # call overwrites the first and SSH-form deps still 404.
           git config --global --add url."https://x-access-token:${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
           git config --global --add url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-          # Sanity-print so a future failure mode is one log line
-          # away from the root cause.
-          echo "Git insteadOf rules:"
-          git config --global --get-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf | sed 's|x-access-token:[^@]*@|x-access-token:***@|'
-          # Smoke: prove we can reach a private dep before cargo does.
-          git ls-remote https://github.com/psonet/pso-protocol.git HEAD >/dev/null
-          echo "psonet/pso-protocol is reachable"
+          echo "Git insteadOf rules (token redacted):"
+          git config --global --get-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf
+
+          # Per-repo reachability probe. Failures here mean the PAT
+          # doesn't have `Contents: Read` on the named repo OR the
+          # PAT's resource owner isn't `psonet`. Run each separately
+          # so the failing one is obvious.
+          fail=0
+          for repo in psonet/pso-protocol psonet/pso-zk-circuits psonet/noir_rs; do
+            printf "  %s — " "$repo"
+            if git ls-remote "https://github.com/${repo}.git" HEAD >/dev/null 2>&1; then
+              echo "ok"
+            else
+              echo "FAIL (404 / token has no access)"
+              fail=1
+            fi
+          done
+          if [ "$fail" = "1" ]; then
+            echo "::error::PSONET_REPO_TOKEN is reachable but lacks access to one or more psonet/* repos."
+            echo "  Verify at https://github.com/settings/personal-access-tokens that the PAT:"
+            echo "    1) has Resource owner == 'psonet' (NOT your personal account)"
+            echo "    2) lists all three repos under 'Repository access'"
+            echo "    3) has Permissions -> Repository -> Contents = Read-only"
+            exit 1
+          fi
 
       - uses: Swatinem/rust-cache@v2
 
@@ -115,20 +139,44 @@ jobs:
             echo "::error::PSONET_REPO_TOKEN secret is not set; private git deps will 404"
             exit 1
           fi
-          # `--add` (not the default replace-mode) is mandatory: two
-          # rewrites under the same `url.X.insteadOf` key need two
-          # entries. The default mode of `git config X Y` overwrites
-          # the previous value, which would leave only the second
-          # rule in effect and SSH-form deps would 404.
+          # Token-shape probe. Safe to log: prefix only, last 4 chars
+          # masked. GitHub PAT prefixes:
+          #   - `github_pat_` : fine-grained PAT (preferred)
+          #   - `ghp_`        : classic PAT
+          #   - `ghs_`        : GitHub App installation token
+          # Anything else => the secret was pasted wrong.
+          prefix=$(printf '%s' "$TOKEN" | cut -c1-12)
+          echo "PSONET_REPO_TOKEN prefix: ${prefix}…  (length ${#TOKEN})"
+
+          # `--add` so both rewrites coexist; without it the second
+          # call overwrites the first and SSH-form deps still 404.
           git config --global --add url."https://x-access-token:${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
           git config --global --add url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-          # Sanity-print so a future failure mode is one log line
-          # away from the root cause.
-          echo "Git insteadOf rules:"
-          git config --global --get-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf | sed 's|x-access-token:[^@]*@|x-access-token:***@|'
-          # Smoke: prove we can reach a private dep before cargo does.
-          git ls-remote https://github.com/psonet/pso-protocol.git HEAD >/dev/null
-          echo "psonet/pso-protocol is reachable"
+          echo "Git insteadOf rules (token redacted):"
+          git config --global --get-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf
+
+          # Per-repo reachability probe. Failures here mean the PAT
+          # doesn't have `Contents: Read` on the named repo OR the
+          # PAT's resource owner isn't `psonet`. Run each separately
+          # so the failing one is obvious.
+          fail=0
+          for repo in psonet/pso-protocol psonet/pso-zk-circuits psonet/noir_rs; do
+            printf "  %s — " "$repo"
+            if git ls-remote "https://github.com/${repo}.git" HEAD >/dev/null 2>&1; then
+              echo "ok"
+            else
+              echo "FAIL (404 / token has no access)"
+              fail=1
+            fi
+          done
+          if [ "$fail" = "1" ]; then
+            echo "::error::PSONET_REPO_TOKEN is reachable but lacks access to one or more psonet/* repos."
+            echo "  Verify at https://github.com/settings/personal-access-tokens that the PAT:"
+            echo "    1) has Resource owner == 'psonet' (NOT your personal account)"
+            echo "    2) lists all three repos under 'Repository access'"
+            echo "    3) has Permissions -> Repository -> Contents = Read-only"
+            exit 1
+          fi
 
       - uses: Swatinem/rust-cache@v2
 
