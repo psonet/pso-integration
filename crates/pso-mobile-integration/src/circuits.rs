@@ -7,18 +7,19 @@ use once_cell::sync::OnceCell;
 
 use pso_zk_circuit_noir::{
     circuit_loader, CircuitBytecode, NoirCircuitConfig, NoirFullProofCircuit, NoirOwnershipCircuit,
-    ZKCircuit, ZKMode,
+    ZKCircuit, ZKMode, FULL_PROOF_JSON, OWNERSHIP_PROOF_JSON,
 };
 
 use crate::types::MobileError;
 
 // -- Standalone circuits -------------------------------------------------- //
-
-const FULL_PROOF_JSON: &str =
-    include_str!("../../../../pso-zk-circuits/crates/pso-zk-circuit-noir/data/full_proof.json");
-const OWNERSHIP_PROOF_JSON: &str = include_str!(
-    "../../../../pso-zk-circuits/crates/pso-zk-circuit-noir/data/ownership_proof.json"
-);
+//
+// Bytecodes ride along with the cargo-fetched
+// `pso-zk-circuit-noir` source via `pub const ..._JSON: &str`
+// constants. We previously `include_str!`d a sibling-checkout
+// relative path (`../../../../pso-zk-circuits/...`); that only
+// resolves in the local multi-repo layout and breaks every single
+// CI that clones one repo at a time.
 
 static FULL_PROOF_CIRCUIT: OnceCell<NoirFullProofCircuit> = OnceCell::new();
 static OWNERSHIP_CIRCUIT: OnceCell<NoirOwnershipCircuit> = OnceCell::new();
@@ -74,44 +75,18 @@ pub fn ownership_circuit() -> Result<&'static NoirOwnershipCircuit, MobileError>
 // and calls `noir_rs::prove_ultra_honk_keccak` directly with the
 // canonical VK bytes from `pso_zk_canonical::FLAT_AGGREGATION_N{N}`.
 
-const FLAT_AGG_N1_JSON: &str = include_str!(
-    "../../../../pso-zk-circuits/crates/pso-zk-circuit-noir/data/flat_aggregation_n1.json"
-);
-const FLAT_AGG_N2_JSON: &str = include_str!(
-    "../../../../pso-zk-circuits/crates/pso-zk-circuit-noir/data/flat_aggregation_n2.json"
-);
-const FLAT_AGG_N4_JSON: &str = include_str!(
-    "../../../../pso-zk-circuits/crates/pso-zk-circuit-noir/data/flat_aggregation_n4.json"
-);
-const FLAT_AGG_N8_JSON: &str = include_str!(
-    "../../../../pso-zk-circuits/crates/pso-zk-circuit-noir/data/flat_aggregation_n8.json"
-);
-const FLAT_AGG_N16_JSON: &str = include_str!(
-    "../../../../pso-zk-circuits/crates/pso-zk-circuit-noir/data/flat_aggregation_n16.json"
-);
-const FLAT_AGG_N32_JSON: &str = include_str!(
-    "../../../../pso-zk-circuits/crates/pso-zk-circuit-noir/data/flat_aggregation_n32.json"
-);
-const FLAT_AGG_N64_JSON: &str = include_str!(
-    "../../../../pso-zk-circuits/crates/pso-zk-circuit-noir/data/flat_aggregation_n64.json"
-);
-
 /// Load the bytecode for the chosen flat-aggregation tier.
+///
+/// JSON documents are sourced from `pso_zk_circuit_noir::
+/// flat_aggregation_json(tier_n)` — the API mirrors
+/// `SU_AGGREGATION_TIERS` and returns `None` for any tier outside
+/// `{1, 2, 4, 8, 16, 32, 64}`.
 pub fn flat_aggregation_bytecode(tier_n: u32) -> Result<CircuitBytecode, MobileError> {
-    let json = match tier_n {
-        1 => FLAT_AGG_N1_JSON,
-        2 => FLAT_AGG_N2_JSON,
-        4 => FLAT_AGG_N4_JSON,
-        8 => FLAT_AGG_N8_JSON,
-        16 => FLAT_AGG_N16_JSON,
-        32 => FLAT_AGG_N32_JSON,
-        64 => FLAT_AGG_N64_JSON,
-        other => {
-            return Err(MobileError::AggregationTierUnavailable {
-                detail: format!("no flat-aggregation circuit for tier_n={other}"),
-            })
+    let json = pso_zk_circuit_noir::flat_aggregation_json(tier_n).ok_or_else(|| {
+        MobileError::AggregationTierUnavailable {
+            detail: format!("no flat-aggregation circuit for tier_n={tier_n}"),
         }
-    };
+    })?;
     circuit_loader::load_circuit_from_str(json).map_err(|e| MobileError::CircuitInitFailed {
         detail: e.to_string(),
     })
