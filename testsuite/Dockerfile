@@ -60,25 +60,27 @@ COPY . .
 # `cargo` is told to use the system `git` binary
 # (`CARGO_NET_GIT_FETCH_WITH_CLI=true`) so git's `url.insteadOf`
 # rewrite is honoured.
+# PAT issuer's GitHub login. Non-sensitive (just a username), but
+# required: fine-grained PATs authenticate to git HTTP Basic Auth
+# with the issuer's real login as the username. The caller workflow
+# resolves this via api.github.com/user once and passes it in here
+# so the build doesn't have to call the API itself.
+ARG GH_LOGIN=""
+
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
     --mount=type=secret,id=gh_token,target=/run/secrets/gh_token,required=false \
     bash -euo pipefail -c '\
-      if [ -s /run/secrets/gh_token ]; then \
+      if [ -s /run/secrets/gh_token ] && [ -n "$GH_LOGIN" ]; then \
         token=$(cat /run/secrets/gh_token); \
-        # Discover the token's GitHub login — fine-grained PATs
-        # authenticate as the issuing user and the git HTTP path
-        # demands that real login in the Basic-Auth username.
-        login=$(curl -fsSL \
-                  -H "Accept: application/vnd.github+json" \
-                  -H "Authorization: Bearer $${token}" \
-                  https://api.github.com/user \
-                | python3 -c "import sys,json;print(json.load(sys.stdin)[\"login\"])"); \
         umask 077; \
-        printf "https://%s:%s@github.com\n" "$${login}" "$${token}" > /root/.git-credentials; \
+        printf "https://%s:%s@github.com\n" "$GH_LOGIN" "$$token" > /root/.git-credentials; \
         git config --global credential.helper "store --file=/root/.git-credentials"; \
         git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"; \
+        echo "git auth configured for $GH_LOGIN"; \
+      else \
+        echo "no PAT mounted; private psonet/* deps will fail to resolve"; \
       fi; \
       export CARGO_NET_GIT_FETCH_WITH_CLI=true; \
       cargo build --release -p pso-e2e-testsuite --bin pso-e2e; \

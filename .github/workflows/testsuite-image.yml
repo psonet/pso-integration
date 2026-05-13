@@ -72,10 +72,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Fail loudly if the private-repo PAT isn't configured. The
-      # Dockerfile would otherwise hit "Repository not found" on
-      # `pso-protocol` halfway through the (slow) build.
-      - name: Check PSONET_REPO_TOKEN
+      # Fail loudly if the private-repo PAT isn't configured. Also
+      # resolve the token's GitHub login here on the runner (which we
+      # know can reach api.github.com — the `ci.yml::check` job does
+      # the same probe) so the Dockerfile doesn't have to do an
+      # in-container curl. Past attempts at the in-container probe
+      # got an empty response that python's json.load chokes on
+      # (some combination of Docker/buildx network, cert chain, or
+      # rate-limit asymmetry that we couldn't pin down quickly).
+      - name: Resolve PAT identity + login
+        id: pat
         env:
           TOKEN: ${{ secrets.PSONET_REPO_TOKEN }}
         run: |
@@ -86,6 +92,17 @@ jobs:
             echo "  and add it as 'PSONET_REPO_TOKEN' under repo Settings -> Secrets."
             exit 1
           fi
+          login=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/user \
+            | jq -r .login)
+          if [ -z "$login" ] || [ "$login" = "null" ]; then
+            echo "::error::Could not resolve token owner from api.github.com/user"
+            exit 1
+          fi
+          echo "Token issuer: $login"
+          echo "login=$login" >> "$GITHUB_OUTPUT"
 
       # Resolve tags + labels from the trigger. The action handles:
       #  - main pushes        -> :main + :sha-<short>
@@ -125,6 +142,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=pso-e2e
           cache-to: type=gha,mode=max,scope=pso-e2e
+          # GH_LOGIN is a non-sensitive build-arg (the issuer's
+          # GitHub username, e.g. "tonyvelichko"). The token rides as
+          # a buildkit secret so it never lands in an image layer.
+          build-args: |
+            GH_LOGIN=${{ steps.pat.outputs.login }}
           secrets: |
             gh_token=${{ secrets.PSONET_REPO_TOKEN }}
 
