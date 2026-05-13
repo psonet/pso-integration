@@ -1,113 +1,49 @@
 # syntax=docker/dockerfile:1.7
 
-# -----------------------------------------------------------------
-# Builder stage
-# -----------------------------------------------------------------
-# Pinned to the same Rust toolchain the workspace develops against
-# (1.94 — see `rustc --version` in pso-integration/README.md).
-# bookworm base because the barretenberg-rs FFI (pulled in via
-# `pso-l2-client`'s prover stack) requires a recent libstdc++ + cmake +
-# clang. Anything older mis-links the bb 5.x C++ symbol set.
-FROM rust:1.94-bookworm AS builder
-
-# C++ toolchain + git for the noir_rs fork the workspace patches in.
-# barretenberg-rs links against LLVM's libc++ (not GCC's libstdc++);
-# both -dev packages are required so headers + shared objects
-# resolve. Missing libc++-dev surfaces as "rust-lld: unable to find
-# library -lc++" at the link step.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-        cmake \
-        clang \
-        libstdc++-12-dev \
-        libc++-dev \
-        libc++abi-dev \
-        pkg-config \
-        git \
-        libssl-dev \
-        ca-certificates \
- && rm -rf /var/lib/apt/lists/*
-
-# Reproducible builds — strip debug info from the release binary in the
-# runtime stage. We keep `debug = false` (workspace `[profile.release]`
-# already pins this) plus an explicit `strip` after build below.
-ENV CARGO_TERM_COLOR=always
-ENV CARGO_INCREMENTAL=0
-
-WORKDIR /build
-
-# Copy the entire workspace. The Dockerfile lives at `testsuite/` but
-# the build context is the workspace root (see the build instruction
-# in the README: `docker build -f testsuite/Dockerfile .`). Copying
-# the whole tree is the simplest path that handles all path
-# dependencies (`pso-mobile-integration`, `pso-nft`, ...).
-COPY . .
-
-# Build the `pso-e2e` binary in release mode. cargo will pull
-# git-tracked workspace dependencies (`pso-protocol`,
-# `pso-zk-circuits`, `psonet/noir_rs`) over the network during this
-# step — the build context does NOT include sibling repos.
+# Runtime-only image for the `pso-e2e` binary.
 #
-# Authentication for private psonet/* repos goes through a BuildKit
-# build-secret named `gh_token` (a fine-grained GitHub PAT with
-# `Contents: Read` on the psonet org). The secret is mounted only for
-# the duration of this RUN — it never lands in any image layer.
+# The release binary is built by `psonet/pso-integration`'s CI
+# (`.github/workflows/testsuite-image.yml`) on the runner — where
+# git auth, the C++ toolchain, and the long noir/bb compile already
+# work — and then COPYed into this image at build time. Doing the
+# cargo work inside docker would require the runner's PAT, a full
+# C++ toolchain, and ~10 minutes of repeated barretenberg-rs compile
+# every time the image needs to be pushed. None of that buys
+# anything when the binary already exists three steps earlier in the
+# same workflow.
 #
-#   docker build \
-#     --secret id=gh_token,env=GH_TOKEN \
-#     -f testsuite/Dockerfile .
+# The build context must contain a `pso-e2e` binary at the root
+# (the workflow drops it there before invoking docker build).
 #
-# `cargo` is told to use the system `git` binary
-# (`CARGO_NET_GIT_FETCH_WITH_CLI=true`) so git's `url.insteadOf`
-# rewrite is honoured.
-# PAT issuer's GitHub login. Non-sensitive (just a username), but
-# required: fine-grained PATs authenticate to git HTTP Basic Auth
-# with the issuer's real login as the username. The caller workflow
-# resolves this via api.github.com/user once and passes it in here
-# so the build doesn't have to call the API itself.
-ARG GH_LOGIN=""
+# Manual / local build:
+#
+#   cargo build --release -p pso-e2e-testsuite --bin pso-e2e
+#   cp target/release/pso-e2e ./pso-e2e
+#   docker build -t pso-e2e:dev -f testsuite/Dockerfile .
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/build/target \
-    --mount=type=secret,id=gh_token,target=/run/secrets/gh_token,required=false \
-    bash -euo pipefail -c '\
-      if [ -s /run/secrets/gh_token ] && [ -n "$GH_LOGIN" ]; then \
-        token=$(cat /run/secrets/gh_token); \
-        umask 077; \
-        printf "https://%s:%s@github.com\n" "$GH_LOGIN" "$$token" > /root/.git-credentials; \
-        git config --global credential.helper "store --file=/root/.git-credentials"; \
-        git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"; \
-        echo "git auth configured for $GH_LOGIN"; \
-      else \
-        echo "no PAT mounted; private psonet/* deps will fail to resolve"; \
-      fi; \
-      export CARGO_NET_GIT_FETCH_WITH_CLI=true; \
-      cargo build --release -p pso-e2e-testsuite --bin pso-e2e; \
-      cp /build/target/release/pso-e2e /usr/local/bin/pso-e2e; \
-      strip /usr/local/bin/pso-e2e'
+FROM debian:bookworm-slim
 
-# -----------------------------------------------------------------
-# Runtime stage
-# -----------------------------------------------------------------
-# Slim debian + just enough shared libs to run the FFI'd prover.
-FROM debian:bookworm-slim AS runtime
-
+# Runtime deps:
+# - `libstdc++6`  -- GCC C++ stdlib used by some glue layers
+# - `libc++1`     -- LLVM C++ stdlib that barretenberg-rs links
+#                    against (`-lc++` at compile time -> .so.1 at run)
+# - `ca-certificates` -- HTTPS to the L2 RPC endpoints
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         libstdc++6 \
+        libc++1 \
         ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/bin/pso-e2e /usr/local/bin/pso-e2e
+# Drop in the prebuilt binary. Workflow places it at the context
+# root; `chmod +x` is belt-and-braces since cargo already sets it.
+COPY pso-e2e /usr/local/bin/pso-e2e
+RUN chmod +x /usr/local/bin/pso-e2e
 
-# Non-root user — the binary doesn't need privileges, only a TCP
-# socket to the devnet RPC.
+# Non-root user — the binary only needs network access.
 RUN useradd -m -u 1001 pso
 USER pso
 WORKDIR /home/pso
 
-# Document the canonical CLI surface. The CLI itself has no env-var
-# fallbacks for endpoints / keys; CI passes everything explicitly.
 ENTRYPOINT ["/usr/local/bin/pso-e2e"]
 CMD ["--help"]

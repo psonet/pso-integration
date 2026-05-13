@@ -1,15 +1,18 @@
 # Build and publish the `pso-e2e` test-suite container to GitHub
 # Container Registry. The image is what pso-chain CI consumes to run
 # the scenario suite against its freshly-spun-up devnet — see
-# `testsuite/README.md` and pso-chain's `.github/workflows/e2e.yml`.
+# `testsuite/README.md` and pso-chain's `.github/workflows/ci.yml::e2e`.
 #
 # Triggers:
 # - `push` to `main`  -> publish as `:main` and `:sha-<short>`
 # - `release` (published) -> publish as `:<tag>` AND `:latest`
-# - manual `workflow_dispatch` -> publish as `:<short-sha>`
+# - manual `workflow_dispatch` -> publish as `:sha-<short>`
 #
-# Auth: the workflow uses the auto-provisioned `GITHUB_TOKEN` with
-# `packages: write`. No long-lived PAT.
+# Build model: the release binary is built on the GitHub runner
+# (where git auth + C++ toolchain already work via `ci.yml`'s
+# proven recipe). Docker just packages the prebuilt binary into a
+# slim runtime image. Avoids a second auth surface, a second
+# C++/noir compile, and a second cache invalidation path.
 name: testsuite-image
 
 on:
@@ -26,17 +29,14 @@ on:
     types: [published]
   workflow_dispatch:
 
-# Cancel obsolete builds on rapid pushes — the registry only cares
-# about the latest tip of `main`.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
   REGISTRY: ghcr.io
-  # Lowercased owner/repo — GHCR demands lowercase. The repo name
-  # ("pso-integration") is the canonical e2e suite home; the image
-  # name ("pso-e2e") matches the binary the Dockerfile ships.
   IMAGE_NAME: ${{ github.repository_owner }}/pso-e2e
 
 jobs:
@@ -47,21 +47,63 @@ jobs:
       contents: read
       packages: write   # required to push to ghcr.io
     steps:
-      # `persist-credentials: false`: the workspace gets COPYed into
-      # the docker builder. If actions/checkout writes its
-      # `http.extraheader` into the workspace's `.git/config`, the
-      # in-container cargo fetch sees both that header AND our
-      # explicit Bearer PAT, and GitHub returns 400 "Duplicate
-      # Authorization header". Keep the workspace's git config clean.
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
+          # See `.github/workflows/ci.yml` for the full rationale —
+          # in short, without this actions/checkout writes its own
+          # Authorization header into .git/config and our PAT path
+          # ends up sending two Authorization headers + a 400.
           persist-credentials: false
 
-      # buildx enables BuildKit features (cache mounts in the
-      # Dockerfile, multi-platform, etc.). The testsuite Dockerfile
-      # already declares `# syntax=docker/dockerfile:1.7` so this
-      # just turns the engine on.
+      # ---- Build the release binary on the runner ----------------
+
+      - name: Install C++ toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang \
+            libstdc++-12-dev \
+            libc++-dev libc++abi-dev \
+            pkg-config libssl-dev
+
+      - name: Configure git auth for private psonet/* repos
+        env:
+          TOKEN: ${{ secrets.PSONET_REPO_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::PSONET_REPO_TOKEN secret is not set"
+            exit 1
+          fi
+          login=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/user | jq -r .login)
+          if [ -z "$login" ] || [ "$login" = "null" ]; then
+            echo "::error::Could not resolve PAT issuer"
+            exit 1
+          fi
+          umask 077
+          printf "https://%s:%s@github.com\n" "$login" "$TOKEN" > "$HOME/.git-credentials"
+          git config --global credential.helper "store --file=$HOME/.git-credentials"
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          echo "git auth configured for $login"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo build --release -p pso-e2e-testsuite
+        run: cargo build --release -p pso-e2e-testsuite --bin pso-e2e
+
+      # Move the binary to the build context root so the Dockerfile
+      # COPY picks it up. Strip the debug info — shaves ~30 MB off
+      # the final image.
+      - name: Stage binary for docker context
+        run: |
+          cp target/release/pso-e2e ./pso-e2e
+          strip ./pso-e2e
+          ls -lh ./pso-e2e
+
+      # ---- Package into the runtime image ------------------------
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -72,42 +114,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Fail loudly if the private-repo PAT isn't configured. Also
-      # resolve the token's GitHub login here on the runner (which we
-      # know can reach api.github.com — the `ci.yml::check` job does
-      # the same probe) so the Dockerfile doesn't have to do an
-      # in-container curl. Past attempts at the in-container probe
-      # got an empty response that python's json.load chokes on
-      # (some combination of Docker/buildx network, cert chain, or
-      # rate-limit asymmetry that we couldn't pin down quickly).
-      - name: Resolve PAT identity + login
-        id: pat
-        env:
-          TOKEN: ${{ secrets.PSONET_REPO_TOKEN }}
-        run: |
-          if [ -z "$TOKEN" ]; then
-            echo "::error::PSONET_REPO_TOKEN secret is not set on this repo."
-            echo "  Create a fine-grained PAT with 'Contents: Read' on"
-            echo "  psonet/pso-protocol, psonet/pso-zk-circuits, psonet/noir_rs"
-            echo "  and add it as 'PSONET_REPO_TOKEN' under repo Settings -> Secrets."
-            exit 1
-          fi
-          login=$(curl -fsSL \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $TOKEN" \
-            https://api.github.com/user \
-            | jq -r .login)
-          if [ -z "$login" ] || [ "$login" = "null" ]; then
-            echo "::error::Could not resolve token owner from api.github.com/user"
-            exit 1
-          fi
-          echo "Token issuer: $login"
-          echo "login=$login" >> "$GITHUB_OUTPUT"
-
-      # Resolve tags + labels from the trigger. The action handles:
-      #  - main pushes        -> :main + :sha-<short>
-      #  - release            -> :<semver> + :latest
-      #  - workflow_dispatch  -> :sha-<short>
       - name: Resolve tags
         id: meta
         uses: docker/metadata-action@v5
@@ -121,17 +127,6 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
-      # The Dockerfile copies the entire workspace, so the build
-      # context has to be the repo root (not `testsuite/`).
-      #
-      # `secrets.PSONET_REPO_TOKEN` is a fine-grained PAT with
-      # `Contents: Read` on the private psonet/* sibling repos that
-      # the workspace depends on (`pso-protocol`, `pso-zk-circuits`,
-      # `noir_rs` fork). The Dockerfile's builder stage mounts it as a
-      # BuildKit secret (`--secret id=gh_token`) and rewrites
-      # `ssh://git@github.com/` -> `https://x-access-token:<TOKEN>@`
-      # via `git config insteadOf`. The token never lands in an image
-      # layer.
       - name: Build & push
         uses: docker/build-push-action@v6
         with:
@@ -142,13 +137,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=pso-e2e
           cache-to: type=gha,mode=max,scope=pso-e2e
-          # GH_LOGIN is a non-sensitive build-arg (the issuer's
-          # GitHub username, e.g. "tonyvelichko"). The token rides as
-          # a buildkit secret so it never lands in an image layer.
-          build-args: |
-            GH_LOGIN=${{ steps.pat.outputs.login }}
-          secrets: |
-            gh_token=${{ secrets.PSONET_REPO_TOKEN }}
 
       - name: Image summary
         run: |
