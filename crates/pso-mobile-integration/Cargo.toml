@@ -45,6 +45,15 @@ k256.workspace = true
 # have an N-parameterised witness shape so we drive prove() directly.
 noir_rs = { git = "https://github.com/zkpassport/noir_rs", tag = "v1.0.0-beta.20-1", features = ["barretenberg"] }
 
+# Direct dep on barretenberg-rs for the standalone Schnorr-on-Grumpkin
+# verify FFI exposed in `mod schnorr` — sign re-uses
+# `pso_zk_circuit_noir::schnorr_grumpkin::schnorr_sign_be`, but the
+# verify side has no public wrapper in pso-zk-circuit-noir yet, so we
+# call `schnorr_verify_signature` here directly. Version pinned to
+# match the transitive copy pulled in via pso-zk-circuit-noir so cargo
+# resolves a single bb backend across the workspace.
+barretenberg-rs = "=5.0.0-nightly.20260512"
+
 # Date parsing
 chrono.workspace = true
 

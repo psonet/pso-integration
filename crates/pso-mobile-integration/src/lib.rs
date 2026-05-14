@@ -22,6 +22,7 @@
 mod api;
 mod circuits;
 mod convert;
+mod schnorr;
 mod types;
 mod vdf;
 
@@ -29,6 +30,7 @@ mod vdf;
 mod dev_tools;
 
 pub use api::*;
+pub use schnorr::*;
 pub use types::*;
 pub use vdf::*;
 

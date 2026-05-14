@@ -1285,11 +1285,14 @@ checksum = "cf336aad600b7b347b775da3f3b0fe764f73d388ea93bd3a4565603fa367b689"
 dependencies = [
  "hex",
  "libc",
+ "nix",
  "rmp",
  "rmp-serde",
  "rmpv",
  "serde",
  "thiserror 1.0.69",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3387,6 +3390,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "memoffset"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3453,6 +3465,18 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "walkdir",
+]
+
+[[package]]
+name = "nix"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2eb04e9c688eff1c89d72b407f168cf79bb9e867a9d3323ed6c01519eb9cc053"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "libc",
+ "memoffset",
 ]
 
 [[package]]
@@ -4158,6 +4182,7 @@ dependencies = [
  "anyhow",
  "ark-bn254",
  "ark-ff 0.5.0",
+ "barretenberg-rs",
  "chrono",
  "generic-array",
  "iso_currency",
