@@ -45,7 +45,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     };
     let inner = Bytes::from(call.abi_encode());
 
-    match env.actor.submit_tx(SPENDING_UNIT, inner).await {
+    match env.new_actor()?.submit_tx(SPENDING_UNIT, inner).await {
         Err(ActorClientError::PoolRejection(msg)) => {
             tracing::info!(%msg, "S005: actor pool refused tx (no SU minted)");
             Ok(())
@@ -57,7 +57,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         }
         Ok(tx_hash) => {
             let receipt = env
-                .actor
+                .new_actor()?
                 .wait_for_receipt(tx_hash, Duration::from_secs(30))
                 .await?;
             if receipt.status() {

@@ -39,7 +39,7 @@ impl Scenario for S025 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    let provider = env.sra.inner().write_provider()?;
+    let provider = env.sra_zero.inner().write_provider()?;
     let sr = ISpendingRecord::new(SPENDING_RECORD, provider);
 
     let sr_id = random_id();

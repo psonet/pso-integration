@@ -35,17 +35,17 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // Register a single SR; both SU mints will reference it.
     let sr_id = random_id();
     let tx = env
-        .sra
+        .sra_zero
         .register_spending_record(
             sr_id,
             vec!["merchant".into()],
             vec![FixedBytes::from([0xa1u8; 32])],
         )
         .await?;
-    env.sra
+    env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
-    env.sra
+    env.sra_zero
         .wait_for_sr_existence(&[sr_id], &[], Duration::from_secs(30))
         .await?;
 
@@ -53,7 +53,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let shape = random_su_args();
     let su1_id = random_id();
     let tx = env
-        .sra
+        .sra_zero
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: su1_id,
             derived_owner: FixedBytes::from([0u8; 32]),
@@ -65,7 +65,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             amendment_sr_ids: vec![],
         })
         .await?;
-    env.sra
+    env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
 
@@ -74,7 +74,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // `SpendingRecordsAlreadyExist`.
     let su2_id = random_id();
     let err = env
-        .sra
+        .sra_zero
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: su2_id,
             derived_owner: FixedBytes::from([0u8; 32]),

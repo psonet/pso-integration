@@ -41,7 +41,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     };
     let inner = Bytes::from(call.abi_encode());
     let result = env
-        .actor_as_sra
+        .new_actor_as_sra_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner, |mut env_bytes| {
             // First 4 bytes are the magic prefix; clobber.
             env_bytes[0] = 0x00;

@@ -11,5 +11,6 @@
 //!   between the client and any future direct-RPC tests.
 
 pub mod actor;
+pub mod admin;
 pub mod envelope;
 pub mod sra;

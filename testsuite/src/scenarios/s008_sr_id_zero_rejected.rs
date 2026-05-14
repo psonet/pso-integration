@@ -27,7 +27,7 @@ impl Scenario for S008 {
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let err = env
-        .sra
+        .sra_zero
         .register_spending_record(
             U256::ZERO,
             vec!["merchant".into()],

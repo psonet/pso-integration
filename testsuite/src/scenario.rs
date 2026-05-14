@@ -24,8 +24,20 @@ use crate::env::TestEnv;
 /// Single scenario contract.
 ///
 /// Implementors return `Ok(())` for "invariant held" and any `Err`
-/// for failure. The harness times `run` and records a
-/// [`ScenarioResult`].
+/// for failure. The harness:
+///
+/// 1. Calls [`Scenario::pre_start`] — optional setup the scenario
+///    needs and which should NOT bleed into subsequent scenarios.
+///    A failure here is reported with `outcome=fail` (the scenario
+///    body never runs).
+/// 2. Calls [`Scenario::run`] and times it; the duration recorded
+///    on [`ScenarioResult`] reflects only this call.
+/// 3. Calls [`Scenario::post_stop`] **regardless of run's outcome**
+///    so state mutations made by the scenario can be released
+///    before the next scenario starts. A post_stop failure is
+///    logged (`scenario=Sxxx event=post_stop_failed`) but does
+///    NOT downgrade a passing run — the scenario already passed
+///    by the time the teardown ran.
 #[async_trait]
 pub trait Scenario: Send + Sync {
     /// Short stable id, e.g. `"S001"`. Used as a key in CI reporting
@@ -36,9 +48,31 @@ pub trait Scenario: Send + Sync {
     /// enforces. Printed in the markdown report.
     fn description(&self) -> &'static str;
 
+    /// Optional setup. Default no-op. Override to register
+    /// auxiliary SRAs, allocate state, prime caches, etc. — any
+    /// resource the scenario expects in place when [`Self::run`]
+    /// starts. The env is the same handle [`Self::run`] receives;
+    /// nothing magic is hidden between this and the body.
+    async fn pre_start(&self, env: &TestEnv) -> eyre::Result<()> {
+        let _ = env;
+        Ok(())
+    }
+
     /// Run the scenario against a shared environment. The harness
-    /// guarantees the env is bootstrapped before this is called.
+    /// guarantees the env is bootstrapped (and `pre_start` has
+    /// completed successfully) before this is called.
     async fn run(&self, env: &TestEnv) -> eyre::Result<()>;
+
+    /// Optional teardown. Default no-op. Override to release
+    /// state mutations that would interfere with subsequent
+    /// scenarios — e.g. revoke an SRA the scenario registered,
+    /// drop nonces, etc. The harness calls this in **all** cases
+    /// (success, failure, panic-after-await), so the body should
+    /// be defensive about what may or may not actually be present.
+    async fn post_stop(&self, env: &TestEnv) -> eyre::Result<()> {
+        let _ = env;
+        Ok(())
+    }
 }
 
 /// Outcome of a single scenario run.
@@ -80,11 +114,52 @@ impl ScenarioResult {
         let id = scenario.id();
         let description = scenario.description();
         let span = tracing::info_span!("scenario", id = %id);
-        let start = Instant::now();
-        let outcome = async {
+
+        let timed: (Outcome, u128) = async {
             tracing::info!(target: "pso_e2e::scenario", event = "started", scenario = id, description = description);
+
+            // pre_start: a failure here is a scenario-level
+            // failure — the body never runs, the duration field
+            // captures only the time we spent in setup.
+            let pre_start = Instant::now();
+            if let Err(e) = scenario.pre_start(env).await {
+                tracing::warn!(
+                    target: "pso_e2e::scenario",
+                    event = "pre_start_failed",
+                    scenario = id,
+                    error = %e,
+                );
+                let elapsed_ms = Instant::now().duration_since(pre_start).as_millis();
+                // post_stop still runs so any half-built state
+                // gets cleaned up; failures here are non-fatal.
+                if let Err(te) = scenario.post_stop(env).await {
+                    tracing::warn!(
+                        target: "pso_e2e::scenario",
+                        event = "post_stop_failed",
+                        scenario = id,
+                        error = %te,
+                    );
+                }
+                return (Outcome::Fail(e), elapsed_ms);
+            }
+
+            // The duration we report is the body only — `run`
+            // boundaries match the prior contract.
+            let body_start = Instant::now();
             let result = scenario.run(env).await;
-            let elapsed_ms = Instant::now().duration_since(start).as_millis();
+            let elapsed_ms = Instant::now().duration_since(body_start).as_millis();
+
+            // post_stop runs unconditionally; failures are logged
+            // but never downgrade a passing body.
+            if let Err(te) = scenario.post_stop(env).await {
+                tracing::warn!(
+                    target: "pso_e2e::scenario",
+                    event = "post_stop_failed",
+                    scenario = id,
+                    error = %te,
+                );
+            }
+
             match &result {
                 Ok(()) => tracing::info!(
                     target: "pso_e2e::scenario",
@@ -102,19 +177,22 @@ impl ScenarioResult {
                     error = %e,
                 ),
             }
-            result
+            (
+                match result {
+                    Ok(()) => Outcome::Pass,
+                    Err(e) => Outcome::Fail(e),
+                },
+                elapsed_ms,
+            )
         }
         .instrument(span)
         .await;
-        let outcome = match outcome {
-            Ok(()) => Outcome::Pass,
-            Err(e) => Outcome::Fail(e),
-        };
+
         Self {
             id,
             description,
-            duration_ms: Instant::now().duration_since(start).as_millis(),
-            outcome,
+            duration_ms: timed.1,
+            outcome: timed.0,
         }
     }
 

@@ -56,7 +56,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     };
     let inner = Bytes::from(call.abi_encode());
 
-    match env.actor.submit_tx(SPENDING_RECORD, inner).await {
+    match env.new_actor()?.submit_tx(SPENDING_RECORD, inner).await {
         // Path A: actor pool refused the tx outright. Document it
         // and pass — the invariant "no SR landed" holds.
         Err(ActorClientError::PoolRejection(msg)) => {
@@ -74,7 +74,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         // if status is 1, the SR landed and the invariant broke.
         Ok(tx_hash) => {
             let receipt = env
-                .actor
+                .new_actor()?
                 .wait_for_receipt(tx_hash, Duration::from_secs(30))
                 .await?;
             if receipt.status() {

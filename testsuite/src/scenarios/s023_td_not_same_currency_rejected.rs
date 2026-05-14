@@ -48,7 +48,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let su_b = mint_su_with(env, USD, day, shape.settlement_amount_base).await?;
     tracing::info!(scenario = "S023", %su_a, %su_b, "minted two SUs in EUR + USD");
 
-    let provider = env.sra.inner().write_provider()?;
+    let provider = env.sra_zero.inner().write_provider()?;
     let td = ITributeDraft::new(TRIBUTE_DRAFT, provider);
 
     let err = td
@@ -84,17 +84,17 @@ async fn mint_su_with(
 ) -> eyre::Result<U256> {
     let sr_id = random_id();
     let tx = env
-        .sra
+        .sra_zero
         .register_spending_record(
             sr_id,
             vec!["merchant".into()],
             vec![FixedBytes::from([0xa1u8; 32])],
         )
         .await?;
-    env.sra
+    env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
-    env.sra
+    env.sra_zero
         .wait_for_sr_existence(&[sr_id], &[], Duration::from_secs(30))
         .await?;
 
@@ -112,7 +112,7 @@ async fn mint_su_with(
             amendment_sr_ids: vec![],
         })
         .await?;
-    env.sra
+    env.sra_zero
         .wait_for_su_existence(&[receipt.su_id], Duration::from_secs(30))
         .await?;
     Ok(receipt.su_id)

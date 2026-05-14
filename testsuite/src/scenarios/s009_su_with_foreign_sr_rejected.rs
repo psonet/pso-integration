@@ -34,26 +34,26 @@ impl Scenario for S009 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    // SRA#1 (the default `env.sra`) registers an SR.
+    // SRA#1 (the default `env.sra_zero`) registers an SR.
     let sr_id = random_id();
     let tx = env
-        .sra
+        .sra_zero
         .register_spending_record(
             sr_id,
             vec!["merchant".into()],
             vec![FixedBytes::from([0xa1u8; 32])],
         )
         .await?;
-    env.sra
+    env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
-    env.sra
+    env.sra_zero
         .wait_for_sr_existence(&[sr_id], &[], Duration::from_secs(30))
         .await?;
 
     // Admin promotes a fresh secret-key address to active SRA, then
     // SRA#2 attempts to mint an SU referencing SRA#1's SR.
-    let sra2 = env.register_random_sra().await?;
+    let sra2 = env.new_sra().await?;
     let shape = random_su_args();
     let err = sra2
         .mint_spending_unit(MintSpendingUnitArgs {

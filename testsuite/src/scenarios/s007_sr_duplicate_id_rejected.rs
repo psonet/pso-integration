@@ -35,10 +35,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let meta1 = random_sr_metadata();
     let (keys1, values1): (Vec<String>, Vec<FixedBytes<32>>) = meta1.into_iter().unzip();
     let tx1 = env
-        .sra
+        .sra_zero
         .register_spending_record(sr_id, keys1, values1)
         .await?;
-    env.sra
+    env.sra_zero
         .wait_for_tx_success(tx1, Duration::from_secs(30))
         .await?;
 
@@ -48,7 +48,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let meta2 = random_sr_metadata();
     let (keys2, values2): (Vec<String>, Vec<FixedBytes<32>>) = meta2.into_iter().unzip();
     let err = env
-        .sra
+        .sra_zero
         .register_spending_record(sr_id, keys2, values2)
         .await
         .err()

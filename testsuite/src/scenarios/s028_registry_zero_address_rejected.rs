@@ -8,28 +8,12 @@
 //! `address(0)`, and expect `ZeroAddress`.
 
 use alloy::primitives::Address;
-use alloy::sol;
 use async_trait::async_trait;
 
-use pso_l2_client::{L2Client, L2ClientError, PsoContractError};
+use pso_l2_client::PsoContractError;
 
 use crate::clients::sra::into_pso_error;
 use crate::{Scenario, TestEnv};
-
-sol! {
-    #[sol(rpc)]
-    interface ISRARegistryView {
-        function register(
-            address sra,
-            uint32 permissionMask,
-            uint64 rateLimit,
-            bool isRotationCandidate
-        ) external;
-    }
-}
-
-const SRA_REGISTRY: Address =
-    alloy::primitives::address!("5200000000000000000000000000000000000001");
 
 pub struct S028;
 
@@ -47,23 +31,14 @@ impl Scenario for S028 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    let admin = L2Client::connect_with_signer(&env.rpc_url, env.chain_id, &env.admin_key)
-        .map_err(|e| eyre::eyre!("admin client: {e}"))?;
-    let provider = admin
-        .write_provider()
-        .map_err(|e| eyre::eyre!("admin write_provider: {e}"))?;
-    let reg = ISRARegistryView::new(SRA_REGISTRY, provider);
-
-    let err = reg
-        .register(Address::ZERO, u32::MAX, 1_000_000u64, false)
-        .max_fee_per_gas(0)
-        .max_priority_fee_per_gas(0)
-        .send()
+    let err = env
+        .admin
+        .register_sra(Address::ZERO, u32::MAX, 1_000_000u64, false)
         .await
         .err()
         .ok_or_else(|| eyre::eyre!("S028: expected ZeroAddress revert, got success"))?;
 
-    let typed = into_pso_error(L2ClientError::Contract(format!("{err}")));
+    let typed = into_pso_error(err);
     match &typed {
         PsoContractError::ZeroAddress => Ok(()),
         other => Err(eyre::eyre!("S028: expected ZeroAddress, got {other}")),

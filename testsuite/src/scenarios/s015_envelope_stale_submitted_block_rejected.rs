@@ -40,7 +40,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     };
     let inner = Bytes::from(call.abi_encode());
     let result = env
-        .actor_as_sra
+        .new_actor_as_sra_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner, |mut bytes| {
             // Overwrite the BE-encoded submitted_block at [164..172)
             // with the value zero — guaranteed to be far older than

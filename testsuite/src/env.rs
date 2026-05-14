@@ -1,26 +1,39 @@
 //! Shared test environment.
 //!
-//! [`TestEnv`] bundles every handle scenarios need:
+//! [`TestEnv`] is the **one** handle every scenario takes by
+//! reference. Everything else — admin client, SRA-0 client,
+//! actor pool, bridge — lives behind methods on this type so a
+//! scenario can be reasoned about top-to-bottom from its single
+//! `&env` parameter.
 //!
-//! - The two RPC URLs (agents-pool, actor-pool) and the chain id
-//!   passed in from the CLI.
-//! - An [`SraClient`] bound to the CLI-supplied `--sra-key`. We
-//!   register the address with the on-chain `SRARegistry` (via
-//!   [`bootstrap_register_sra`]) before scenarios run, so every
-//!   `onlyActiveSRA`-gated submit path accepts it.
-//! - An [`ActorClient`] bound to the CLI-supplied `--wallet-key` (or a
-//!   freshly rolled `OsRng` key if the flag was omitted).
-//! - The CLI-supplied `--admin-key`, kept around so per-scenario
-//!   helpers like [`TestEnv::register_random_sra`] can promote
-//!   additional SRAs at runtime without referring back to the
-//!   Hardhat fixture.
-//! - A [`Bridge`] handle wrapping the SRA bridge background task.
+//! ## Conceptual surface
 //!
-//! [`TestEnv::bootstrap_from_cli`] is idempotent — re-running the
-//! suite against a warm node short-circuits the on-chain SRA
-//! registration. Scenarios borrow the env across the (single) tokio
-//! runtime the binary's `main` builds; the `OnceCell`-backed shared
-//! env from the cargo-test version is gone.
+//! - **`env.admin`** — Hardhat #0 in the devnet genesis. Holds the
+//!   registry-mutating API (`register_sra` / `revoke_sra` /
+//!   `update_mask` / `set_rotation_candidate`), the read views
+//!   (`is_active` / `get_record`), and a small set of network
+//!   parameter accessors (`current_difficulty`, plus stubs for
+//!   `set_difficulty` / `advance_epoch` that need chain-side dev
+//!   RPCs not landed yet).
+//! - **`env.sra_zero`** — Hardhat #1 in the devnet genesis,
+//!   pre-registered by [`bootstrap_register_sra`] before any
+//!   scenario runs. Use this for the "happy-path SRA" view.
+//! - **`env.new_sra()`** — async helper that rolls a fresh
+//!   secp256k1 key, registers it via [`AdminClient::register_sra`],
+//!   and returns an [`SraClient`] bound to it. Used by S009 and
+//!   the SRA-lifecycle scenarios that need a *second* SRA in play.
+//! - **`env.new_actor()`** — fresh [`ActorClient`] keyed by a
+//!   random non-SRA wallet key. The actor RPC's `add_raw_tx`
+//!   rejects any non-SRA sender as "SRA not registered:" — use
+//!   this when the *test surface* is precisely that rejection
+//!   (S003-S005, S030).
+//! - **`env.new_actor_as_sra(&sra)`** — fresh [`ActorClient`]
+//!   keyed by the supplied SRA. Use this when the scenario wants
+//!   to clear the SRA-registered gate and exercise a *post-gate*
+//!   validator (envelope tampering S013-S017, VDF difficulty
+//!   mismatch S031, …).
+//! - **`env.bridge`** — the long-lived SRA bridge background task
+//!   used by SU-mint scenarios.
 
 use alloy::primitives::Address;
 use k256::SecretKey;
@@ -32,9 +45,11 @@ use pso_l2_client::{L2Client, L2ClientError};
 use crate::bridge::{spawn_sra_loop, Bridge};
 use crate::cli::Cli;
 use crate::clients::actor::ActorClient;
+use crate::clients::admin::{AdminClient, SRA_REGISTRY};
 use crate::clients::sra::SraClient;
 
-/// All-in-one handle every scenario takes by reference.
+/// All-in-one handle every scenario takes by reference. See the
+/// module-level doc-comment for the conceptual surface.
 pub struct TestEnv {
     /// Agents-pool RPC URL.
     pub rpc_url: String,
@@ -42,107 +57,117 @@ pub struct TestEnv {
     pub actor_rpc_url: String,
     /// Chain id passed at CLI construction.
     pub chain_id: u64,
-    /// Address of the registry admin (derived from `--admin-key`).
-    pub admin_addr: Address,
-    /// Admin secret key. Stored so [`Self::register_random_sra`] can
-    /// promote auxiliary SRAs at runtime.
-    pub admin_key: [u8; 32],
-    /// Primary SRA secret key. Stored alongside the [`SraClient`] so
-    /// scenarios that need to spin up alternate clients bound to the
-    /// **same** SRA address (e.g. S006 building an actor-pool client
-    /// from the SRA key) can do so without depending on the Hardhat
-    /// fixture.
-    pub sra_key: [u8; 32],
-    /// Primary SRA client.
-    pub sra: SraClient,
-    /// Wallet client used by every scenario that submits via the
-    /// actor pool. Either the `--wallet-key` from the CLI or a fresh
-    /// `OsRng`-rolled key.
-    pub actor: ActorClient,
-    /// Actor-pool client bound to the **SRA key** instead of the
-    /// wallet key. The actor RPC (`rpc/actor.rs::add_raw_tx`) gates
-    /// on `registry.get(sender)` and rejects any non-SRA sender as
-    /// "SRA not registered: 0x...". The wallet-keyed `actor` field
-    /// above is therefore only suitable for scenarios that
-    /// **expect** that rejection (S003-S005, S030). Scenarios that
-    /// want to actually submit through the actor pool and then
-    /// inspect a *post-gate* check (envelope tampering, VDF
-    /// difficulty, etc.) MUST use this client.
-    pub actor_as_sra: ActorClient,
-    /// SRA bridge handle. The background task lives for the duration
-    /// of the binary; scenarios just call `env.bridge.mint_su(...)`.
+
+    /// Hardhat #0 — admin signer + registry-mutating API +
+    /// difficulty / epoch hooks.
+    pub admin: AdminClient,
+
+    /// Hardhat #1 — the bootstrapped primary SRA. Pre-registered
+    /// with `permissionMask = u32::MAX` and `isRotationCandidate
+    /// = true`.
+    pub sra_zero: SraClient,
+
+    /// SRA bridge handle. The background task lives for the
+    /// duration of the binary; scenarios just call
+    /// `env.bridge.mint_su(...)`.
     pub bridge: Bridge,
+
+    /// Raw SRA-0 secret-key bytes. Exposed for the narrow set of
+    /// internal helpers that need to build a *new*
+    /// [`ActorClient`] from this key without paying for the
+    /// public method's I/O — most scenarios should call
+    /// [`Self::new_actor_as_sra`] with `&env.sra_zero` instead.
+    pub(crate) sra_zero_key: [u8; 32],
 }
 
 impl TestEnv {
     /// Build the env from a parsed CLI. Idempotent w.r.t. the
-    /// on-chain SRA registration: if the primary SRA is already
-    /// active we skip the register tx.
-    ///
-    /// Steps:
-    /// 1. Build an [`SraClient`] from `cli.sra_key`.
-    /// 2. Promote that address with the registry admin (the CLI's
-    ///    `--admin-key`).
-    /// 3. Build an [`ActorClient`] from `cli.wallet_key` (or a fresh
-    ///    `OsRng` key).
-    /// 4. Spawn the SRA bridge background task.
+    /// on-chain SRA-0 registration: re-running against a warm node
+    /// is a no-op.
     pub async fn bootstrap_from_cli(cli: &Cli) -> eyre::Result<Self> {
         let rpc_url = cli.rpc_url.clone();
         let actor_rpc_url = cli.actor_rpc_url.clone();
         let chain_id = cli.chain_id;
 
-        // -----------------------------------------------------------------
-        // SRA registry bootstrap. The admin owns `SRARegistry`; we
-        // promote the SRA signer to an active SRA with full
-        // permissions so every onlyActiveSRA-gated submit path
-        // accepts it.
-        // -----------------------------------------------------------------
+        // The admin owns `SRARegistry`. Bootstrap before building
+        // the SRA-0 client so every `onlyActiveSRA`-gated submit
+        // path accepts it from tick zero.
         bootstrap_register_sra(&rpc_url, chain_id, &cli.sra_key, &cli.admin_key).await?;
 
-        let admin_addr = derive_address(&cli.admin_key)?;
-        let sra = SraClient::new(&rpc_url, chain_id, &cli.sra_key)?;
-
-        let wallet_key = cli.wallet_key.unwrap_or_else(roll_random_key);
-        let actor = ActorClient::new(&actor_rpc_url, chain_id, &wallet_key)
-            .map_err(|e| eyre::eyre!("ActorClient: {e}"))?;
-        let actor_as_sra = ActorClient::new(&actor_rpc_url, chain_id, &cli.sra_key)
-            .map_err(|e| eyre::eyre!("ActorClient (SRA-keyed): {e}"))?;
-
-        let bridge = spawn_sra_loop(sra.clone());
+        let admin = AdminClient::new(&rpc_url, chain_id, &cli.admin_key)
+            .map_err(|e| eyre::eyre!("AdminClient: {e}"))?;
+        let sra_zero = SraClient::new(&rpc_url, chain_id, &cli.sra_key)?;
+        let bridge = spawn_sra_loop(sra_zero.clone());
 
         Ok(Self {
             rpc_url,
             actor_rpc_url,
             chain_id,
-            admin_addr,
-            admin_key: cli.admin_key,
-            sra_key: cli.sra_key,
-            sra,
-            actor,
-            actor_as_sra,
+            admin,
+            sra_zero,
             bridge,
+            sra_zero_key: cli.sra_key,
         })
     }
 
-    /// Promote a freshly rolled secret-key address into the SRA
-    /// registry and hand back an [`SraClient`] bound to it.
-    ///
-    /// Used by S009 to model "two distinct SRAs trying to mint each
-    /// other's SUs". The Hardhat-indexed `register_extra_sra(idx)`
-    /// from the cargo-test version is gone — we use random keys
-    /// per call so scenarios don't share an index space across
-    /// reruns.
-    pub async fn register_random_sra(&self) -> eyre::Result<SraClient> {
+    // -----------------------------------------------------------------
+    // Per-scenario client factories.
+    // -----------------------------------------------------------------
+
+    /// Spawn a fresh SRA: roll a random secp256k1 key, register
+    /// it via [`AdminClient::register_sra`] (mask = u32::MAX,
+    /// rate limit 1 M, rotation candidate), and return an
+    /// [`SraClient`] bound to it. The returned client is
+    /// independent of `env.sra_zero` and can submit through the
+    /// agents pool immediately.
+    pub async fn new_sra(&self) -> eyre::Result<SraClient> {
         let secret = roll_random_key();
-        bootstrap_register_sra(&self.rpc_url, self.chain_id, &secret, &self.admin_key).await?;
+        let target_addr = derive_address(&secret)?;
+        self.admin
+            .register_sra(target_addr, u32::MAX, 1_000_000u64, true)
+            .await
+            .map_err(|e| eyre::eyre!("register_sra: {e}"))?;
+        // Wait for the register receipt to land. The `pending`
+        // future inside `register_sra` returns the tx hash post-
+        // broadcast; polling for receipt happens here so the
+        // returned client can immediately submit.
+        wait_for_active(&self.admin, target_addr, std::time::Duration::from_secs(30)).await?;
         SraClient::new(&self.rpc_url, self.chain_id, &secret)
+    }
+
+    /// Fresh [`ActorClient`] keyed by a random non-SRA wallet
+    /// key. Use this for scenarios whose test surface is "the
+    /// actor RPC bounces non-SRA senders" (S003-S005, S030).
+    pub fn new_actor(&self) -> eyre::Result<ActorClient> {
+        let key = roll_random_key();
+        ActorClient::new(&self.actor_rpc_url, self.chain_id, &key)
+            .map_err(|e| eyre::eyre!("new_actor: {e}"))
+    }
+
+    /// Fresh [`ActorClient`] keyed by `&env.sra_zero`'s secret —
+    /// i.e. an actor-pool client that clears the
+    /// "SRA not registered" gate inside `rpc/actor.rs::add_raw_tx`.
+    /// Use this for envelope-tampering / VDF-mismatch scenarios
+    /// that need to reach the *post-gate* validator checks.
+    ///
+    /// Today the only registered SRA whose secret material the
+    /// env physically holds is SRA-0 (Hardhat #1) — that's why
+    /// the signature is parameterless. If you need an actor
+    /// client keyed by a fresh-`env.new_sra()`-returned client,
+    /// build it directly via [`ActorClient::new`] from that
+    /// `SraClient`'s constructor key (which scenarios persist
+    /// themselves anyway, since `new_sra` is invoked inside the
+    /// scenario body).
+    pub fn new_actor_as_sra_zero(&self) -> eyre::Result<ActorClient> {
+        ActorClient::new(&self.actor_rpc_url, self.chain_id, &self.sra_zero_key)
+            .map_err(|e| eyre::eyre!("new_actor_as_sra_zero: {e}"))
     }
 }
 
 /// Roll a fresh 32-byte secp256k1 secret key from `OsRng`. The
 /// statistical chance of producing zero or a value ≥ `n` is
 /// negligible — every downstream constructor revalidates anyway.
-fn roll_random_key() -> [u8; 32] {
+pub(crate) fn roll_random_key() -> [u8; 32] {
     let mut bytes = [0u8; 32];
     OsRng.fill_bytes(&mut bytes);
     bytes
@@ -153,10 +178,33 @@ fn roll_random_key() -> [u8; 32] {
 /// land in a valid scalar.
 fn derive_address(secret: &[u8; 32]) -> eyre::Result<Address> {
     use alloy::signers::local::PrivateKeySigner;
-    let _ = SecretKey::from_slice(secret).map_err(|e| eyre::eyre!("admin key invalid: {e}"))?;
+    let _ = SecretKey::from_slice(secret).map_err(|e| eyre::eyre!("secret key invalid: {e}"))?;
     let signer = PrivateKeySigner::from_slice(secret)
-        .map_err(|e| eyre::eyre!("admin key signer build: {e}"))?;
+        .map_err(|e| eyre::eyre!("secret key signer build: {e}"))?;
     Ok(signer.address())
+}
+
+/// Spin until `admin.is_active(addr)` returns true or `timeout`
+/// elapses. Used internally by [`TestEnv::new_sra`] so the
+/// returned client can submit immediately.
+async fn wait_for_active(
+    admin: &AdminClient,
+    addr: Address,
+    timeout: std::time::Duration,
+) -> eyre::Result<()> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if admin.is_active(addr).await.unwrap_or(false) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(eyre::eyre!(
+                "timeout: admin.is_active({addr}) not true within {:?}",
+                timeout
+            ));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
 }
 
 // -----------------------------------------------------------------
@@ -168,7 +216,7 @@ fn derive_address(secret: &[u8; 32]) -> eyre::Result<Address> {
 
 alloy::sol! {
     #[sol(rpc)]
-    interface ISRARegistry {
+    interface ISRARegistryBootstrap {
         function isActive(address sra) external view returns (bool);
         function register(
             address sra,
@@ -179,17 +227,17 @@ alloy::sol! {
     }
 }
 
-const SRA_REGISTRY: Address =
-    alloy::primitives::address!("5200000000000000000000000000000000000001");
-
 /// Register `target_secret_key`'s address with the SRA registry,
 /// signing with `admin_secret_key` (the registry admin's secret key
 /// — supplied by the CLI). No-op if the address is already active.
 ///
-/// The cargo-test version of this helper hardcoded "Hardhat #0" as
-/// the admin; the CLI variant takes the admin key explicitly so
-/// pso-chain CI can wire up whatever admin key the devnet container
-/// is configured with.
+/// Pre-dates the public [`AdminClient`] surface and is kept as the
+/// single entry point used by [`TestEnv::bootstrap_from_cli`]
+/// because the env construction needs this to run *before* the
+/// `AdminClient` itself is built (paranoia: the env contract
+/// promises `sra_zero` is registered the moment the env returns,
+/// so we want a known-good direct path that doesn't rely on the
+/// admin abstraction).
 pub async fn bootstrap_register_sra(
     rpc: &str,
     chain_id: u64,
@@ -203,7 +251,7 @@ pub async fn bootstrap_register_sra(
         .ok_or_else(|| eyre::eyre!("SRA signer missing"))?;
 
     let read_provider = target_client.read_provider();
-    let registry = ISRARegistry::new(SRA_REGISTRY, &read_provider);
+    let registry = ISRARegistryBootstrap::new(SRA_REGISTRY, &read_provider);
     if registry.isActive(target_addr).call().await? {
         return Ok(());
     }
@@ -211,7 +259,7 @@ pub async fn bootstrap_register_sra(
     let admin_client =
         L2Client::connect_with_signer(rpc, chain_id, admin_secret_key).map_err(map_l2_err)?;
     let write_provider = admin_client.write_provider().map_err(map_l2_err)?;
-    let registry_w = ISRARegistry::new(SRA_REGISTRY, &write_provider);
+    let registry_w = ISRARegistryBootstrap::new(SRA_REGISTRY, &write_provider);
     let pending = registry_w
         .register(target_addr, u32::MAX, 1_000_000u64, true)
         .max_fee_per_gas(0)

@@ -59,7 +59,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // `--sra-key`) rather than the wallet (`--wallet-key`). Same
     // magic envelope, same VDF, different `from`. The env hands
     // over the secret bytes so we don't reach for a Hardhat fixture.
-    let actor_sra = ActorClient::new(&env.actor_rpc_url, env.chain_id, &env.sra_key)
+    let actor_sra = ActorClient::new(&env.actor_rpc_url, env.chain_id, &env.sra_zero_key)
         .map_err(|e| eyre::eyre!("ActorClient: {e}"))?;
 
     let sr_id = random_id();

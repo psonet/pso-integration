@@ -6,7 +6,7 @@
 //! `setRotationCandidate`, `initiateAdminTransfer`). A non-admin
 //! caller fails the `msg.sender != admin` check immediately.
 //!
-//! We use the SRA client (env.sra) — it's an active SRA, but NOT
+//! We use the SRA client (env.sra_zero) — it's an active SRA, but NOT
 //! the admin — to call register; the contract reverts before
 //! looking at the arguments, so any plausible `sra` / `mask` works.
 
@@ -51,7 +51,7 @@ impl Scenario for S027 {
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     // The SRA signer is active but NOT the admin — perfect impostor.
-    let provider = env.sra.inner().write_provider()?;
+    let provider = env.sra_zero.inner().write_provider()?;
     let reg = ISRARegistryView::new(SRA_REGISTRY, provider);
 
     // Pick a plausible-but-otherwise-irrelevant fresh address to

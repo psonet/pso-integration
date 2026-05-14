@@ -39,7 +39,11 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     };
     let inner = Bytes::from(call.abi_encode());
 
-    match env.actor.submit_tx(SPENDING_RECORD_AMENDMENT, inner).await {
+    match env
+        .new_actor()?
+        .submit_tx(SPENDING_RECORD_AMENDMENT, inner)
+        .await
+    {
         Err(ActorClientError::PoolRejection(msg)) => {
             tracing::info!(%msg, "S004: actor pool refused tx (no AR landed)");
             Ok(())
@@ -51,7 +55,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         }
         Ok(tx_hash) => {
             let receipt = env
-                .actor
+                .new_actor()?
                 .wait_for_receipt(tx_hash, Duration::from_secs(30))
                 .await?;
             if receipt.status() {

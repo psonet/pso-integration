@@ -40,7 +40,7 @@ impl Scenario for S031 {
 }
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let current_t = env
-        .actor_as_sra
+        .new_actor_as_sra_zero()?
         .fetch_difficulty()
         .await
         .map_err(|e| eyre::eyre!("S031: fetch_difficulty: {e}"))?;
@@ -59,7 +59,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     };
     let inner = Bytes::from(call.abi_encode());
     let result = env
-        .actor_as_sra
+        .new_actor_as_sra_zero()?
         .submit_tx_with_difficulty(SPENDING_RECORD, inner, Some(wrong_t), |env_bytes| env_bytes)
         .await;
     match result {

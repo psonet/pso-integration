@@ -40,7 +40,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     };
     let inner = Bytes::from(call.abi_encode());
     let result = env
-        .actor_as_sra
+        .new_actor_as_sra_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner, |mut bytes| {
             // Flip the first byte of the vdf_proof field. Any
             // change inside the proof invalidates MinRoot verify.

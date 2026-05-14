@@ -51,7 +51,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     };
     let inner_a = Bytes::from(call_a.abi_encode());
     let first = env
-        .actor_as_sra
+        .new_actor_as_sra_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner_a, move |bytes| {
             let mut n = [0u8; 32];
             n.copy_from_slice(&bytes[4..36]);
@@ -102,7 +102,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     };
     let inner_b = Bytes::from(call_b.abi_encode());
     let result = env
-        .actor_as_sra
+        .new_actor_as_sra_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner_b, move |mut bytes| {
             bytes[4..36].copy_from_slice(&nullifier);
             tracing::info!(

@@ -125,7 +125,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         let ar1 = random_id();
 
         let tx = env
-            .sra
+            .sra_zero
             .register_spending_record(
                 sr1,
                 vec!["merchant".into(), "amount".into()],
@@ -135,12 +135,12 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
                 ],
             )
             .await?;
-        env.sra
+        env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;
 
         let tx = env
-            .sra
+            .sra_zero
             .register_spending_record(
                 sr2,
                 vec!["merchant".into(), "amount".into()],
@@ -150,19 +150,19 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
                 ],
             )
             .await?;
-        env.sra
+        env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;
 
         let tx = env
-            .sra
+            .sra_zero
             .register_amendment_record(
                 ar1,
                 vec!["correction".into()],
                 vec![FixedBytes::from([0xc1u8; 32])],
             )
             .await?;
-        env.sra
+        env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;
 
@@ -171,7 +171,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         all_sr.extend([sr1, sr2]);
         all_ar.push(ar1);
     }
-    env.sra
+    env.sra_zero
         .wait_for_sr_existence(&all_sr, &all_ar, Duration::from_secs(30))
         .await?;
 
@@ -224,7 +224,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     }
 
     let su_ids_minted: Vec<U256> = receipts.iter().map(|r| r.su_id).collect();
-    env.sra
+    env.sra_zero
         .wait_for_su_existence(&su_ids_minted, Duration::from_secs(30))
         .await?;
 
@@ -232,7 +232,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // 4. Wallet reconstructs every `SuOwnershipWitness` from the
     //    receipts; cross-checks against on-chain `derivedOwner`.
     // -----------------------------------------------------------------
-    let read_provider = env.sra.inner().read_provider();
+    let read_provider = env.sra_zero.inner().read_provider();
     let su_view = ISpendingUnitView::new(SPENDING_UNIT_ADDR, &read_provider);
     let mut su_inputs: Vec<SuAggregationInput> = Vec::with_capacity(receipts.len());
     for r in &receipts {
@@ -322,8 +322,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .map_err(|e| eyre::eyre!("prove join: {e}"))??
     };
 
-    let tx = submit_tribute_draft(env.sra.inner(), &bundle).await?;
-    env.sra
+    let tx = submit_tribute_draft(env.sra_zero.inner(), &bundle).await?;
+    env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(60))
         .await?;
 

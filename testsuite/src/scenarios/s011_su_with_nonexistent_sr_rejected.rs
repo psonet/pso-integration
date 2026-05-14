@@ -34,7 +34,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let phantom_sr = random_id();
     let shape = random_su_args();
     let err = env
-        .sra
+        .sra_zero
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: random_id(),
             derived_owner: FixedBytes::from([0u8; 32]),

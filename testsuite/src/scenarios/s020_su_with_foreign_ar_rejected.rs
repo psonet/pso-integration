@@ -47,26 +47,26 @@ impl Scenario for S020 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    // SRA#1 (env.sra) registers an AR.
+    // SRA#1 (env.sra_zero) registers an AR.
     let ar_id = random_id();
     let tx = env
-        .sra
+        .sra_zero
         .register_amendment_record(
             ar_id,
             vec!["correction".into()],
             vec![FixedBytes::from([0xc1u8; 32])],
         )
         .await?;
-    env.sra
+    env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
-    env.sra
+    env.sra_zero
         .wait_for_sr_existence(&[], &[ar_id], Duration::from_secs(30))
         .await?;
     tracing::info!(scenario = "S020", step = "seeded-ar", ar_id = %ar_id, "AR registered under primary SRA");
 
     // SRA#2 takes over and tries to bundle SRA#1's AR.
-    let sra2 = env.register_random_sra().await?;
+    let sra2 = env.new_sra().await?;
     let shape = random_su_args();
     let err = sra2
         .mint_spending_unit(MintSpendingUnitArgs {

@@ -42,7 +42,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     };
     let inner = Bytes::from(call.abi_encode());
     let result = env
-        .actor_as_sra
+        .new_actor_as_sra_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner, |mut bytes| {
             // Flip the last byte of the vdf_output field at
             // [68..116). Any single-byte change makes the encoded

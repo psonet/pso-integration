@@ -62,7 +62,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // the SRA signer; the agents pool admits SRA-signed txs, then
     // checks the `(to, selector)` allowlist — that's where
     // `TributeDraft.submit` falls through.
-    let provider = env.sra.inner().write_provider()?;
+    let provider = env.sra_zero.inner().write_provider()?;
     let tx_req = alloy::rpc::types::TransactionRequest::default()
         .to(TRIBUTE_DRAFT)
         .input(alloy::rpc::types::TransactionInput::new(Bytes::from(data)))

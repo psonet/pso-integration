@@ -7,28 +7,12 @@
 //! admin with a fresh non-zero address but `mask = 0`.
 
 use alloy::primitives::Address;
-use alloy::sol;
 use async_trait::async_trait;
 
-use pso_l2_client::{L2Client, L2ClientError, PsoContractError};
+use pso_l2_client::PsoContractError;
 
 use crate::clients::sra::into_pso_error;
 use crate::{Scenario, TestEnv};
-
-sol! {
-    #[sol(rpc)]
-    interface ISRARegistryView {
-        function register(
-            address sra,
-            uint32 permissionMask,
-            uint64 rateLimit,
-            bool isRotationCandidate
-        ) external;
-    }
-}
-
-const SRA_REGISTRY: Address =
-    alloy::primitives::address!("5200000000000000000000000000000000000001");
 
 pub struct S029;
 
@@ -46,25 +30,15 @@ impl Scenario for S029 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    let admin = L2Client::connect_with_signer(&env.rpc_url, env.chain_id, &env.admin_key)
-        .map_err(|e| eyre::eyre!("admin client: {e}"))?;
-    let provider = admin
-        .write_provider()
-        .map_err(|e| eyre::eyre!("admin write_provider: {e}"))?;
-    let reg = ISRARegistryView::new(SRA_REGISTRY, provider);
-
     let fake = Address::from([0xab; 20]);
-
-    let err = reg
-        .register(fake, 0u32, 1_000_000u64, false)
-        .max_fee_per_gas(0)
-        .max_priority_fee_per_gas(0)
-        .send()
+    let err = env
+        .admin
+        .register_sra(fake, 0u32, 1_000_000u64, false)
         .await
         .err()
         .ok_or_else(|| eyre::eyre!("S029: expected InvalidMask revert, got success"))?;
 
-    let typed = into_pso_error(L2ClientError::Contract(format!("{err}")));
+    let typed = into_pso_error(err);
     match &typed {
         PsoContractError::InvalidMask => Ok(()),
         other => Err(eyre::eyre!("S029: expected InvalidMask, got {other}")),

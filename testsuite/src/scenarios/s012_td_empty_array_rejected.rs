@@ -38,7 +38,7 @@ impl Scenario for S012 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    let provider = env.sra.inner().read_provider();
+    let provider = env.sra_zero.inner().read_provider();
     let td = ITributeDraft::new(TRIBUTE_DRAFT, &provider);
     let result = td
         .submit(U256::from(1u64), Default::default(), vec![], Bytes::new())
