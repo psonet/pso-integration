@@ -1,7 +1,7 @@
 # pso-e2e-testsuite
 
 End-to-end test harness for the PSO L2. Ships as a single binary
-(`pso-e2e`) that drives the full SRA + Wallet round-trip plus 11
+(`pso-e2e`) that drives the full SRA + Wallet round-trip plus 30+
 negative-path invariants against a running pso-chain devnet.
 
 The binary is the CI artifact: pso-chain wraps it in a Docker image
@@ -52,9 +52,13 @@ Hex inputs accept either `0x`-prefixed or bare 64-hex-char strings.
 
 ## Scenarios
 
+35 scenarios at the time of writing. Each one is a single
+`testsuite/src/scenarios/sNNN_*.rs` file with a module-level
+doc-comment explaining the chain-side guard it exercises.
+
 | id    | invariant                                                                                |
 | ----- | ---------------------------------------------------------------------------------------- |
-| S001  | Full SR/AR → SU via bridge → wallet TD prove + submit; derivedOwner round-trip.          |
+| S001  | Full SR/AR → SU via bridge → wallet TD prove + submit; `derivedOwner` round-trip.        |
 | S002  | SRA-signed `TributeDraft.submit` through agents pool is refused (pool or contract).      |
 | S003  | Non-SRA wallet cannot submit a SpendingRecord through the actor pool.                    |
 | S004  | Non-SRA wallet cannot submit a SpendingRecordAmendment through the actor pool.           |
@@ -62,10 +66,41 @@ Hex inputs accept either `0x`-prefixed or bare 64-hex-char strings.
 | S006  | SRA-signed actor-pool submission: assert the inner-call outcome (no SR landed).          |
 | S007  | Registering the same SR id twice reverts with `AlreadyExists`.                           |
 | S008  | `SR.submit(id=0, ...)` reverts with `InvalidTokenId`.                                    |
-| S009  | SU.submit referencing another SRA's SR reverts with `SpendingRecordsNotOwnedBySender`.   |
+| S009  | `SU.submit` referencing another SRA's SR reverts with `SpendingRecordsNotOwnedBySender`. |
 | S010  | Second SU sharing an SR fingerprint reverts with `SpendingRecordsAlreadyExist`.          |
-| S011  | SU.submit with never-registered SR ids reverts with `SpendingRecordsNotOwnedBySender`.   |
+| S011  | `SU.submit` with never-registered SR ids reverts with `SpendingRecordsNotOwnedBySender`. |
 | S012  | `TributeDraft.submit` with empty `suIds` reverts with `EmptyArray`.                      |
+| S013  | Actor RPC rejects envelope with zeroed magic prefix.                                     |
+| S014  | Actor RPC rejects envelope replaying a previously-seen nullifier.                        |
+| S015  | Actor RPC rejects envelope with stale `submitted_block`.                                 |
+| S016  | Actor RPC rejects envelope with bit-flipped VDF proof bytes.                             |
+| S017  | Actor RPC rejects envelope with bit-flipped VDF output bytes.                            |
+| S018  | `TributeDraft.submit` with empty proof reverts `MalformedAggregationProof`.              |
+| S019  | `TributeDraft.submit` with mismatched public inputs reverts `InvalidAggregationProof`.   |
+| S020  | `SU.submit` referencing another SRA's AR reverts with `SpendingRecordsNotOwnedBySender`. |
+| S021  | `TributeDraft.submit` with non-existent `suId` reverts `NotFound`.                       |
+| S022  | `TributeDraft.submit` with SUs on different worldwide_days reverts `NotSameWorldwideDay`.|
+| S023  | `TributeDraft.submit` with SUs in different currencies reverts `NotSettlementCurrencyCurrency`. |
+| S025  | `SR.submit` with mismatched key/value lengths reverts `InvalidMetadata`.                 |
+| S026  | `SU.submit` with `settlement_amount_atto >= 1e18` reverts `InvalidAmount`.               |
+| S027  | `SRARegistry.register` from a non-admin reverts `NotAdmin`.                              |
+| S028  | `SRARegistry.register(address(0), ...)` reverts `ZeroAddress`.                           |
+| S029  | `SRARegistry.register(addr, 0, ...)` reverts `InvalidMask`.                              |
+| S030  | `SR.submit` from a never-registered SRA reverts `SRANotActive`.                          |
+| S031  | Actor RPC rejects envelope with VDF computed at `T` outside current ∪ previous epoch's. |
+| S033  | Revoked SRA's `SR.submit` reverts `SRANotActive` (lifecycle).                            |
+| S034  | `SRARegistry.register` on already-registered address reverts `AlreadyRegistered(addr)`.  |
+| S035  | `admin.update_mask` round-trips through `getRecord`.                                     |
+| S036  | `admin.set_rotation_candidate` round-trips through `getRecord`.                          |
+| S037  | `admin.revoke_sra` on never-registered address reverts `NotRegistered(addr)`.            |
+
+S024 (`AggregationTierUnavailable`) was dropped — the contract's
+`_selectTier(n)` rounds n upward, so only n > 64 triggers the
+revert, which would need 65 SU mints per scenario run. Re-added
+later if we have a cheaper path. S032 (cross-epoch positive: a
+proof computed under the previous epoch's `T` still verifies after
+a difficulty transition) is pending a chain-side
+`pso_dev_advanceEpoch` RPC.
 
 ## Exit codes
 

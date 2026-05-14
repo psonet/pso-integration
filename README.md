@@ -1,178 +1,256 @@
 # pso-integration
 
+[![CI](https://github.com/psonet/pso-integration/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/psonet/pso-integration/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/psonet/pso-integration?display_name=tag&sort=semver)](https://github.com/psonet/pso-integration/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Client-side integration layer** for the PSO L2 — everything a wallet,
-SRA registrar, or other off-chain client needs to participate in the
-network. Bridges the consensus-binding primitives in
-[`pso-protocol`](../pso-protocol) and the Noir prover in
-[`pso-zk-circuits`](../pso-zk-circuits) into UniFFI bindings, a CLI,
-and shared cryptographic helpers.
+SRA registrar, or e2e harness needs to participate in the network.
+Bridges the consensus-binding primitives in
+[`pso-protocol`](https://github.com/psonet/pso-protocol) and the Noir
+prover in [`pso-zk-circuits`](https://github.com/psonet/pso-zk-circuits)
+into UniFFI bindings, two CLIs, the typed L2 RPC client, and the
+`pso-e2e` end-to-end test suite that pso-chain CI runs against every
+PR.
 
-One of four sibling repos in the post-extraction layout:
+One of four sibling repos in the PSO multi-repo layout:
 
-- [`pso-protocol`](../pso-protocol) — consensus-binding hash primitives
-  and witness types.
-- [`pso-zk-circuits`](../pso-zk-circuits) — Noir circuits + FFI prover.
-- **`pso-integration`** *(this repo)* — UniFFI wrappers, CLI, NFT
-  domain types, k256-bound witness builders, VDF FFI (planned), and
-  the L2-interaction surface that mobile / SRA clients consume.
-- [`pso-chain`](../pso-chain) — PSO L2 chain.
-
-Absorbs the wallet/CLI/FFI half of the legacy `pso-zk-proof`
-workspace. The Noir circuits and FFI prover live in `pso-zk-circuits`.
+- [`pso-protocol`](https://github.com/psonet/pso-protocol) — consensus-binding hash primitives and witness types.
+- [`pso-zk-circuits`](https://github.com/psonet/pso-zk-circuits) — Noir circuits + FFI prover.
+- **`pso-integration`** *(this repo)* — UniFFI wrappers, CLIs, NFT domain types, Grumpkin-Schnorr witness builders, MinRoot VDF FFI, the L2 RPC client, and `pso-e2e`.
+- [`pso-chain`](https://github.com/psonet/pso-chain) — the L2 itself.
 
 ## Scope
 
-The integration layer is intentionally broad — it owns every off-chain
-interaction a client makes with the L2:
+Today's shipped surface covers the **full client lifecycle**: wallet-side
+ZK proof generation (ownership / aggregation / full proof on
+Grumpkin-Schnorr), the MinRoot VDF prover for Users-pool gating, the
+alloy-based L2 RPC client + two CLIs, the typed `PsoContractError`
+decoder a client uses to match contract reverts by selector, and the
+scenario-driven `pso-e2e` harness pso-chain CI runs against every PR.
 
-| Concern                                    | Status  | Lives in                            |
-| ------------------------------------------ | ------- | ----------------------------------- |
-| Wallet keypair derivation (ECDH + KDF)     | shipped | `pso-integrations-shared`           |
-| Poseidon5 ownership commitment (k256 side) | shipped | `pso-integrations-shared::witness`  |
-| ZK witness construction (single / full / aggregation) | shipped | `pso-integrations-shared::witness`  |
-| TributeDraft / SpendingUnit struct types   | shipped | `domain/pso-nft`                    |
-| Mobile UniFFI bindings (iOS / Android)     | shipped | `pso-mobile-integration`            |
-| SRA registrar UniFFI bindings              | shipped | `pso-sra-integration`               |
-| Command-line frontend                      | shipped | `cli/pso-zk-cli`                    |
-| VDF FFI binding (proof-of-personhood)      | shipped | `pso-mobile-integration::vdf` (`compute_vdf`, `verify_vdf`, `derive_vdf_input`, `vdf_constants`) — see `pso-vdf` crate |
-| L2 RPC client + ABI bindings               | shipped | `pso-l2-client` (alloy-based; inline `sol!` for the 4 predeployed contracts; SRA + Wallet flow functions) |
-| App. A shared-key derivation (ECDH + HKDF) | shipped | `pso-l2-client::shared_key` |
-| SRA CLI (register SR/AR, mint SU)          | shipped | `pso-sra-cli` |
-| Wallet CLI (prepare-su, aggregate, submit-td, prove-td-ownership) | shipped (proving steps gated on circuits) | `pso-wallet-cli` |
-| End-to-end test (programmatic, not via CLI) | shipped (proving steps gated on circuits) | `pso-l2-e2e-tests` — `#[ignore]` by default; opt in with `PSO_L2_RPC=… cargo test -p pso-l2-e2e-tests -- --ignored` |
-| Per-SU ownership proof (§4.2 rewrite)      | **pending circuits** | needs Noir circuit work in `psonet/pso-zk-circuits`. See `docs/aggregation-redesign.md`. |
-| Recursive aggregation proof (Noir recursion) | **pending circuits** | needs Noir circuit work in `psonet/pso-zk-circuits`. See `docs/aggregation-redesign.md`. |
-| TD ownership proof (post-mint, for L1 redemption) | **pending circuits** | same ownership circuit; will reuse once available. |
+| Concern                                                       | Lives in                                              |
+| ------------------------------------------------------------- | ----------------------------------------------------- |
+| Wallet keypair derivation (secp256k1 ECDH + HMAC-SHA256 KDF)  | `pso-integrations-shared`                             |
+| Poseidon ownership commitment (Grumpkin)                      | `pso-integrations-shared::witness`                    |
+| Grumpkin-Schnorr sign + verify primitives                     | `pso-mobile-integration::schnorr` (`schnorr_sign_grumpkin`, `schnorr_verify_grumpkin`) |
+| ZK witness construction (single / full / flat aggregation)    | `pso-integrations-shared::witness`                    |
+| Flat-aggregation tier dispatch (N ∈ {1,2,4,8,16,32,64})       | `pso-zk-canonical::select_aggregation_tier`           |
+| TributeDraft / SpendingUnit struct types                      | `domain/pso-nft`                                      |
+| Mobile UniFFI bindings (iOS / Android)                        | `pso-mobile-integration` — prove, verify, VDF, keypair |
+| SRA registrar UniFFI bindings                                 | `pso-sra-integration`                                 |
+| Command-line frontends                                        | `cli/pso-sra-cli`, `cli/pso-wallet-cli`, `cli/pso-zk-cli` |
+| L2 RPC client + ABI bindings                                  | `pso-l2-client` (alloy + inline `sol!` for the 4 predeploys + SRA/Wallet flow functions) |
+| Typed contract-error decoder                                  | `pso-l2-client::contract_errors::PsoContractError`    |
+| MinRoot VDF FFI (compute + verify + binding)                  | `pso-mobile-integration::vdf`                         |
+| End-to-end test harness                                       | `testsuite/` — the `pso-e2e` binary; see [`testsuite/README.md`](testsuite/README.md) |
 
-The shipped surface today covers the full client lifecycle: wallet-side
-ZK proof generation (ownership, aggregation, full proof), the MinRoot
-VDF prover for Users-pool gating, and the alloy-based L2 RPC client +
-two CLIs that the SRA registrar and wallet use to talk to the chain.
-Each lives in this repo for the same reason — they all depend on k256
-/ native crypto and would force `pso-protocol` to carry an EC
-dependency if they lived there.
-
-## Why split it out
+## Why this repo exists
 
 Wallet release cadence is the fastest of the three layers — bug fixes
 and UX changes ship without recompiling circuits or redeploying chain
-code. Keeping integration code in its own repo means:
+code. Splitting integration code out of the chain repo means:
 
-- Mobile / desktop builds don't trigger a Noir / C++ recompile.
-- The `pso-protocol` and `pso-zk-circuits` consumers can hold a wallet
-  release at a known-good pin while integration iterates.
+- Mobile / desktop builds don't trigger a Noir or C++ recompile.
+- `pso-protocol` and `pso-zk-circuits` consumers can hold a wallet
+  release at a known-good pin while this repo iterates.
 - The k256 / UniFFI / alloy dependency tree stays out of
-  `pso-protocol` (which must not pull in elliptic-curve crypto — every
+  `pso-protocol`, which must not pull in elliptic-curve crypto — every
   chain precompile that delegates to `pso-protocol` would inherit it
-  otherwise).
+  otherwise.
 
 ## Layout
 
 ```
 pso-integration/
-├── Cargo.toml                          # 9-member workspace
+├── Cargo.toml                              # 9-member workspace
 ├── crates/
-│   ├── pso-integrations-shared/        # Shared ECDH + KDF + the
-│   │                                   # `witness` module: k256-aware
-│   │                                   # witness builders that used to
-│   │                                   # live in `pso-zk-core::witness`.
-│   ├── pso-mobile-integration/         # UniFFI wrapper for React Native
-│   │                                   # (iOS staticlib, Android cdylib).
-│   │                                   # Hosts the ZK proof API + the
-│   │                                   # MinRoot VDF FFI.
-│   ├── pso-sra-integration/            # UniFFI bindings for the SRA
-│   │                                   # registrar — secp256k1 ECDH +
-│   │                                   # Poseidon5 ownership derivation.
-│   ├── pso-l2-client/                  # Alloy-based L2 RPC client +
-│   │                                   # inline `sol!` ABI bindings +
-│   │                                   # SRA/Wallet flow functions.
-│   └── pso-l2-e2e-tests/               # Integration test crate that
-│                                       # exercises the full SRA + Wallet
-│                                       # flow programmatically (no CLI
-│                                       # invocation). #[ignore]'d by
-│                                       # default; needs a running L2.
+│   ├── pso-integrations-shared/            # ECDH + KDF + the `witness`
+│   │                                       # module (Grumpkin-Schnorr
+│   │                                       # witness builders).
+│   ├── pso-mobile-integration/             # UniFFI wrapper for React
+│   │                                       # Native (iOS staticlib,
+│   │                                       # Android cdylib). Hosts the
+│   │                                       # ZK proof API, the VDF
+│   │                                       # FFI, and the standalone
+│   │                                       # `schnorr_sign_grumpkin` /
+│   │                                       # `schnorr_verify_grumpkin`.
+│   ├── pso-sra-integration/                # UniFFI bindings for the
+│   │                                       # SRA registrar.
+│   └── pso-l2-client/                      # Alloy-based L2 RPC client
+│                                           # + inline `sol!` ABI +
+│                                           # SRA/Wallet flow functions
+│                                           # + typed contract-error
+│                                           # decoder.
 ├── cli/
-│   ├── pso-zk-cli/                     # ZK proof CLI (NFT gen, proof
-│   │                                   # gen/verify, aggregate workflow).
-│   ├── pso-sra-cli/                    # SRA-side L2 ops: register SR,
-│   │                                   # register AR, mint SU.
-│   └── pso-wallet-cli/                 # Wallet-side L2 ops: prepare SU,
-│                                       # aggregate, submit TD, prove
-│                                       # TD full proof.
-└── domain/
-    └── pso-nft/                        # TributeDraft + SpendingUnit
-                                        # struct types and trait impls.
-                                        # All hash formulas now delegate
-                                        # to `pso_protocol::nft::*` — the
-                                        # struct types stay for backward
-                                        # compatibility while consumers
-                                        # migrate to ABI-type impls.
+│   ├── pso-zk-cli/                         # ZK proof CLI (NFT gen,
+│   │                                       # proof gen/verify, aggregate
+│   │                                       # workflow).
+│   ├── pso-sra-cli/                        # SRA-side L2 ops: register
+│   │                                       # SR, register AR, mint SU.
+│   └── pso-wallet-cli/                     # Wallet-side L2 ops: prepare
+│                                           # SU material, aggregate,
+│                                           # submit TD, prove TD
+│                                           # ownership for L1 redemption.
+├── domain/
+│   └── pso-nft/                            # TributeDraft + SpendingUnit
+│                                           # struct types. Hash formulas
+│                                           # delegate to
+│                                           # `pso_protocol::nft::*`.
+└── testsuite/                              # `pso-e2e` scenario harness.
+                                            # 35+ scenarios; see
+                                            # testsuite/README.md.
 ```
+
+## How to use
+
+### Build
+
+```bash
+# Whole workspace.
+cargo build --workspace
+
+# Network-free tests (cargo unit + framework).
+cargo test --workspace --lib --tests
+
+# Build just the e2e binary.
+cargo build --release -p pso-e2e-testsuite --bin pso-e2e
+```
+
+Mobile builds:
+
+```bash
+# iOS staticlib.
+cargo build --profile mobile --target aarch64-apple-ios \
+            -p pso-mobile-integration
+
+# Android cdylib.
+cargo ndk -t arm64-v8a build --profile mobile \
+            -p pso-mobile-integration
+```
+
+UniFFI bindings are emitted by each crate's `uniffi-bindgen-mobile` /
+`uniffi-bindgen-sra` binary — see the per-crate READMEs.
+
+### Run `pso-e2e` against a local devnet
+
+`pso-e2e` is the scenario-driven harness. It connects to a running
+`pso-chain --dev` instance, bootstraps the SRA registry, and walks
+through every scenario in `testsuite/src/scenarios/` — both the
+happy-path SR → AR → SU → TD round-trip and the 30+ negative-path
+invariants the protocol enforces (envelope tampering, foreign-SRA
+record references, malformed aggregation proofs, registry guards,
+SRA lifecycle transitions, …).
+
+```bash
+# 1. Start pso-chain --dev in a separate shell.
+pso-chain --dev
+
+# 2. Run the suite (Hardhat keys are devnet defaults).
+pso-e2e \
+  --rpc-url       http://127.0.0.1:19545 \
+  --actor-rpc-url http://127.0.0.1:8546  \
+  --chain-id      19280501               \
+  --admin-key     0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+  --sra-key       0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+
+# 3. Filter to a single scenario / family while iterating.
+pso-e2e --admin-key … --sra-key … --only S001 -vv
+pso-e2e --admin-key … --sra-key … --only S013,S014,S015,S016,S017,S031   # envelope/VDF tampering
+pso-e2e --admin-key … --sra-key … --only S033,S034,S035,S036,S037         # SRA admin lifecycle
+```
+
+### Pre-built image
+
+Every push to `main` publishes `ghcr.io/psonet/pso-e2e:main`; every
+release tag publishes `:vX.Y.Z` + `:latest`. pso-chain CI consumes
+the image directly:
+
+```bash
+docker pull ghcr.io/psonet/pso-e2e:main
+
+docker run --rm --network host ghcr.io/psonet/pso-e2e:main \
+  --rpc-url       http://127.0.0.1:19545 \
+  --actor-rpc-url http://127.0.0.1:8546  \
+  --chain-id      19280501               \
+  --admin-key     "$ADMIN_KEY" \
+  --sra-key       "$SRA_KEY"
+```
+
+### Scenario surface
+
+35 scenarios at the time of writing. Grouped by what they exercise:
+
+| Group        | Range           | What                                                                           |
+| ------------ | --------------- | ------------------------------------------------------------------------------ |
+| Happy path   | S001            | Full SR → AR → SU mint via bridge → wallet TD prove + submit; `derivedOwner` round-trip. |
+| Pool routing | S002 – S006     | Each pool admits only the txs it should: TD never on agents pool, SR/AR/SU never on actor pool without SRA registration. |
+| SBT guards   | S007, S008      | Duplicate SR id → `AlreadyExists`; SR id 0 → `InvalidTokenId`.                 |
+| SU validity  | S009 – S011, S020 | Foreign-SRA SR/AR + never-registered SR + double-spend → `SpendingRecordsNotOwnedBySender` / `SpendingRecordsAlreadyExist`. |
+| TD invariants| S012, S021 – S023 | Empty `suIds`, `NotFound`, `NotSameWorldwideDay`, `NotSettlementCurrencyCurrency`. |
+| Envelope tampering | S013 – S017, S031 | Magic prefix, nullifier replay, stale `submitted_block`, bit-flipped VDF proof, bit-flipped VDF output, wrong VDF iteration count `T`. |
+| Aggregation negatives | S018, S019 | `MalformedAggregationProof` (length) + `InvalidAggregationProof` (public-input mismatch). |
+| Contract guards | S025 – S030 | `InvalidMetadata`, `InvalidAmount`, `NotAdmin`, `ZeroAddress`, `InvalidMask`, `SRANotActive`. |
+| SRA lifecycle | S033 – S037     | Revoke → SR.submit reverts SRANotActive; double-register → `AlreadyRegistered`; `updateMask` / `setRotationCandidate` round-trip; revoke unknown → `NotRegistered`. |
+
+The full table with descriptions lives in
+[`testsuite/README.md`](testsuite/README.md); each scenario file is
+named after the invariant it asserts and carries a module-level
+doc-comment explaining the chain-side guard it exercises.
+
+### FFI surfaces for non-Rust clients
+
+A React Native / iOS / Android client links against
+`pso-mobile-integration` (UniFFI). The exported surface includes:
+
+- **`derive_nft_keypair(consent_sk, sra_pk, nft_nonce)`** — App-A
+  ECDH + HKDF → Grumpkin keypair.
+- **`schnorr_sign_grumpkin(secret_key, message)`** /
+  **`schnorr_verify_grumpkin(public_key, message, signature)`** —
+  raw primitives for clients constructing their own witness.
+- **`prove_spending_unit_ownership` / `prove_tribute_ownership` /
+  `prove_spending_unit_full` / `prove_tribute_full` /
+  `prove_su_ownership_aggregation`** — the canonical proof
+  generators.
+- **`compute_vdf` / `verify_vdf` / `derive_vdf_input` /
+  `vdf_constants`** — MinRoot VDF FFI for Users-pool gating.
+
+`testsuite/src/scenarios/s001_happy_flow.rs` is the reference for
+how these primitives compose end-to-end against a live chain.
+
+## CI
+
+`ci.yml` is a single linear pipeline:
+
+```
+check ─┐
+unit  ─┴─> image (push:main) ─> tag (cocogitto) ─> release-binaries ─> release-image ─> github-release
+```
+
+- `check + unit` run on every PR and push.
+- `image` builds + pushes `ghcr.io/psonet/pso-e2e:main` on every
+  successful main push.
+- `tag` runs `cog bump --auto`; if a `feat:`/`fix:`/breaking commit
+  landed since the last tag, the four release jobs fire and produce
+  per-platform binaries (`pso-e2e-linux-x86_64`, `pso-e2e-linux-aarch64`)
+  plus a versioned `:vX.Y.Z` + `:latest` image and a GitHub release.
+- `chore:` / `ci:` / `docs:` etc. commits are no-ops for cog — the
+  release jobs short-circuit cleanly via
+  `if: needs.tag.outputs.tag != ''`.
+
+`pso-chain` consumes `ghcr.io/psonet/pso-e2e:main` directly in its
+own CI (see [pso-chain `.github/workflows/ci.yml::e2e`](https://github.com/psonet/pso-chain/blob/main/.github/workflows/ci.yml)).
 
 ## Dependencies
 
-- [`pso-protocol`](../pso-protocol) — path-pinned. Source of every hash
-  formula and witness data type.
-- [`pso-zk-circuits`](../pso-zk-circuits) — path-pinned. Provides the
-  Noir prover and canonical descriptors.
-- `k256` — secp256k1 keypair operations, ECDSA prehash signing,
-  SEC1 coordinate extraction.
+- [`pso-protocol`](https://github.com/psonet/pso-protocol) — public; source of every hash formula + witness data type.
+- [`pso-zk-circuits`](https://github.com/psonet/pso-zk-circuits) — private; provides the Noir prover and canonical descriptors.
+- `barretenberg-rs` (5.x) — Grumpkin-Schnorr FFI backend.
+- `noir_rs` — Noir/Barretenberg proving for the flat-aggregation tiers.
+- `alloy` (1.x) — L2 RPC client + ABI bindings.
 - `uniffi` — mobile / SRA FFI bindings.
-- `clap`, `tabled` — CLI surface.
-- `pso-vdf` — MinRoot VDF prover (Users-pool tx gating).
-- `alloy` (1.x umbrella) — L2 RPC client + ABI bindings + transaction submission.
-
-## Build
-
-```bash
-cargo build --workspace
-cargo test  --workspace                              # all tests
-cargo test  -p pso-nft                               # NFT trait impls
-cargo test  -p pso-integrations-shared --all-features
-```
-
-For mobile builds:
-
-```bash
-# iOS staticlib
-cargo build --profile mobile --target aarch64-apple-ios -p pso-mobile-integration
-
-# Android cdylib
-cargo ndk -t arm64-v8a build --profile mobile -p pso-mobile-integration
-```
-
-UniFFI bindings are generated by the `uniffi-bindgen-mobile` /
-`uniffi-bindgen-sra` binaries — see each crate's README.
-
-## Witness builders
-
-`pso-integrations-shared::witness` is the production home of the
-k256-bound witness builders that used to live in `pso-zk-core::witness`:
-
-```rust
-use pso_integrations_shared::witness::{
-    build_full_proof_witness, FullProofWitnessCtx,
-    ownership_from_secret_key, generate_aggregation_witness,
-    AggregationWitnessCtx,
-};
-
-let witness = build_full_proof_witness(
-    &nft,
-    FullProofWitnessCtx {
-        secret_key: &sk,
-        nonce,
-        merkle_path: &merkle_path,
-    },
-)?;
-```
-
-The builders are free functions rather than blanket `GenerateWitness<Ctx>`
-trait impls because Rust's orphan rule blocks the latter — both the
-trait (`pso_protocol::witness::GenerateWitness`) and the receiver type
-`T` are foreign to this crate. The byte layout is identical to the old
-trait-method version.
+- `pso-vdf` — MinRoot VDF prover.
+- `clap` — CLI surface.
 
 ## License
 
