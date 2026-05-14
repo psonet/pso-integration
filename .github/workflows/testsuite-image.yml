@@ -28,6 +28,7 @@ on:
       - '.github/workflows/testsuite-image.yml'
       - '.github/actions/build-binaries/**'
       - '.github/actions/publish-image/**'
+      - '.github/actions/configure-private-git/**'
   release:
     types: [published]
   workflow_dispatch:
