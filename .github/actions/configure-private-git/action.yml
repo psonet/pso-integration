@@ -25,8 +25,8 @@ inputs:
   token:
     description: >-
       Fine-grained PAT with `Contents: Read` on the private
-      psonet/* repos in this org's cargo dep graph. Typically
-      `${{ secrets.PSONET_REPO_TOKEN }}`.
+      psonet/* repos in this org's cargo dep graph. Pass via
+      the caller's `secrets.PSONET_REPO_TOKEN` (or equivalent).
     required: true
   print-prefix:
     description: >-
