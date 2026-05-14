@@ -57,8 +57,13 @@ COPY --from=runtime-libs /usr/lib/x86_64-linux-gnu/libc++abi.so.1 \
 # at COPY time.
 COPY --chmod=0755 dist/pso-e2e /usr/local/bin/pso-e2e
 
-# distroless/cc declares a `nonroot` user; pin it explicitly.
-USER nonroot
+# No fixed USER directive: the binary writes JUnit / artifact paths
+# under whatever bind mount the caller provides (e.g. pso-chain CI's
+# `-v $PWD:/work`), and the host-side directory is owned by the
+# GHA runner's UID 1001 — not distroless's `nonroot` (65532).
+# Callers can pin a UID at run time with `docker run --user 1001:1001`.
+# Falling back to root inside the container is acceptable for a
+# test-runner image; it never holds long-lived state.
 
 ENTRYPOINT ["/usr/local/bin/pso-e2e"]
 CMD ["--help"]
