@@ -21,10 +21,34 @@
 #     a specific release from scratch.
 name: ci
 
+# Four entry points:
+#   - push: branches: [main]      Full pipeline. check + unit + image +
+#                                 tag (cog auto-bump) and, if cog made
+#                                 a tag, the release-* jobs.
+#   - pull_request                check + unit only.
+#   - push: tags: ["v*"]          Manual tag push. Skip
+#                                 check/unit/image/tag — re-run the
+#                                 release pipeline against the tag.
+#                                 Useful when a release flaked and you
+#                                 want to retry without bumping again.
+#   - workflow_dispatch           Same as push:tags but maintainer
+#                                 names the tag explicitly via input;
+#                                 leave `tag` blank to run the normal
+#                                 main pipeline manually.
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Existing tag to (re-)release (e.g. "v0.2.0"). When empty
+          and dispatched against main, runs the regular check + unit
+          + image + tag pipeline.
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,7 +57,7 @@ concurrency:
 permissions:
   contents: write       # tag pushes, GitHub release create
   packages: write       # GHCR push for the image jobs
-  actions: write        # required so cog can dispatch nothing here, but kept for future job-internal `gh` usage
+  actions: write        # job-internal gh use if added later
 
 env:
   CARGO_TERM_COLOR: always
@@ -43,13 +67,45 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/pso-e2e
 
 jobs:
+  # Tiny prelude that figures out which "mode" we're in. Every other
+  # job's `if:` reads this output, keeping the conditional logic in
+  # one place instead of repeating the trigger taxonomy ten times.
+  resolve:
+    name: Resolve release tag
+    runs-on: ubuntu-latest
+    outputs:
+      # Non-empty when this run is a release-only path (tag push or
+      # workflow_dispatch with `tag` input). Empty otherwise — the
+      # normal "ran on main" / "PR" pipeline.
+      release_tag: ${{ steps.r.outputs.release_tag }}
+    steps:
+      - id: r
+        run: |
+          set -euo pipefail
+          tag=""
+          case "${{ github.event_name }}" in
+            push)
+              if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+                tag="${{ github.ref_name }}"
+              fi
+              ;;
+            workflow_dispatch)
+              tag='${{ inputs.tag }}'
+              ;;
+          esac
+          echo "release_tag=${tag}"
+          echo "release_tag=${tag}" >> "$GITHUB_OUTPUT"
+
   check:
     name: Format & check
     runs-on: ubuntu-latest
+    needs: resolve
     # Skip cog's own version-bump commits, otherwise every bump
     # would queue another full pipeline run (which might bump
-    # again, ad infinitum).
-    if: "!startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')"
+    # again, ad infinitum). Also skip on release-only paths (tag
+    # push / workflow_dispatch with tag) — check ran on the
+    # underlying main commit before the tag was created.
+    if: needs.resolve.outputs.release_tag == '' && !startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-check
@@ -59,7 +115,8 @@ jobs:
   unit:
     name: Unit & framework tests
     runs-on: ubuntu-latest
-    if: "!startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')"
+    needs: resolve
+    if: needs.resolve.outputs.release_tag == '' && !startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-test
@@ -75,8 +132,8 @@ jobs:
   image:
     name: Build & push pso-e2e image (:main)
     runs-on: ubuntu-latest
-    needs: [check, unit]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')
+    needs: [resolve, check, unit]
+    if: needs.resolve.outputs.release_tag == '' && github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')
     steps:
       - uses: actions/checkout@v4
         with:
@@ -115,8 +172,8 @@ jobs:
   tag:
     name: Bump version & tag
     runs-on: ubuntu-latest
-    needs: [check, unit, image]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')
+    needs: [resolve, check, unit, image]
+    if: needs.resolve.outputs.release_tag == '' && github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')
     outputs:
       tag: ${{ steps.bump.outputs.tag }}
     steps:
@@ -163,8 +220,17 @@ jobs:
 
   release-binaries:
     name: Build ${{ matrix.label }} binary
-    needs: tag
-    if: needs.tag.outputs.tag != ''
+    needs: [resolve, tag]
+    # Two entry paths:
+    #   - the `tag` job (main push) bumped and emitted outputs.tag
+    #   - the `resolve` job set release_tag (manual tag push /
+    #     workflow_dispatch). `tag` was skipped in this case.
+    # `always()` lets us combine the conditions even when `tag`
+    # was skipped.
+    if: |
+      always() &&
+      (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
+       needs.resolve.outputs.release_tag != '')
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -190,10 +256,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # tag.outputs.tag is "vX.Y.Z" — check out that exact
-          # ref so binaries built here carry the same source state
-          # the github-release job below claims they do.
-          ref: ${{ needs.tag.outputs.tag }}
+          # Either source of the tag — `tag.outputs.tag` (set on the
+          # main push) OR `resolve.outputs.release_tag` (set on the
+          # manual tag-push / workflow_dispatch path). The `||`
+          # operator picks the first non-empty one.
+          ref: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
           persist-credentials: false
 
       - uses: ./.github/actions/configure-private-git
@@ -230,8 +297,11 @@ jobs:
 
   release-image:
     name: Publish versioned testsuite image
-    needs: [tag, release-binaries]
-    if: needs.tag.outputs.tag != ''
+    needs: [resolve, tag, release-binaries]
+    if: |
+      always() &&
+      needs.release-binaries.result == 'success' &&
+      (needs.tag.outputs.tag != '' || needs.resolve.outputs.release_tag != '')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -239,13 +309,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.tag.outputs.tag }}
+          ref: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
           persist-credentials: false
 
       - name: Resolve version from tag
         id: ver
         env:
-          TAG: ${{ needs.tag.outputs.tag }}
+          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
         run: |
           version="${TAG#v}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
@@ -278,13 +348,16 @@ jobs:
 
   github-release:
     name: Create GitHub release
-    needs: [tag, release-binaries, release-image]
-    if: needs.tag.outputs.tag != ''
+    needs: [resolve, tag, release-binaries, release-image]
+    if: |
+      always() &&
+      needs.release-image.result == 'success' &&
+      (needs.tag.outputs.tag != '' || needs.resolve.outputs.release_tag != '')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.tag.outputs.tag }}
+          ref: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
 
       - name: Download all binary artifacts
         uses: actions/download-artifact@v4
@@ -295,7 +368,7 @@ jobs:
 
       - name: Compose release body
         env:
-          TAG: ${{ needs.tag.outputs.tag }}
+          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
         run: |
           set -euo pipefail
           version="${TAG#v}"
@@ -315,7 +388,7 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.tag.outputs.tag }}
+          tag_name: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
           body_path: body.md
           generate_release_notes: true
           files: |

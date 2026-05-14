@@ -104,6 +104,77 @@ pso-integration/
 
 ## How to use
 
+### Local verification (before pushing)
+
+CI burns paid minutes; reproduce the relevant gate locally first.
+Each command below maps to a CI step:
+
+```bash
+# Format & check (mirrors .github/actions/rust-check)
+cargo fmt --all -- --check
+cargo check --workspace --tests
+
+# Unit & framework tests (mirrors .github/actions/rust-test)
+cargo test --workspace --lib --tests
+
+# Build the release binary (mirrors .github/actions/build-binaries)
+cargo build --release -p pso-e2e-testsuite --bin pso-e2e
+
+# Build the runtime image (mirrors .github/actions/publish-image)
+mkdir -p dist && cp target/release/pso-e2e dist/
+docker build -t pso-e2e:dev -f testsuite/Dockerfile .
+
+# Preview what cog would bump (cocogitto must be installed locally:
+#   cargo install --locked cocogitto).
+cog bump --auto --dry-run
+
+# Force a specific bump locally (push triggers the release path
+# via the `push: tags` trigger — see "Triggering a release" below).
+cog bump --auto
+git push --follow-tags
+```
+
+`act` (https://github.com/nektos/act) runs the whole workflow
+locally in a Docker container; it's a heavier setup but reproduces
+the GHA environment more faithfully:
+
+```bash
+act push -W .github/workflows/ci.yml
+```
+
+### Triggering a release
+
+The CI pipeline has four entry points:
+
+| Trigger                                    | What runs                                                                  |
+| ------------------------------------------ | -------------------------------------------------------------------------- |
+| `push: branches: [main]`                   | check + unit + image + tag (cog auto-bump). If cog bumped, release-* too.  |
+| `pull_request`                             | check + unit only.                                                         |
+| `push: tags: ["v*"]`                       | release-* only — re-build a tag's artifacts without re-bumping.            |
+| `workflow_dispatch` (`tag` input optional) | With `tag`: same as push:tags. Without: same as push:main.                 |
+
+Three practical patterns:
+
+```bash
+# A. Normal main flow: just commit + push, cog decides whether to
+#    bump. Use conventional-commit prefixes (`feat:`, `fix:`,
+#    `feat!:` for breaking) so cog actually picks them up.
+git commit -m "feat(testsuite): add S038 …"
+git push origin main
+
+# B. Manual tag push: produce a tag locally and push it. The
+#    release-* jobs fire on the `push: tags` trigger.
+git tag v0.2.0
+git push origin v0.2.0
+
+# C. UI / scripted dispatch: trigger the release for an existing
+#    tag without pushing anything.
+gh workflow run ci.yml --field tag=v0.2.0
+```
+
+`gh workflow run ci.yml` with `tag=""` (or omitted) acts as a
+manual re-run of the regular main pipeline.
+
 ### Build
 
 ```bash
