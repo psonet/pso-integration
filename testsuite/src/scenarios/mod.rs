@@ -19,6 +19,10 @@ pub mod s011_su_with_nonexistent_sr_rejected;
 pub mod s012_td_empty_array_rejected;
 pub mod s013_envelope_bad_magic_rejected;
 pub mod s014_envelope_nullifier_replay_rejected;
+pub mod s015_envelope_stale_submitted_block_rejected;
+pub mod s016_envelope_bad_vdf_proof_rejected;
+pub mod s017_envelope_wrong_vdf_output_rejected;
+pub mod s020_su_with_foreign_ar_rejected;
 
 use crate::scenario::Scenario;
 
@@ -40,5 +44,9 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s012_td_empty_array_rejected::S012),
         Box::new(s013_envelope_bad_magic_rejected::S013),
         Box::new(s014_envelope_nullifier_replay_rejected::S014),
+        Box::new(s015_envelope_stale_submitted_block_rejected::S015),
+        Box::new(s016_envelope_bad_vdf_proof_rejected::S016),
+        Box::new(s017_envelope_wrong_vdf_output_rejected::S017),
+        Box::new(s020_su_with_foreign_ar_rejected::S020),
     ]
 }
