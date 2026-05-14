@@ -66,15 +66,53 @@ pub struct ScenarioResult {
 
 impl ScenarioResult {
     /// Time the scenario, capture the outcome, and assemble a row.
+    ///
+    /// The `scenario.run` call is wrapped in an `info_span!` tagged
+    /// with the scenario id. Every `tracing::info!` / `debug!` /
+    /// `warn!` emitted from inside the scenario inherits that span,
+    /// so the CI log can be sliced per-scenario after the fact by
+    /// grepping the `scenario=` field. We also emit explicit
+    /// `started` / `finished` events at the boundaries so a quick
+    /// `grep '"finished"'` gives a per-scenario timing summary
+    /// without parsing the markdown table.
     pub async fn time(scenario: &dyn Scenario, env: &TestEnv) -> Self {
+        use tracing::Instrument;
+        let id = scenario.id();
+        let description = scenario.description();
+        let span = tracing::info_span!("scenario", id = %id);
         let start = Instant::now();
-        let outcome = match scenario.run(env).await {
+        let outcome = async {
+            tracing::info!(target: "pso_e2e::scenario", event = "started", scenario = id, description = description);
+            let result = scenario.run(env).await;
+            let elapsed_ms = Instant::now().duration_since(start).as_millis();
+            match &result {
+                Ok(()) => tracing::info!(
+                    target: "pso_e2e::scenario",
+                    event = "finished",
+                    scenario = id,
+                    outcome = "pass",
+                    duration_ms = elapsed_ms as u64,
+                ),
+                Err(e) => tracing::warn!(
+                    target: "pso_e2e::scenario",
+                    event = "finished",
+                    scenario = id,
+                    outcome = "fail",
+                    duration_ms = elapsed_ms as u64,
+                    error = %e,
+                ),
+            }
+            result
+        }
+        .instrument(span)
+        .await;
+        let outcome = match outcome {
             Ok(()) => Outcome::Pass,
             Err(e) => Outcome::Fail(e),
         };
         Self {
-            id: scenario.id(),
-            description: scenario.description(),
+            id,
+            description,
             duration_ms: Instant::now().duration_since(start).as_millis(),
             outcome,
         }

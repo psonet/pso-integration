@@ -165,11 +165,36 @@ impl ActorClient {
         to: Address,
         inner_calldata: Bytes,
     ) -> Result<TxHash, ActorClientError> {
+        self.submit_tx_with_envelope(to, inner_calldata, |env| env)
+            .await
+    }
+
+    /// Like [`Self::submit_tx`] but lets the caller mutate the
+    /// already-built envelope bytes before signing.
+    ///
+    /// This is the scenario hook for the envelope-tampering tests
+    /// (S013-S017): the closure receives the canonical 172-byte
+    /// header + inner-calldata payload and returns whatever bytes
+    /// should actually be signed and broadcast. The header layout
+    /// is documented in [`crate::clients::envelope`].
+    ///
+    /// Returns whatever `eth_sendRawTransaction` answered with —
+    /// either a pool-admission tx hash or a `PoolRejection` /
+    /// `Revert` error decoded from the JSON-RPC body.
+    pub async fn submit_tx_with_envelope<F>(
+        &self,
+        to: Address,
+        inner_calldata: Bytes,
+        mutate: F,
+    ) -> Result<TxHash, ActorClientError>
+    where
+        F: FnOnce(Vec<u8>) -> Vec<u8>,
+    {
         let difficulty = self.fetch_difficulty().await?;
         let head = self.block_number().await?;
         let nonce = self.nonce().await?;
 
-        let data = build_users_pool_calldata(
+        let envelope = build_users_pool_calldata(
             self.address(),
             nonce,
             head,
@@ -178,6 +203,7 @@ impl ActorClient {
             &inner_calldata,
         )
         .map_err(|e| ActorClientError::Config(format!("envelope build: {e}")))?;
+        let data = mutate(envelope);
 
         // EIP-1559 envelope with both gas fields zeroed — pso-chain's
         // actor RPC accepts only `max_fee = max_priority_fee = 0`

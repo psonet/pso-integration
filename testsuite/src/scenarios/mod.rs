@@ -17,6 +17,8 @@ pub mod s009_su_with_foreign_sr_rejected;
 pub mod s010_su_double_spend_rejected;
 pub mod s011_su_with_nonexistent_sr_rejected;
 pub mod s012_td_empty_array_rejected;
+pub mod s013_envelope_bad_magic_rejected;
+pub mod s014_envelope_nullifier_replay_rejected;
 
 use crate::scenario::Scenario;
 
@@ -36,5 +38,7 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s010_su_double_spend_rejected::S010),
         Box::new(s011_su_with_nonexistent_sr_rejected::S011),
         Box::new(s012_td_empty_array_rejected::S012),
+        Box::new(s013_envelope_bad_magic_rejected::S013),
+        Box::new(s014_envelope_nullifier_replay_rejected::S014),
     ]
 }
