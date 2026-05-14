@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.1.1 - 2026-05-14
+#### Bug Fixes
+- (**ci**) make cog bump rewrite every crate version, not just CHANGELOG - (a397246) - Anton Velichko
+#### Continuous Integration
+- support manual tag pushes + workflow_dispatch + skip check on release-only paths - (c4e2eb4) - Anton Velichko
+
+- - -
+
 ## v0.1.0 - 2026-05-14
 #### Features
 - (**client**) force max_fee = max_priority_fee = 0 on agent / wallet txs - (15459f2) - Anton Velichko
