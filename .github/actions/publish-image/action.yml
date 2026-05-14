@@ -1,0 +1,63 @@
+name: Publish pso-e2e image
+description: >-
+  Build and push the pso-e2e runtime image to GHCR. Expects a
+  prebuilt static binary at dist/pso-e2e (produced by the
+  build-binaries action above).
+
+inputs:
+  tags:
+    description: >-
+      Newline-separated list of fully-qualified image tags to push.
+      Caller owns the tag scheme (release vs. PR).
+    required: true
+  labels:
+    description: Newline-separated labels for the image.
+    required: false
+    default: ""
+  registry:
+    description: Container registry hostname.
+    required: false
+    default: ghcr.io
+  registry-username:
+    description: Registry login user.
+    required: true
+  registry-password:
+    description: Registry login token.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Stage binary for docker context
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Belt-and-braces: the build-binaries action already drops
+        # dist/pso-e2e with 0755, but actions/upload-artifact strips
+        # exec bits, so any caller that uploads + redownloads
+        # between steps would lose +x. Re-applying here keeps the
+        # COPY in the Dockerfile happy regardless.
+        chmod 0755 dist/pso-e2e
+        ls -la dist/
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.registry-username }}
+        password: ${{ inputs.registry-password }}
+
+    - name: Build & push image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: testsuite/Dockerfile
+        push: true
+        platforms: linux/amd64
+        tags: ${{ inputs.tags }}
+        labels: ${{ inputs.labels }}
+        cache-from: type=gha,scope=pso-e2e
+        cache-to: type=gha,mode=max,scope=pso-e2e

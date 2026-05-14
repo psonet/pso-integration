@@ -1,0 +1,95 @@
+name: Build pso-e2e binary
+description: >-
+  Cross-compile the pso-e2e binary statically against MUSL using
+  cargo-zigbuild. Mirrors psonet/bank-data-provider's composite
+  action so both repos share a single build recipe. The output
+  binary is placed at dist/pso-e2e and is consumed by the
+  publish-image action.
+
+  Note: barretenberg-rs pulls in a C++ toolchain via cc-rs; zig's
+  bundled clang + libc++abi is what makes the static-MUSL link
+  work without separate libc++-dev / libstdc++-12-dev apt packages.
+
+inputs:
+  cache-key:
+    description: Shared cache key for Swatinem/rust-cache.
+    required: false
+    default: "build-musl"
+  save-cache:
+    description: >-
+      Whether to save the rust-cache entry after the build. "false"
+      for tag/release builds (entries scoped to a tag ref are
+      unreachable from any branch); "true" for main and PR runs.
+    required: false
+    default: "true"
+
+outputs:
+  dist-path:
+    description: Path to the directory containing the built binary.
+    value: dist
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust (from rust-toolchain.toml)
+      shell: bash
+      run: rustup show active-toolchain || rustup toolchain install
+
+    - name: Install MUSL target
+      shell: bash
+      run: rustup target add x86_64-unknown-linux-musl
+
+    - name: Install zig
+      uses: mlugg/setup-zig@v1
+      with:
+        version: 0.13.0
+
+    # IMPORTANT: cache step must come before any `cargo` command so
+    # that the caches (registry, git, target/) are restored before
+    # the build starts.
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ${{ inputs.cache-key }}
+        save-if: ${{ inputs.save-cache }}
+
+    # sccache caches per-rustc-invocation outputs in the GHA cache.
+    # It complements rust-cache (which caches target/ as a whole) by
+    # giving us cross-branch hits: two PRs touching the same crate
+    # share rustc output even though their target/ caches are
+    # ref-scoped.
+    - name: Install sccache
+      uses: Mozilla-Actions/sccache-action@v0.0.10
+
+    - name: Install cargo-zigbuild
+      shell: bash
+      run: |
+        if ! command -v cargo-zigbuild >/dev/null 2>&1; then
+          cargo install --locked cargo-zigbuild
+        fi
+
+    - name: cargo zigbuild --release (x86_64-unknown-linux-musl)
+      shell: bash
+      env:
+        RUSTC_WRAPPER: sccache
+        # When save-cache=false (tag builds), disable the sccache
+        # GHA backend entirely. Tag-ref entries are unreachable from
+        # any branch, same caveat as rust-cache above.
+        SCCACHE_GHA_ENABLED: ${{ inputs.save-cache }}
+      run: |
+        set -euo pipefail
+        cargo zigbuild --release \
+          --target x86_64-unknown-linux-musl \
+          -p pso-e2e-testsuite --bin pso-e2e
+
+        mkdir -p dist
+        strip target/x86_64-unknown-linux-musl/release/pso-e2e
+        cp target/x86_64-unknown-linux-musl/release/pso-e2e dist/pso-e2e
+
+    - name: sccache stats
+      shell: bash
+      run: sccache --show-stats || true
+
+    - name: Inspect binary
+      shell: bash
+      run: file dist/pso-e2e && ls -lh dist/pso-e2e

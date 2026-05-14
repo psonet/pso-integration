@@ -1,18 +1,19 @@
 # Build and publish the `pso-e2e` test-suite container to GitHub
-# Container Registry. The image is what pso-chain CI consumes to run
-# the scenario suite against its freshly-spun-up devnet — see
+# Container Registry. The image is what pso-chain CI consumes to
+# run the scenario suite against its freshly-spun-up devnet — see
 # `testsuite/README.md` and pso-chain's `.github/workflows/ci.yml::e2e`.
 #
 # Triggers:
-# - `push` to `main`  -> publish as `:main` and `:sha-<short>`
-# - `release` (published) -> publish as `:<tag>` AND `:latest`
+# - `push` to `main`           -> publish as `:main` and `:sha-<short>`
+# - `release` (published)      -> publish as `:<tag>` AND `:latest`
 # - manual `workflow_dispatch` -> publish as `:sha-<short>`
 #
-# Build model: the release binary is built on the GitHub runner
-# (where git auth + C++ toolchain already work via `ci.yml`'s
-# proven recipe). Docker just packages the prebuilt binary into a
-# slim runtime image. Avoids a second auth surface, a second
-# C++/noir compile, and a second cache invalidation path.
+# Build model: mirrors psonet/bank-data-provider's workflow exactly.
+# The release binary is cross-compiled statically against MUSL via
+# `cargo zigbuild` in the build-binaries composite action; the
+# publish-image composite then packages it into a `FROM scratch`
+# runtime image. Same recipe in both repos = single mental model
+# across psonet CI.
 name: testsuite-image
 
 on:
@@ -25,6 +26,8 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/testsuite-image.yml'
+      - '.github/actions/build-binaries/**'
+      - '.github/actions/publish-image/**'
   release:
     types: [published]
   workflow_dispatch:
@@ -42,13 +45,7 @@ env:
 jobs:
   build-and-push:
     name: build & push pso-e2e
-    # Pinned to ubuntu-22.04 (glibc 2.35) on purpose — the runtime
-    # image is `debian:bookworm-slim` (glibc 2.36), so building on
-    # ubuntu-latest (now 24.04 / glibc 2.39) produces a binary that
-    # refuses to run inside bookworm with
-    # `version `GLIBC_2.38' not found`. 22.04's glibc is older than
-    # bookworm's, which means the linker fingerprint is compatible.
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write   # required to push to ghcr.io
@@ -61,17 +58,9 @@ jobs:
           # ends up sending two Authorization headers + a 400.
           persist-credentials: false
 
-      # ---- Build the release binary on the runner ----------------
-
-      - name: Install C++ toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake clang \
-            libstdc++-12-dev \
-            libc++-dev libc++abi-dev \
-            pkg-config libssl-dev
-
+      # Authenticate the private psonet/* git deps (pso-zk-circuits,
+      # noir_rs fork) so cargo + git can clone them during the
+      # zigbuild step. Same flow as ci.yml's `Configure git auth`.
       - name: Configure git auth for private psonet/* repos
         env:
           TOKEN: ${{ secrets.PSONET_REPO_TOKEN }}
@@ -94,40 +83,15 @@ jobs:
           git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
           echo "git auth configured for $login"
 
-      # Scope the cache to ubuntu-22.04 so we don't inherit
-      # artifacts from earlier ubuntu-latest (Ubuntu 24.04) runs —
-      # the rust-cache key alone is OS-agnostic, and mixing 24.04-
-      # compiled rlibs into a 22.04 build produced spurious E0463
-      # "can't find crate" errors on the noir_rs / pso-zk-circuit
-      # dep chain.
-      - uses: Swatinem/rust-cache@v2
+      # ---- Build static MUSL binary via composite action ---------
+      - name: Build pso-e2e binary
+        uses: ./.github/actions/build-binaries
+        # `save-cache: false` only on release/tag builds — entries
+        # scoped to a tag ref are unreachable from any branch.
         with:
-          prefix-key: v0-rust-ubuntu22
+          save-cache: ${{ github.event_name != 'release' }}
 
-      - name: cargo build --release -p pso-e2e-testsuite
-        run: cargo build --release -p pso-e2e-testsuite --bin pso-e2e
-
-      # Move the binary to the build context root so the Dockerfile
-      # COPY picks it up. Strip the debug info — shaves ~30 MB off
-      # the final image.
-      - name: Stage binary for docker context
-        run: |
-          cp target/release/pso-e2e ./pso-e2e
-          strip ./pso-e2e
-          ls -lh ./pso-e2e
-
-      # ---- Package into the runtime image ------------------------
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
+      # ---- Resolve tags & publish image --------------------------
       - name: Resolve tags
         id: meta
         uses: docker/metadata-action@v5
@@ -141,16 +105,14 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
-      - name: Build & push
-        uses: docker/build-push-action@v6
+      - name: Publish image
+        uses: ./.github/actions/publish-image
         with:
-          context: .
-          file: testsuite/Dockerfile
-          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=pso-e2e
-          cache-to: type=gha,mode=max,scope=pso-e2e
+          registry: ${{ env.REGISTRY }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Image summary
         run: |

@@ -1,49 +1,45 @@
 # syntax=docker/dockerfile:1.7
-
-# Runtime-only image for the `pso-e2e` binary.
 #
-# The release binary is built by `psonet/pso-integration`'s CI
-# (`.github/workflows/testsuite-image.yml`) on the runner — where
-# git auth, the C++ toolchain, and the long noir/bb compile already
-# work — and then COPYed into this image at build time. Doing the
-# cargo work inside docker would require the runner's PAT, a full
-# C++ toolchain, and ~10 minutes of repeated barretenberg-rs compile
-# every time the image needs to be pushed. None of that buys
-# anything when the binary already exists three steps earlier in the
-# same workflow.
+# Runtime image for the `pso-e2e` binary.
 #
-# The build context must contain a `pso-e2e` binary at the root
-# (the workflow drops it there before invoking docker build).
+# Mirrors the pattern psonet/bank-data-provider uses: the binary is
+# cross-compiled statically against MUSL by the build-binaries
+# composite action and dropped at `dist/pso-e2e` before the
+# `docker build` invocation. Because the binary is fully static, we
+# can run it from `FROM scratch` — no glibc, no libstdc++, no
+# debian/ubuntu base.
+#
+# Build context must contain:
+#   dist/pso-e2e          -- the static MUSL binary (mode 0755)
 #
 # Manual / local build:
 #
-#   cargo build --release -p pso-e2e-testsuite --bin pso-e2e
-#   cp target/release/pso-e2e ./pso-e2e
+#   cargo zigbuild --release --target x86_64-unknown-linux-musl \
+#       -p pso-e2e-testsuite --bin pso-e2e
+#   mkdir -p dist && cp target/x86_64-unknown-linux-musl/release/pso-e2e dist/
 #   docker build -t pso-e2e:dev -f testsuite/Dockerfile .
 
-FROM debian:bookworm-slim
+# Stage a CA bundle. The binary itself doesn't currently make TLS
+# calls (devnet RPC is plaintext), but having the standard trust
+# store available means a later flag like `--actor-rpc-url https://…`
+# Just Works without rebuilding the image.
+FROM alpine:3.21 AS certs
+RUN apk add --no-cache ca-certificates
 
-# Runtime deps:
-# - `libstdc++6`  -- GCC C++ stdlib used by some glue layers
-# - `libc++1`     -- LLVM C++ stdlib that barretenberg-rs links
-#                    against (`-lc++` at compile time -> .so.1 at run)
-# - `ca-certificates` -- HTTPS to the L2 RPC endpoints
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-        libstdc++6 \
-        libc++1 \
-        ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+FROM scratch AS runtime
 
-# Drop in the prebuilt binary. Workflow places it at the context
-# root; `chmod +x` is belt-and-braces since cargo already sets it.
-COPY pso-e2e /usr/local/bin/pso-e2e
-RUN chmod +x /usr/local/bin/pso-e2e
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-# Non-root user — the binary only needs network access.
-RUN useradd -m -u 1001 pso
-USER pso
-WORKDIR /home/pso
+# --chmod=0755 because actions/upload-artifact strips Unix exec
+# bits; if a caller round-trips the binary through an artifact the
+# file arrives at 0644 in the context. Force the bit back on at
+# COPY time.
+COPY --chmod=0755 dist/pso-e2e /usr/local/bin/pso-e2e
+
+# Non-root nobody — no apt user provisioning available on
+# `FROM scratch`, so re-use the well-known reserved uid that's
+# guaranteed to exist nowhere on the host either.
+USER 65534
 
 ENTRYPOINT ["/usr/local/bin/pso-e2e"]
 CMD ["--help"]
