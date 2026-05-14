@@ -1,6 +1,6 @@
 [package]
 name = "pso-mobile-integration"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Mobile-friendly UniFFI wrapper for PSO ZK proof generation"
 

@@ -1,6 +1,6 @@
 [package]
 name = "pso-integrations-shared"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Shared cryptographic operations for PSO integration crates"
 

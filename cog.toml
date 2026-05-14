@@ -3,13 +3,28 @@ branch_whitelist = ["main"]
 ignore_merge_commits = true
 generate_mono_repository_global_tag = false
 
+# Rewrite the workspace's [workspace.package].version line before
+# cog assembles its `chore(version): vX.Y.Z` commit. The `0,/RE/`
+# sed range matches only the FIRST `^version = "..."` line in the
+# file, which by Cargo.toml convention is the workspace one
+# (dependency versions are nested inside `{ version = "..." }`
+# tables or live under `[workspace.dependencies]` with different
+# leading characters and don't anchor at column 0).
+#
+# Without this hook cog would tag the release but the binary
+# would still report the old version through `pso-e2e --version`
+# / `Cargo.toml`-derived metadata — drift between the tag and
+# the artifact's self-reported version.
+pre_bump_hooks = [
+    "sed -i '0,/^version = \".*\"/{s//version = \"{{version}}\"/}' Cargo.toml",
+]
+
 # After cog bumps the version + writes the tag, push both back to
-# the remote so `release.yml` (which is triggered by tag push or
-# workflow_dispatch) can pick it up. Without this, ci would have
-# to push manually — the tag job in main does have permission to
-# do that, but pinning the recipe inside cog.toml means a
-# maintainer running `cog bump --auto` locally gets the same
-# behaviour out of the box.
+# the remote so the release-* jobs in ci.yml (which read
+# `tag.outputs.tag` from cog's `git tag --points-at HEAD`) can
+# pick it up. The post_bump_hooks also let a maintainer running
+# `cog bump --auto` locally get the same end state — bump commit
+# pushed, tag pushed, CI release path fired by the tag push.
 post_bump_hooks = [
     "git push origin HEAD:main",
     "git push origin v{{version}}",

@@ -1,6 +1,6 @@
 [package]
 name = "pso-sra-integration"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "FFI bindings for Secp256K1-based ECDH and Poseidon5 ownership computation"
 license = "MIT"
