@@ -32,6 +32,9 @@ pub mod s024_td_aggregation_tier_unavailable_rejected;
 pub mod s025_sr_invalid_metadata_rejected;
 pub mod s026_su_invalid_amount_rejected;
 pub mod s027_registry_not_admin_rejected;
+pub mod s028_registry_zero_address_rejected;
+pub mod s029_registry_invalid_mask_rejected;
+pub mod s030_sra_not_active_rejected;
 
 use crate::scenario::Scenario;
 
@@ -66,5 +69,8 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s025_sr_invalid_metadata_rejected::S025),
         Box::new(s026_su_invalid_amount_rejected::S026),
         Box::new(s027_registry_not_admin_rejected::S027),
+        Box::new(s028_registry_zero_address_rejected::S028),
+        Box::new(s029_registry_invalid_mask_rejected::S029),
+        Box::new(s030_sra_not_active_rejected::S030),
     ]
 }
