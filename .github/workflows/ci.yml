@@ -1,25 +1,24 @@
-# Pull-request guard + version-bump pipeline for pso-integration.
+# Unified CI + release pipeline for pso-integration.
 #
-# Three jobs that delegate to composite actions under
-# `.github/actions/`. Mirrors psonet/bank-data-provider's
-# `main.yml` layout 1:1.
+# Everything in one workflow file — no separate `testsuite-image`
+# triggered by `workflow_run`, no `release.yml` dispatched via
+# `gh workflow run`. The needs-chain inside this workflow is the
+# only flow-control mechanism:
 #
-#   check  -> .github/actions/rust-check  (fmt + cargo check)
-#   unit   -> .github/actions/rust-test   (cargo test, network-free)
-#   tag    -> cocogitto-action            (push:main only;
-#                                          conventional-commit
-#                                          auto-bump)
+#   check ─┐
+#   unit ──┴──> image ──> tag ──> release-binaries (matrix) ──> release-image ──> github-release
 #
-# `tag` only fires on direct pushes to main (NOT pull_request) and
-# only after both `check` and `unit` are green. It uses cog.toml's
-# `post_bump_hooks` to push the bump commit + tag back; the tag
-# push fires `.github/workflows/release.yml`.
+# `tag` runs cocogitto `bump --auto` (conventional-commit auto-
+# increment); its `outputs.tag` is empty when no feat/fix/breaking
+# commit has landed since the last tag, in which case the four
+# release jobs short-circuit via `if: needs.tag.outputs.tag != ''`.
 #
-# The full live-chain scenario run (`testsuite/src/scenarios/*`)
-# is *not* exercised here because the environment needs a running
-# pso-chain devnet — that drives pso-chain's own CI. Publishing
-# the suite as a Docker image is `testsuite-image.yml`, which is
-# now gated on `ci`'s `workflow_run` success.
+# Direct re-run paths:
+#   - `gh run rerun --failed <run_id>`  — re-runs whatever jobs
+#     failed without re-bumping the version.
+#   - Force-move the tag via `git push --force origin v0.1.5` and
+#     a `chore(force-rerun):` empty commit if you need to rebuild
+#     a specific release from scratch.
 name: ci
 
 on:
@@ -31,10 +30,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write       # tag pushes, GitHub release create
+  packages: write       # GHCR push for the image jobs
+  actions: write        # required so cog can dispatch nothing here, but kept for future job-internal `gh` usage
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/pso-e2e
 
 jobs:
   check:
@@ -60,25 +66,63 @@ jobs:
         with:
           token: ${{ secrets.PSONET_REPO_TOKEN }}
 
-  tag:
-    name: Bump version & tag
-    # Only auto-tag on direct push to main, never on PRs and never
-    # on the bump commits cog itself produces (the head_commit
-    # filter above catches those for `check` and `unit`; we mirror
-    # it here for symmetry).
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')
+  # ----------------------------------------------------------------
+  # Main-only jobs.
+  # Everything below this line only fires on `push: main` (not PRs)
+  # and not on cog's own chore(version) bump commits.
+  # ----------------------------------------------------------------
+
+  image:
+    name: Build & push pso-e2e image (:main)
     runs-on: ubuntu-latest
     needs: [check, unit]
-    permissions:
-      contents: write
-      # Required for the `gh workflow run release.yml` dispatch.
-      # Without this, the dispatch returns HTTP 403 ("Resource not
-      # accessible by integration").
-      actions: write
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # cog needs full history for commit walk
+          # Same `persist-credentials: false` rationale as the other
+          # private-deps-using jobs in the repo: without it
+          # actions/checkout writes its own Authorization header
+          # into .git/config and our PAT credential-helper sends
+          # two Auth headers → GitHub 400.
+          persist-credentials: false
+
+      - uses: ./.github/actions/configure-private-git
+        with:
+          token: ${{ secrets.PSONET_REPO_TOKEN }}
+
+      - name: Build pso-e2e binary
+        uses: ./.github/actions/build-binaries
+
+      - name: Resolve tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-,format=short
+
+      - name: Publish image
+        uses: ./.github/actions/publish-image
+        with:
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          registry: ${{ env.REGISTRY }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+
+  tag:
+    name: Bump version & tag
+    runs-on: ubuntu-latest
+    needs: [check, unit, image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # cog walks the full commit history
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure git identity
@@ -87,6 +131,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       # cog.toml's post_bump_hooks push the bump commit + tag.
+      # GITHUB_TOKEN-authored pushes don't fire downstream `push`
+      # events, but we don't need that anymore — every release job
+      # below lives in this same workflow run and is needs-chained
+      # to this job's `outputs.tag`.
       - name: Cocogitto bump
         uses: cocogitto/cocogitto-action@v4
         with:
@@ -95,20 +143,180 @@ jobs:
           git-user: "github-actions[bot]"
           git-user-email: "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Trigger release workflow
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve created tag (if any)
+        id: bump
         run: |
           set -euo pipefail
-          # If cog didn't bump this run (only chore/docs commits
-          # since last tag), there's nothing to release.
+          # `tag --points-at HEAD` only matches if cog actually
+          # bumped this run (= a feat/fix/BREAKING commit landed
+          # since the last tag). On pure chore/docs/ci commits
+          # cog is a no-op and `tag` stays empty.
           tag="$(git tag --points-at HEAD | grep '^v' | head -n1 || true)"
-          if [ -z "${tag}" ]; then
-            echo "No tag created — skipping release dispatch."
-            exit 0
-          fi
-          echo "Dispatching release.yml for ${tag}."
-          # GITHUB_TOKEN cannot trigger downstream `push` events,
-          # but it CAN trigger workflow_dispatch (GitHub's
-          # 2022-09-08 change).
-          gh workflow run release.yml --ref "${tag}" --field "tag=${tag}"
+          echo "tag=${tag}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+  # ----------------------------------------------------------------
+  # Release jobs.
+  # Gated on `needs.tag.outputs.tag != ''` — short-circuits to a
+  # green-skip when cog didn't bump this run.
+  # ----------------------------------------------------------------
+
+  release-binaries:
+    name: Build ${{ matrix.label }} binary
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            target: x86_64-unknown-linux-gnu.2.34
+            runner: ubuntu-latest
+          - label: linux-aarch64
+            target: aarch64-unknown-linux-gnu.2.34
+            runner: ubuntu-latest
+          - label: macos-x86_64
+            target: x86_64-apple-darwin
+            runner: macos-latest
+          - label: macos-aarch64
+            target: aarch64-apple-darwin
+            runner: macos-latest
+          - label: windows-x86_64
+            target: x86_64-pc-windows-gnu
+            runner: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # tag.outputs.tag is "vX.Y.Z" — check out that exact
+          # ref so binaries built here carry the same source state
+          # the github-release job below claims they do.
+          ref: ${{ needs.tag.outputs.tag }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/configure-private-git
+        with:
+          token: ${{ secrets.PSONET_REPO_TOKEN }}
+
+      - name: Install C++ toolchain (Linux runner only)
+        if: startsWith(matrix.runner, 'ubuntu-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang \
+            libstdc++-12-dev \
+            libc++-dev libc++abi-dev \
+            pkg-config libssl-dev
+
+      - name: Build binary
+        uses: ./.github/actions/build-binaries
+        with:
+          target: ${{ matrix.target }}
+          output-name: pso-e2e-${{ matrix.label }}
+          # Tag-ref runs MUST NOT save rust-cache entries —
+          # they're scoped to a tag ref and unreachable from any
+          # branch. Same for the sccache GHA backend.
+          save-cache: "false"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pso-e2e-${{ matrix.label }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release-image:
+    name: Publish versioned testsuite image
+    needs: [tag, release-binaries]
+    if: needs.tag.outputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          persist-credentials: false
+
+      - name: Resolve version from tag
+        id: ver
+        env:
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          version="${TAG#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Download linux-x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: pso-e2e-linux-x86_64
+          path: artifact/
+
+      - name: Stage binary for docker context
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp artifact/pso-e2e-linux-x86_64 dist/pso-e2e
+          chmod 0755 dist/pso-e2e
+          ls -la dist/
+
+      - uses: ./.github/actions/publish-image
+        with:
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.ver.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.ver.outputs.version }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          registry: ${{ env.REGISTRY }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+
+  github-release:
+    name: Create GitHub release
+    needs: [tag, release-binaries, release-image]
+    if: needs.tag.outputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          pattern: pso-e2e-*
+          merge-multiple: true
+
+      - name: Compose release body
+        env:
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          {
+            echo "## Container image"
+            echo
+            echo '```bash'
+            echo "docker pull ${REGISTRY}/${IMAGE_NAME}:${version}"
+            echo "docker pull ${REGISTRY}/${IMAGE_NAME}:latest"
+            echo '```'
+            echo
+            echo "## Binaries"
+            echo
+            echo "Pre-built \`pso-e2e\` for every supported platform is attached below."
+          } > body.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.tag.outputs.tag }}
+          body_path: body.md
+          generate_release_notes: true
+          files: |
+            artifacts/pso-e2e-*
