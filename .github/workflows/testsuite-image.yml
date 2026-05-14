@@ -52,36 +52,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # See `.github/workflows/ci.yml` for the full rationale —
-          # in short, without this actions/checkout writes its own
-          # Authorization header into .git/config and our PAT path
-          # ends up sending two Authorization headers + a 400.
+          # Without this, actions/checkout writes its own
+          # Authorization header into .git/config and the
+          # configure-private-git step below ends up sending two
+          # Authorization headers + a 400. See pso-integration
+          # CI history for the full diagnosis.
           persist-credentials: false
 
-      # Authenticate the private psonet/* git deps (pso-zk-circuits,
-      # noir_rs fork) so cargo + git can clone them during the
-      # zigbuild step. Same flow as ci.yml's `Configure git auth`.
-      - name: Configure git auth for private psonet/* repos
-        env:
-          TOKEN: ${{ secrets.PSONET_REPO_TOKEN }}
-        run: |
-          if [ -z "$TOKEN" ]; then
-            echo "::error::PSONET_REPO_TOKEN secret is not set"
-            exit 1
-          fi
-          login=$(curl -fsSL \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $TOKEN" \
-            https://api.github.com/user | jq -r .login)
-          if [ -z "$login" ] || [ "$login" = "null" ]; then
-            echo "::error::Could not resolve PAT issuer"
-            exit 1
-          fi
-          umask 077
-          printf "https://%s:%s@github.com\n" "$login" "$TOKEN" > "$HOME/.git-credentials"
-          git config --global credential.helper "store --file=$HOME/.git-credentials"
-          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-          echo "git auth configured for $login"
+      - uses: ./.github/actions/configure-private-git
+        with:
+          token: ${{ secrets.PSONET_REPO_TOKEN }}
 
       # ---- Build static MUSL binary via composite action ---------
       - name: Build pso-e2e binary

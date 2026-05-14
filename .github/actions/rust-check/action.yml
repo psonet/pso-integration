@@ -1,0 +1,70 @@
+name: Rust format & check
+description: >-
+  cargo fmt --check + cargo check across the workspace, against the
+  private psonet/* git deps that need a PAT to clone. Mirrors
+  psonet/bank-data-provider's rust-check action so both repos share
+  one mental model.
+
+inputs:
+  token:
+    description: PAT for private psonet/* repo access.
+    required: true
+  cache-key:
+    description: Shared cache key for Swatinem/rust-cache.
+    required: false
+    default: "host-check"
+  save-cache:
+    description: >-
+      Whether to save the rust-cache entry after the run. "false"
+      for tag/release builds.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    # `persist-credentials: false` tells actions/checkout NOT to
+    # write its own http.extraheader into .git/config. Without that,
+    # any later git operation sends two Authorization headers and
+    # GitHub 400s with "Duplicate header". The configure-private-git
+    # action below installs our PAT credential helper instead.
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Install Rust toolchain
+      shell: bash
+      run: |
+        rustup show active-toolchain || rustup toolchain install
+        rustup component add rustfmt
+
+    # barretenberg-rs's build script links libc++ (`-lc++`) and a few
+    # other native deps. Keep the apt list narrow; zigbuild handles
+    # the rest in MUSL builds, but native `cargo check` here still
+    # needs system headers.
+    - name: Install C++ toolchain
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          cmake clang \
+          libstdc++-12-dev \
+          libc++-dev libc++abi-dev \
+          pkg-config libssl-dev
+
+    - uses: ./.github/actions/configure-private-git
+      with:
+        token: ${{ inputs.token }}
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ${{ inputs.cache-key }}
+        save-if: ${{ inputs.save-cache }}
+
+    - name: cargo fmt --check
+      shell: bash
+      run: cargo fmt --all -- --check
+
+    - name: cargo check --workspace --tests
+      shell: bash
+      run: cargo check --workspace --tests

@@ -1,0 +1,91 @@
+name: Configure git for private psonet/* repos
+description: >-
+  Set up git's credential.helper so cargo + plain `git clone` can
+  reach the private `psonet/pso-zk-circuits`, `psonet/noir_rs` and
+  similar private deps used as cargo `git = "..."` sources.
+
+  Behaviour: takes a fine-grained PAT, resolves the issuer's GitHub
+  login via the API (git HTTP wants Basic Auth with the issuer's
+  username; Bearer-only is what tripped earlier iterations), writes
+  a `~/.git-credentials` entry, points `credential.helper` at it,
+  and adds an `insteadOf` rewrite so `ssh://git@github.com/…`
+  workspace deps transparently fall back to HTTPS.
+
+  The credential file lives at $HOME/.git-credentials with mode
+  0600 (set via `umask 077` before write); the helper runs only
+  inside the current job.
+
+  No off-the-shelf action covers this exact recipe — closest is
+  `de-vri-es/setup-git-credentials@v1` which can set the helper
+  but doesn't do the per-PAT issuer-login lookup our flow needs.
+  Reuse this action across every workflow that needs to compile
+  the workspace.
+
+inputs:
+  token:
+    description: >-
+      Fine-grained PAT with `Contents: Read` on the private
+      psonet/* repos in this org's cargo dep graph. Typically
+      `${{ secrets.PSONET_REPO_TOKEN }}`.
+    required: true
+  print-prefix:
+    description: >-
+      If "true", echo the PAT prefix + length to the log so a
+      "secret pasted wrong" failure mode is self-evident in CI
+      diffs. Token bytes never leave the runner.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve PAT issuer & set credential helper
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.token }}
+        PRINT_PREFIX: ${{ inputs.print-prefix }}
+      run: |
+        set -euo pipefail
+        if [ -z "${TOKEN}" ]; then
+          echo "::error::token input is empty — PAT secret missing?"
+          exit 1
+        fi
+
+        if [ "${PRINT_PREFIX}" = "true" ]; then
+          prefix=$(printf '%s' "${TOKEN}" | cut -c1-12)
+          echo "PAT prefix: ${prefix}…  (length ${#TOKEN})"
+        fi
+
+        # Raw API call (no -f) so we can SEE the body on 401 and
+        # surface whether GitHub said "Bad credentials" vs a scope
+        # or rate-limit issue.
+        http_status=$(curl -sS -o /tmp/who.json -w '%{http_code}' \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${TOKEN}" \
+          https://api.github.com/user)
+        echo "api.github.com/user -> http=${http_status}"
+        if [ "${http_status}" != "200" ]; then
+          echo "response body:"; cat /tmp/who.json; echo
+          echo "::error::api.github.com/user returned ${http_status}; PAT invalid or revoked"
+          exit 1
+        fi
+        login=$(jq -r .login /tmp/who.json)
+        if [ -z "${login}" ] || [ "${login}" = "null" ]; then
+          echo "::error::Could not resolve PAT issuer login"
+          exit 1
+        fi
+
+        # credential-store entry — git HTTP wants Basic Auth with
+        # the PAT issuer's GitHub username; the bare Bearer-header
+        # path tried earlier returned 401 for private repos.
+        umask 077
+        printf "https://%s:%s@github.com\n" "${login}" "${TOKEN}" \
+          > "${HOME}/.git-credentials"
+        git config --global credential.helper \
+          "store --file=${HOME}/.git-credentials"
+        # Workspace deps use `ssh://git@github.com/…` URLs so local
+        # dev resolves via ssh-agent; in CI we rewrite to HTTPS so
+        # the credential helper above kicks in.
+        git config --global url."https://github.com/".insteadOf \
+          "ssh://git@github.com/"
+        echo "git auth configured for ${login}"

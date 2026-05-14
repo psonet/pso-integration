@@ -1,0 +1,59 @@
+name: Rust unit & integration tests
+description: >-
+  cargo test across the workspace, network-free targets only. Same
+  shape as rust-check but the cache scope and the actual cargo
+  invocation differ. Mirrors psonet/bank-data-provider.
+
+inputs:
+  token:
+    description: PAT for private psonet/* repo access.
+    required: true
+  cache-key:
+    description: Shared cache key for Swatinem/rust-cache.
+    required: false
+    default: "host-test"
+  save-cache:
+    description: >-
+      Whether to save the rust-cache entry after the run. "false"
+      for tag/release builds.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Install Rust toolchain
+      shell: bash
+      run: rustup show active-toolchain || rustup toolchain install
+
+    - name: Install C++ toolchain
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          cmake clang \
+          libstdc++-12-dev \
+          libc++-dev libc++abi-dev \
+          pkg-config libssl-dev
+
+    - uses: ./.github/actions/configure-private-git
+      with:
+        token: ${{ inputs.token }}
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ${{ inputs.cache-key }}
+        save-if: ${{ inputs.save-cache }}
+
+    # `cargo test --lib --tests` excludes integration tests that
+    # need a live PSO L2 node. The testsuite's own integration
+    # tests under `testsuite/tests/framework.rs` are network-free
+    # by construction (envelope encoding, errors decoder, data
+    # shape) so they participate here.
+    - name: cargo test (workspace, --lib + tests/)
+      shell: bash
+      run: cargo test --workspace --lib --tests
