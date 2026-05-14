@@ -35,6 +35,7 @@ pub mod s027_registry_not_admin_rejected;
 pub mod s028_registry_zero_address_rejected;
 pub mod s029_registry_invalid_mask_rejected;
 pub mod s030_sra_not_active_rejected;
+pub mod s031_envelope_wrong_difficulty_rejected;
 
 use crate::scenario::Scenario;
 
@@ -72,5 +73,6 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s028_registry_zero_address_rejected::S028),
         Box::new(s029_registry_invalid_mask_rejected::S029),
         Box::new(s030_sra_not_active_rejected::S030),
+        Box::new(s031_envelope_wrong_difficulty_rejected::S031),
     ]
 }

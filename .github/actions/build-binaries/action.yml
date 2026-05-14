@@ -72,7 +72,7 @@ runs:
           cargo install --locked cargo-zigbuild
         fi
 
-    - name: cargo zigbuild --release (x86_64-unknown-linux-gnu.2.31)
+    - name: cargo zigbuild --release (x86_64-unknown-linux-gnu.2.34)
       shell: bash
       env:
         RUSTC_WRAPPER: sccache
@@ -82,12 +82,14 @@ runs:
         SCCACHE_GHA_ENABLED: ${{ inputs.save-cache }}
       run: |
         set -euo pipefail
-        # Pin the glibc minimum to 2.31 — old enough that any
-        # currently-supported distro (Debian 11+, Ubuntu 20.04+,
-        # distroless/cc-debian12) loads the binary without
-        # `version `GLIBC_X.Y' not found` errors.
+        # Pin the glibc minimum to 2.34 — covers the symbols our
+        # dep tree needs (`mallinfo2` was added in glibc 2.33, used
+        # by aws-lc-sys / similar). 2.34 is still well below
+        # distroless/cc-debian12's glibc 2.36, and covers any
+        # modern long-supported distro (Debian 12, Ubuntu 22.04+,
+        # RHEL 9, anything from 2022 onwards).
         cargo zigbuild --release \
-          --target x86_64-unknown-linux-gnu.2.31 \
+          --target x86_64-unknown-linux-gnu.2.34 \
           -p pso-e2e-testsuite --bin pso-e2e
 
         mkdir -p dist

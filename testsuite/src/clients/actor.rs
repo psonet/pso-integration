@@ -190,7 +190,34 @@ impl ActorClient {
     where
         F: FnOnce(Vec<u8>) -> Vec<u8>,
     {
-        let difficulty = self.fetch_difficulty().await?;
+        self.submit_tx_with_difficulty(to, inner_calldata, None, mutate)
+            .await
+    }
+
+    /// Like [`Self::submit_tx_with_envelope`] but lets the caller
+    /// pick a custom VDF iteration count `T` to compute the proof
+    /// at. `None` falls back to `fetch_difficulty()` (canonical
+    /// happy-path source — `pso_epochDifficulty` against the chain's
+    /// current epoch). `Some(t)` runs MinRoot at exactly `t`
+    /// iterations.
+    ///
+    /// Useful for difficulty-mismatch scenarios (S031) — pass a
+    /// value outside the chain's accepted `current ∪ previous`
+    /// window and assert `PoolRejection`.
+    pub async fn submit_tx_with_difficulty<F>(
+        &self,
+        to: Address,
+        inner_calldata: Bytes,
+        custom_difficulty: Option<u64>,
+        mutate: F,
+    ) -> Result<TxHash, ActorClientError>
+    where
+        F: FnOnce(Vec<u8>) -> Vec<u8>,
+    {
+        let difficulty = match custom_difficulty {
+            Some(t) => t,
+            None => self.fetch_difficulty().await?,
+        };
         let head = self.block_number().await?;
         let nonce = self.nonce().await?;
 
