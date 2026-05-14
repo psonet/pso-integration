@@ -29,6 +29,9 @@ pub mod s021_td_su_not_found_rejected;
 pub mod s022_td_not_same_worldwide_day_rejected;
 pub mod s023_td_not_same_currency_rejected;
 pub mod s024_td_aggregation_tier_unavailable_rejected;
+pub mod s025_sr_invalid_metadata_rejected;
+pub mod s026_su_invalid_amount_rejected;
+pub mod s027_registry_not_admin_rejected;
 
 use crate::scenario::Scenario;
 
@@ -60,5 +63,8 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s022_td_not_same_worldwide_day_rejected::S022),
         Box::new(s023_td_not_same_currency_rejected::S023),
         Box::new(s024_td_aggregation_tier_unavailable_rejected::S024),
+        Box::new(s025_sr_invalid_metadata_rejected::S025),
+        Box::new(s026_su_invalid_amount_rejected::S026),
+        Box::new(s027_registry_not_admin_rejected::S027),
     ]
 }

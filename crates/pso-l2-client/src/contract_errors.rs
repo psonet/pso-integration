@@ -24,6 +24,8 @@ use alloy::primitives::{Address, U256};
 use alloy::sol;
 use alloy::sol_types::SolError;
 
+use crate::L2ClientError;
+
 // -----------------------------------------------------------------
 // Solidity error declarations — one per chain-side `error ...(...)`.
 //
@@ -98,6 +100,41 @@ sol! {
     /// previous SU mint (`usedSpendingRecordIds` collision).
     #[allow(missing_docs)]
     error SpendingRecordsAlreadyExist(uint256[] srHashes, uint256[] amendmentSrHashes);
+
+    /// `SpendingUnit.InvalidAmount()` — settlement_amount_atto >= 1e18
+    /// or base + atto sum overflows the bounded range.
+    #[allow(missing_docs)]
+    error InvalidAmount();
+
+    /// `SpendingUnit.SpendingRecordAlreadyExists()` — single-shot
+    /// duplicate guard (distinct from the array variant above).
+    #[allow(missing_docs)]
+    error SpendingRecordAlreadyExists();
+
+    /// `SpendingRecord.InvalidMetadata(string)` / same on
+    /// `SpendingRecordAmendment`.
+    #[allow(missing_docs)]
+    error InvalidMetadata(string reason);
+
+    /// `SRARegistry.NotAdmin()`.
+    #[allow(missing_docs)]
+    error NotAdmin();
+
+    /// `SRARegistry.AlreadyRegistered(address)`.
+    #[allow(missing_docs)]
+    error AlreadyRegistered(address sra);
+
+    /// `SRARegistry.NotRegistered(address)`.
+    #[allow(missing_docs)]
+    error NotRegistered(address sra);
+
+    /// `SRARegistry.ZeroAddress()`.
+    #[allow(missing_docs)]
+    error ZeroAddress();
+
+    /// `SRARegistry.InvalidMask()` — bad permission bitmask.
+    #[allow(missing_docs)]
+    error InvalidMask();
 }
 
 /// Flat, scenario-facing classification of every revert / pool
@@ -130,6 +167,22 @@ pub enum PsoContractError {
     SpendingRecordsNotOwnedBySender(Vec<U256>, Vec<U256>),
     /// `SpendingUnit.SpendingRecordsAlreadyExist(...)`.
     SpendingRecordsAlreadyExist(Vec<U256>, Vec<U256>),
+    /// `SpendingUnit.InvalidAmount`.
+    InvalidAmount,
+    /// `SpendingUnit.SpendingRecordAlreadyExists` (single-shot variant).
+    SpendingRecordAlreadyExists,
+    /// `SpendingRecord{,Amendment}.InvalidMetadata(string)`.
+    InvalidMetadata(String),
+    /// `SRARegistry.NotAdmin`.
+    NotAdmin,
+    /// `SRARegistry.AlreadyRegistered(address)`.
+    AlreadyRegistered(Address),
+    /// `SRARegistry.NotRegistered(address)`.
+    NotRegistered(Address),
+    /// `SRARegistry.ZeroAddress`.
+    ZeroAddress,
+    /// `SRARegistry.InvalidMask`.
+    InvalidMask,
     /// Agents-pool / actor-pool rejection: the wallet's tx was never
     /// admitted. Carries the structured reason string the validator
     /// printed (`MethodNotPermitted { to, selector }`, `BadVdfInputBinding`,
@@ -180,6 +233,16 @@ impl std::fmt::Display for PsoContractError {
             PsoContractError::SpendingRecordsAlreadyExist(s, a) => {
                 write!(f, "SpendingRecordsAlreadyExist(sr={s:?}, ar={a:?})")
             }
+            PsoContractError::InvalidAmount => write!(f, "InvalidAmount"),
+            PsoContractError::SpendingRecordAlreadyExists => {
+                write!(f, "SpendingRecordAlreadyExists")
+            }
+            PsoContractError::InvalidMetadata(r) => write!(f, "InvalidMetadata({r:?})"),
+            PsoContractError::NotAdmin => write!(f, "NotAdmin"),
+            PsoContractError::AlreadyRegistered(a) => write!(f, "AlreadyRegistered({a})"),
+            PsoContractError::NotRegistered(a) => write!(f, "NotRegistered({a})"),
+            PsoContractError::ZeroAddress => write!(f, "ZeroAddress"),
+            PsoContractError::InvalidMask => write!(f, "InvalidMask"),
             PsoContractError::PoolRejection(s) => write!(f, "PoolRejection({s})"),
             PsoContractError::MethodNotPermitted(to, sel) => {
                 write!(
@@ -204,6 +267,31 @@ impl std::error::Error for PsoContractError {}
 /// present.
 pub fn decode(err: alloy::contract::Error) -> PsoContractError {
     decode_text(&err.to_string())
+}
+
+/// Convert an `L2ClientError` (the top-level pso-l2-client error
+/// wrapping alloy + everything else) into a typed
+/// [`PsoContractError`]. The common path is
+/// `L2ClientError::Contract(String)` — alloy's Display output
+/// carries the hex-encoded revert data plus any framing the JSON-RPC
+/// layer added. Everything else collapses into
+/// [`PsoContractError::Other`].
+///
+/// Typical scenario / client-side usage:
+///
+/// ```ignore
+/// let err = sra.call().await.map_err(into_pso_error)?;
+/// match err {
+///     PsoContractError::SRANotActive => { ... }
+///     PsoContractError::NotFound(id) => { ... }
+///     other => Err(other),
+/// }
+/// ```
+pub fn into_pso_error(err: L2ClientError) -> PsoContractError {
+    match err {
+        L2ClientError::Contract(s) => decode_text(&s),
+        other => PsoContractError::Other(other.to_string()),
+    }
 }
 
 /// Same decoder, starting from the textual error rendition. Useful
@@ -271,6 +359,21 @@ pub fn decode_from_bytes(data: &[u8]) -> PsoContractError {
     if selector == NotSettlementCurrencyCurrency::SELECTOR {
         return PsoContractError::NotSettlementCurrencyCurrency;
     }
+    if selector == InvalidAmount::SELECTOR {
+        return PsoContractError::InvalidAmount;
+    }
+    if selector == SpendingRecordAlreadyExists::SELECTOR {
+        return PsoContractError::SpendingRecordAlreadyExists;
+    }
+    if selector == NotAdmin::SELECTOR {
+        return PsoContractError::NotAdmin;
+    }
+    if selector == ZeroAddress::SELECTOR {
+        return PsoContractError::ZeroAddress;
+    }
+    if selector == InvalidMask::SELECTOR {
+        return PsoContractError::InvalidMask;
+    }
 
     // Parameterised errors — decode the body. A decode failure means
     // the chain's interface drifted from our `sol!` block; fall
@@ -305,6 +408,21 @@ pub fn decode_from_bytes(data: &[u8]) -> PsoContractError {
         }) = SpendingRecordsAlreadyExist::abi_decode_raw(body)
         {
             return PsoContractError::SpendingRecordsAlreadyExist(srHashes, amendmentSrHashes);
+        }
+    }
+    if selector == InvalidMetadata::SELECTOR {
+        if let Ok(InvalidMetadata { reason }) = InvalidMetadata::abi_decode_raw(body) {
+            return PsoContractError::InvalidMetadata(reason);
+        }
+    }
+    if selector == AlreadyRegistered::SELECTOR {
+        if let Ok(AlreadyRegistered { sra }) = AlreadyRegistered::abi_decode_raw(body) {
+            return PsoContractError::AlreadyRegistered(sra);
+        }
+    }
+    if selector == NotRegistered::SELECTOR {
+        if let Ok(NotRegistered { sra }) = NotRegistered::abi_decode_raw(body) {
+            return PsoContractError::NotRegistered(sra);
         }
     }
 

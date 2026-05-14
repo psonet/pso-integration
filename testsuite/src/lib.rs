@@ -29,7 +29,6 @@ pub mod cli;
 pub mod clients;
 pub mod data;
 pub mod env;
-pub mod errors;
 pub mod hardhat;
 pub mod scenario;
 pub mod scenarios;
@@ -39,8 +38,13 @@ pub use cli::{init_tracing, parse_hex32, Cli, ReportFormat};
 pub use clients::actor::{ActorClient, ActorClientError};
 pub use clients::sra::{into_pso_error, SraClient};
 pub use env::TestEnv;
-pub use errors::{decode_text, PsoContractError};
+// `PsoContractError` + the decoder primitives now live in
+// `pso-l2-client::contract_errors` so non-test clients (mobile FFI,
+// future Rust integrators) can decode contract reverts with the
+// same typed enum. Re-export at the testsuite root to keep
+// scenarios' `use crate::PsoContractError` style stable.
 pub use hardhat::{signer_address, signer_key, HARDHAT_KEYS};
+pub use pso_l2_client::contract_errors::{decode_text, PsoContractError};
 pub use scenario::{Outcome, Report, Scenario, ScenarioResult};
 
 // -----------------------------------------------------------------

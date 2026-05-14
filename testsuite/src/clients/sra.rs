@@ -19,8 +19,6 @@ use alloy::providers::Provider;
 use pso_l2_client::abi::{ISpendingRecord, ISpendingRecordAmendment, ISpendingUnit};
 use pso_l2_client::{sra, L2Client, L2ClientError};
 
-use crate::errors::PsoContractError;
-
 /// Agents-pool RPC client. Cheap to clone (`L2Client` is `Arc`-backed).
 #[derive(Clone)]
 pub struct SraClient {
@@ -208,29 +206,12 @@ impl SraClient {
     }
 }
 
-/// Convert an `L2ClientError` (contract-call wrapper around alloy) into
-/// a typed `PsoContractError`. Used by every scenario assertion path:
-/// `let err = sra.call().await.map_err(into_pso_error);`.
-pub fn into_pso_error(err: L2ClientError) -> PsoContractError {
-    // `L2ClientError::Contract(String)` wraps the alloy error's
-    // Display output. We pump the same string through the textual
-    // path of `errors::decode_from_bytes` via `decode_revert_text`.
-    match err {
-        L2ClientError::Contract(s) => decode_revert_text(&s),
-        other => PsoContractError::Other(other.to_string()),
-    }
-}
-
-/// Decode a textual alloy error message into the typed enum. The
-/// underlying primitive is `errors::decode_from_bytes` plus the
-/// hex-extraction helper exposed via `errors::decode` for free
-/// functions; here we go directly because we already have the text.
-fn decode_revert_text(msg: &str) -> PsoContractError {
-    // Re-uses the same hex-extraction logic as `errors::decode`, but
-    // we cannot call it directly without an `alloy::contract::Error`.
-    // Build a synthetic Display-equivalent string and round-trip.
-    crate::errors::decode_text(msg)
-}
+// `into_pso_error` and `decode_text` moved to
+// `pso_l2_client::contract_errors`. Scenarios import them as
+// `pso_l2_client::into_pso_error` (re-exported from lib.rs); we
+// also re-export at `crate::clients::sra::into_pso_error` to keep
+// the prior import path stable.
+pub use pso_l2_client::into_pso_error;
 
 // =====================================================================
 // Inline ABI views — `exists(uint256)` isn't on the standard interface

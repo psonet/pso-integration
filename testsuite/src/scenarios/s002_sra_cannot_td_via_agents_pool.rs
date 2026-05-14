@@ -28,8 +28,8 @@ use async_trait::async_trait;
 
 use pso_l2_client::abi::{ITributeDraft, TRIBUTE_DRAFT};
 
-use crate::errors::decode_text;
 use crate::{Scenario, TestEnv};
+use pso_l2_client::contract_errors::decode_text;
 
 pub struct S002;
 

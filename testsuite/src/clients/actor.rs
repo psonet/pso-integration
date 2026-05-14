@@ -35,7 +35,7 @@ use alloy::transports::http::reqwest::{Client as HttpClient, Url};
 use serde_json::{json, Value};
 
 use crate::clients::envelope::build_users_pool_calldata;
-use crate::errors::{decode_from_bytes, decode_text, PsoContractError};
+use pso_l2_client::contract_errors::{decode_from_bytes, decode_text, PsoContractError};
 
 /// Users-pool client.
 #[derive(Clone)]

@@ -20,10 +20,12 @@
 pub mod abi;
 pub mod artifacts;
 pub mod client;
+pub mod contract_errors;
 pub mod error;
 pub mod shared_key;
 pub mod sra;
 pub mod wallet;
 
 pub use client::L2Client;
+pub use contract_errors::{decode_from_bytes, into_pso_error, PsoContractError};
 pub use error::L2ClientError;
