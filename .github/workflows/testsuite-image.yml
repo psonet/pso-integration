@@ -42,7 +42,13 @@ env:
 jobs:
   build-and-push:
     name: build & push pso-e2e
-    runs-on: ubuntu-latest
+    # Pinned to ubuntu-22.04 (glibc 2.35) on purpose — the runtime
+    # image is `debian:bookworm-slim` (glibc 2.36), so building on
+    # ubuntu-latest (now 24.04 / glibc 2.39) produces a binary that
+    # refuses to run inside bookworm with
+    # `version `GLIBC_2.38' not found`. 22.04's glibc is older than
+    # bookworm's, which means the linker fingerprint is compatible.
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
       packages: write   # required to push to ghcr.io
