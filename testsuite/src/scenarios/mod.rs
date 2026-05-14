@@ -25,6 +25,10 @@ pub mod s017_envelope_wrong_vdf_output_rejected;
 pub mod s018_td_malformed_aggregation_proof_rejected;
 pub mod s019_td_invalid_aggregation_proof_rejected;
 pub mod s020_su_with_foreign_ar_rejected;
+pub mod s021_td_su_not_found_rejected;
+pub mod s022_td_not_same_worldwide_day_rejected;
+pub mod s023_td_not_same_currency_rejected;
+pub mod s024_td_aggregation_tier_unavailable_rejected;
 
 use crate::scenario::Scenario;
 
@@ -52,5 +56,9 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s018_td_malformed_aggregation_proof_rejected::S018),
         Box::new(s019_td_invalid_aggregation_proof_rejected::S019),
         Box::new(s020_su_with_foreign_ar_rejected::S020),
+        Box::new(s021_td_su_not_found_rejected::S021),
+        Box::new(s022_td_not_same_worldwide_day_rejected::S022),
+        Box::new(s023_td_not_same_currency_rejected::S023),
+        Box::new(s024_td_aggregation_tier_unavailable_rejected::S024),
     ]
 }
