@@ -48,9 +48,7 @@
 
 use ark_bn254::Fr;
 use ark_ff::PrimeField;
-use barretenberg_rs::{
-    backends::FfiBackend, generated_types::GrumpkinPoint, BarretenbergApi,
-};
+use barretenberg_rs::{backends::FfiBackend, generated_types::GrumpkinPoint, BarretenbergApi};
 
 use pso_integrations_shared::witness::fr_to_be32;
 use pso_zk_circuit_noir::schnorr_grumpkin::schnorr_sign_be;
@@ -67,15 +65,13 @@ pub fn schnorr_sign_grumpkin(
     secret_key: Vec<u8>,
     message: Vec<u8>,
 ) -> Result<Vec<u8>, MobileError> {
-    let sk: [u8; 32] = secret_key
-        .as_slice()
-        .try_into()
-        .map_err(|_| MobileError::InvalidSecretKey {
-            detail: format!(
-                "secret_key must be 32 bytes, got {}",
-                secret_key.len()
-            ),
-        })?;
+    let sk: [u8; 32] =
+        secret_key
+            .as_slice()
+            .try_into()
+            .map_err(|_| MobileError::InvalidSecretKey {
+                detail: format!("secret_key must be 32 bytes, got {}", secret_key.len()),
+            })?;
     let msg: [u8; 32] = message
         .as_slice()
         .try_into()
@@ -166,9 +162,7 @@ mod tests {
     use pso_integrations_shared::witness::{fr_to_le32, random_grumpkin_key};
     use rand::rngs::OsRng;
 
-    fn pk_le_bytes(
-        key: &pso_integrations_shared::witness::GrumpkinKey,
-    ) -> Vec<u8> {
+    fn pk_le_bytes(key: &pso_integrations_shared::witness::GrumpkinKey) -> Vec<u8> {
         let mut v = Vec::with_capacity(64);
         v.extend_from_slice(&fr_to_le32(&key.pk_x));
         v.extend_from_slice(&fr_to_le32(&key.pk_y));
@@ -181,12 +175,12 @@ mod tests {
         let digest = Fr::rand(&mut OsRng);
         let msg = fr_to_be32(&digest).to_vec();
 
-        let sig = schnorr_sign_grumpkin(key.sk_bytes.to_vec(), msg.clone())
-            .expect("sign must succeed");
+        let sig =
+            schnorr_sign_grumpkin(key.sk_bytes.to_vec(), msg.clone()).expect("sign must succeed");
         assert_eq!(sig.len(), 64);
 
-        let ok = schnorr_verify_grumpkin(pk_le_bytes(&key), msg, sig)
-            .expect("verify call must succeed");
+        let ok =
+            schnorr_verify_grumpkin(pk_le_bytes(&key), msg, sig).expect("verify call must succeed");
         assert!(ok, "valid signature must verify");
     }
 
@@ -195,8 +189,7 @@ mod tests {
         let key = random_grumpkin_key().expect("random key");
         let digest = Fr::rand(&mut OsRng);
         let msg = fr_to_be32(&digest).to_vec();
-        let sig = schnorr_sign_grumpkin(key.sk_bytes.to_vec(), msg)
-            .expect("sign must succeed");
+        let sig = schnorr_sign_grumpkin(key.sk_bytes.to_vec(), msg).expect("sign must succeed");
 
         // Tamper: sign over one digest, verify against a different one.
         let other_digest = Fr::rand(&mut OsRng);
@@ -211,20 +204,20 @@ mod tests {
         let key = random_grumpkin_key().expect("random key");
         let digest = Fr::rand(&mut OsRng);
         let msg = fr_to_be32(&digest).to_vec();
-        let mut sig = schnorr_sign_grumpkin(key.sk_bytes.to_vec(), msg.clone())
-            .expect("sign must succeed");
+        let mut sig =
+            schnorr_sign_grumpkin(key.sk_bytes.to_vec(), msg.clone()).expect("sign must succeed");
 
         // Flip one bit in the signature's `s` portion.
         sig[0] ^= 0x01;
-        let ok = schnorr_verify_grumpkin(pk_le_bytes(&key), msg, sig)
-            .expect("verify call must succeed");
+        let ok =
+            schnorr_verify_grumpkin(pk_le_bytes(&key), msg, sig).expect("verify call must succeed");
         assert!(!ok, "bit-flipped signature must not verify");
     }
 
     #[test]
     fn sign_rejects_short_secret_key() {
-        let err = schnorr_sign_grumpkin(vec![0u8; 16], vec![0u8; 32])
-            .expect_err("must reject short sk");
+        let err =
+            schnorr_sign_grumpkin(vec![0u8; 16], vec![0u8; 32]).expect_err("must reject short sk");
         assert!(matches!(err, MobileError::InvalidSecretKey { .. }));
     }
 
