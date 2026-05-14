@@ -35,6 +35,11 @@ pub mod s028_registry_zero_address_rejected;
 pub mod s029_registry_invalid_mask_rejected;
 pub mod s030_sra_not_active_rejected;
 pub mod s031_envelope_wrong_difficulty_rejected;
+pub mod s033_revoked_sra_submit_rejected;
+pub mod s034_registry_already_registered_rejected;
+pub mod s035_update_mask_round_trip;
+pub mod s036_rotation_candidate_round_trip;
+pub mod s037_revoke_unknown_rejected;
 
 use crate::scenario::Scenario;
 
@@ -72,5 +77,10 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s029_registry_invalid_mask_rejected::S029),
         Box::new(s030_sra_not_active_rejected::S030),
         Box::new(s031_envelope_wrong_difficulty_rejected::S031),
+        Box::new(s033_revoked_sra_submit_rejected::S033),
+        Box::new(s034_registry_already_registered_rejected::S034),
+        Box::new(s035_update_mask_round_trip::S035),
+        Box::new(s036_rotation_candidate_round_trip::S036),
+        Box::new(s037_revoke_unknown_rejected::S037),
     ]
 }
