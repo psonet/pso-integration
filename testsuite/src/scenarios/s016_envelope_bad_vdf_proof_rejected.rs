@@ -11,19 +11,14 @@
 //! actor RPC surfaces as a `PoolRejection`. The output is left
 //! untouched on purpose — this isolates the proof-verify path from
 //! the "output doesn't match input" path (S017 covers that).
-
-use alloy::primitives::Bytes;
-use alloy::sol_types::SolCall;
-use async_trait::async_trait;
-
-use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
-
 use crate::clients::actor::ActorClientError;
 use crate::data::random_id;
 use crate::{Scenario, TestEnv};
-
+use alloy::primitives::Bytes;
+use alloy::sol_types::SolCall;
+use async_trait::async_trait;
+use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
 pub struct S016;
-
 #[async_trait]
 impl Scenario for S016 {
     fn id(&self) -> &'static str {
@@ -36,7 +31,6 @@ impl Scenario for S016 {
         run(env).await
     }
 }
-
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let sr_id = random_id();
     let call = ISpendingRecord::submitCall {
@@ -45,9 +39,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         values: vec![Default::default()],
     };
     let inner = Bytes::from(call.abi_encode());
-
     let result = env
-        .actor
+        .actor_as_sra
         .submit_tx_with_envelope(SPENDING_RECORD, inner, |mut bytes| {
             // Flip the first byte of the vdf_proof field. Any
             // change inside the proof invalidates MinRoot verify.
@@ -61,7 +54,6 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             bytes
         })
         .await;
-
     match result {
         Err(ActorClientError::PoolRejection(msg)) => {
             tracing::info!(%msg, scenario = "S016", "actor pool refused bad-VDF-proof envelope");

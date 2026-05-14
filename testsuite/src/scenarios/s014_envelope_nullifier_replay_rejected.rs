@@ -17,21 +17,15 @@
 //! We don't care whether the first tx's INNER call eventually
 //! succeeds or reverts on-chain — only the pool's view of
 //! "nullifier already seen" matters.
-
-use std::sync::{Arc, Mutex};
-
-use alloy::primitives::Bytes;
-use alloy::sol_types::SolCall;
-use async_trait::async_trait;
-
-use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
-
 use crate::clients::actor::ActorClientError;
 use crate::data::random_id;
 use crate::{Scenario, TestEnv};
-
+use alloy::primitives::Bytes;
+use alloy::sol_types::SolCall;
+use async_trait::async_trait;
+use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
+use std::sync::{Arc, Mutex};
 pub struct S014;
-
 #[async_trait]
 impl Scenario for S014 {
     fn id(&self) -> &'static str {
@@ -44,13 +38,11 @@ impl Scenario for S014 {
         run(env).await
     }
 }
-
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     // First submission: capture the nullifier the canonical builder
     // rolled (bytes [4..36) of the envelope).
     let first_nullifier: Arc<Mutex<Option<[u8; 32]>>> = Arc::new(Mutex::new(None));
     let captured = first_nullifier.clone();
-
     let sr_id_a = random_id();
     let call_a = ISpendingRecord::submitCall {
         srId: sr_id_a,
@@ -58,9 +50,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         values: vec![Default::default()],
     };
     let inner_a = Bytes::from(call_a.abi_encode());
-
     let first = env
-        .actor
+        .actor_as_sra
         .submit_tx_with_envelope(SPENDING_RECORD, inner_a, move |bytes| {
             let mut n = [0u8; 32];
             n.copy_from_slice(&bytes[4..36]);
@@ -68,7 +59,6 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             bytes
         })
         .await;
-
     // Accept either pool admission or an EVM-level revert downstream
     // — the only thing we care about is the pool recording the
     // nullifier. PoolRejection on the FIRST submission means the
@@ -101,7 +91,6 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         nullifier = %hex::encode(nullifier),
         "first envelope nullifier",
     );
-
     // Second submission: build a fresh envelope (new VDF / fresh
     // submitted_block / fresh inner) but force the nullifier slot to
     // the captured value from the first.
@@ -112,9 +101,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         values: vec![Default::default()],
     };
     let inner_b = Bytes::from(call_b.abi_encode());
-
     let result = env
-        .actor
+        .actor_as_sra
         .submit_tx_with_envelope(SPENDING_RECORD, inner_b, move |mut bytes| {
             bytes[4..36].copy_from_slice(&nullifier);
             tracing::info!(
@@ -126,7 +114,6 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             bytes
         })
         .await;
-
     match result {
         Err(ActorClientError::PoolRejection(msg)) => {
             tracing::info!(%msg, scenario = "S014", "actor pool refused replayed nullifier");

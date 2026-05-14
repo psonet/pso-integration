@@ -12,19 +12,14 @@
 //! expect a `PoolRejection` from `eth_sendRawTransaction`. The rest
 //! of the header (nullifier / VDF / submitted_block) stays valid so
 //! the magic check is the only thing the chain could be reacting to.
-
-use alloy::primitives::Bytes;
-use alloy::sol_types::SolCall;
-use async_trait::async_trait;
-
-use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
-
 use crate::clients::actor::ActorClientError;
 use crate::data::random_id;
 use crate::{Scenario, TestEnv};
-
+use alloy::primitives::Bytes;
+use alloy::sol_types::SolCall;
+use async_trait::async_trait;
+use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
 pub struct S013;
-
 #[async_trait]
 impl Scenario for S013 {
     fn id(&self) -> &'static str {
@@ -37,7 +32,6 @@ impl Scenario for S013 {
         run(env).await
     }
 }
-
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let sr_id = random_id();
     let call = ISpendingRecord::submitCall {
@@ -46,9 +40,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         values: vec![Default::default()],
     };
     let inner = Bytes::from(call.abi_encode());
-
     let result = env
-        .actor
+        .actor_as_sra
         .submit_tx_with_envelope(SPENDING_RECORD, inner, |mut env_bytes| {
             // First 4 bytes are the magic prefix; clobber.
             env_bytes[0] = 0x00;
@@ -65,7 +58,6 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             env_bytes
         })
         .await;
-
     match result {
         Err(ActorClientError::PoolRejection(msg)) => {
             tracing::info!(%msg, scenario = "S013", "actor pool refused tampered-magic envelope");

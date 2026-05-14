@@ -59,6 +59,16 @@ pub struct TestEnv {
     /// actor pool. Either the `--wallet-key` from the CLI or a fresh
     /// `OsRng`-rolled key.
     pub actor: ActorClient,
+    /// Actor-pool client bound to the **SRA key** instead of the
+    /// wallet key. The actor RPC (`rpc/actor.rs::add_raw_tx`) gates
+    /// on `registry.get(sender)` and rejects any non-SRA sender as
+    /// "SRA not registered: 0x...". The wallet-keyed `actor` field
+    /// above is therefore only suitable for scenarios that
+    /// **expect** that rejection (S003-S005, S030). Scenarios that
+    /// want to actually submit through the actor pool and then
+    /// inspect a *post-gate* check (envelope tampering, VDF
+    /// difficulty, etc.) MUST use this client.
+    pub actor_as_sra: ActorClient,
     /// SRA bridge handle. The background task lives for the duration
     /// of the binary; scenarios just call `env.bridge.mint_su(...)`.
     pub bridge: Bridge,
@@ -95,6 +105,8 @@ impl TestEnv {
         let wallet_key = cli.wallet_key.unwrap_or_else(roll_random_key);
         let actor = ActorClient::new(&actor_rpc_url, chain_id, &wallet_key)
             .map_err(|e| eyre::eyre!("ActorClient: {e}"))?;
+        let actor_as_sra = ActorClient::new(&actor_rpc_url, chain_id, &cli.sra_key)
+            .map_err(|e| eyre::eyre!("ActorClient (SRA-keyed): {e}"))?;
 
         let bridge = spawn_sra_loop(sra.clone());
 
@@ -107,6 +119,7 @@ impl TestEnv {
             sra_key: cli.sra_key,
             sra,
             actor,
+            actor_as_sra,
             bridge,
         })
     }
