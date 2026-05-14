@@ -15,7 +15,8 @@ use pso_e2e_testsuite::clients::envelope::{
     build_users_pool_calldata, derive_vdf_input, pso_magic, DEFAULT_PSO_MAGIC, PSO_MIN_HEADER,
 };
 use pso_e2e_testsuite::data::{currency_eur, random_id, random_sr_metadata, random_su_args};
-use pso_e2e_testsuite::errors::{decode_from_bytes, decode_text, PsoContractError};
+use pso_l2_client::contract_errors::{decode_from_bytes, decode_text};
+use pso_l2_client::PsoContractError;
 
 /// Sanity-check the envelope header layout: 4B magic + 32B nullifier
 /// + 32B vdf_input + 48B vdf_output + 48B vdf_proof + 8B
