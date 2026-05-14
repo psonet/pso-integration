@@ -94,7 +94,15 @@ jobs:
           git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
           echo "git auth configured for $login"
 
+      # Scope the cache to ubuntu-22.04 so we don't inherit
+      # artifacts from earlier ubuntu-latest (Ubuntu 24.04) runs —
+      # the rust-cache key alone is OS-agnostic, and mixing 24.04-
+      # compiled rlibs into a 22.04 build produced spurious E0463
+      # "can't find crate" errors on the noir_rs / pso-zk-circuit
+      # dep chain.
       - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v0-rust-ubuntu22
 
       - name: cargo build --release -p pso-e2e-testsuite
         run: cargo build --release -p pso-e2e-testsuite --bin pso-e2e
