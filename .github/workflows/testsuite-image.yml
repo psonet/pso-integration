@@ -16,19 +16,21 @@
 # across psonet CI.
 name: testsuite-image
 
+# Gated on `ci`'s success: a broken commit must NOT publish a
+# `:main` tag to GHCR. We listen for the `ci` workflow to complete
+# on main and only run if its conclusion was `success`. Mirrors
+# psonet/bank-data-provider's main.yml/release.yml separation —
+# the image pipeline never runs before the lint+test pipeline.
+#
+# Manual dispatch and release-tag triggers stay direct (those
+# code paths have their own gating: dispatch is human-initiated,
+# release is downstream of the tag flow which itself has been
+# gated by ci on the underlying commit).
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'testsuite/**'
-      - 'crates/**'
-      - 'domain/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/testsuite-image.yml'
-      - '.github/actions/build-binaries/**'
-      - '.github/actions/publish-image/**'
-      - '.github/actions/configure-private-git/**'
   release:
     types: [published]
   workflow_dispatch:
@@ -47,6 +49,11 @@ jobs:
   build-and-push:
     name: build & push pso-e2e
     runs-on: ubuntu-latest
+    # Gate: only run if `ci` succeeded (workflow_run path), OR we
+    # were invoked directly (release / workflow_dispatch).
+    if: >-
+      github.event_name != 'workflow_run'
+      || github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
       packages: write   # required to push to ghcr.io

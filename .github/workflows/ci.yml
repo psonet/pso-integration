@@ -1,19 +1,25 @@
-# Pull-request guard for pso-integration.
+# Pull-request guard + version-bump pipeline for pso-integration.
 #
-# Two thin jobs that delegate everything substantive to composite
-# actions under `.github/actions/`. Mirrors psonet/bank-data-provider's
-# workflow structure so both repos share a single CI recipe — easier
-# to keep in lockstep when the recipe needs to evolve.
+# Three jobs that delegate to composite actions under
+# `.github/actions/`. Mirrors psonet/bank-data-provider's
+# `main.yml` layout 1:1.
 #
-# Layout:
 #   check  -> .github/actions/rust-check  (fmt + cargo check)
 #   unit   -> .github/actions/rust-test   (cargo test, network-free)
+#   tag    -> cocogitto-action            (push:main only;
+#                                          conventional-commit
+#                                          auto-bump)
 #
-# The full live-chain scenario run (`testsuite/src/scenarios/*`) is
-# *not* exercised here because the environment needs a running
-# pso-chain devnet — that drives pso-chain's own CI (see
-# `pso-chain/.github/workflows/ci.yml::e2e`). Publishing the suite
-# as a Docker image is `.github/workflows/testsuite-image.yml`.
+# `tag` only fires on direct pushes to main (NOT pull_request) and
+# only after both `check` and `unit` are green. It uses cog.toml's
+# `post_bump_hooks` to push the bump commit + tag back; the tag
+# push fires `.github/workflows/release.yml`.
+#
+# The full live-chain scenario run (`testsuite/src/scenarios/*`)
+# is *not* exercised here because the environment needs a running
+# pso-chain devnet — that drives pso-chain's own CI. Publishing
+# the suite as a Docker image is `testsuite-image.yml`, which is
+# now gated on `ci`'s `workflow_run` success.
 name: ci
 
 on:
@@ -28,15 +34,16 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
-  # Use the system `git` binary for git deps so `url.insteadOf` from
-  # configure-private-git is honoured (libgit2's auth handling can't
-  # see git config).
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
   check:
     name: Format & check
     runs-on: ubuntu-latest
+    # Skip cog's own version-bump commits, otherwise every bump
+    # would queue another full pipeline run (which might bump
+    # again, ad infinitum).
+    if: "!startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-check
@@ -46,8 +53,62 @@ jobs:
   unit:
     name: Unit & framework tests
     runs-on: ubuntu-latest
+    if: "!startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-test
         with:
           token: ${{ secrets.PSONET_REPO_TOKEN }}
+
+  tag:
+    name: Bump version & tag
+    # Only auto-tag on direct push to main, never on PRs and never
+    # on the bump commits cog itself produces (the head_commit
+    # filter above catches those for `check` and `unit`; we mirror
+    # it here for symmetry).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(version):') && !contains(github.event.head_commit.message, '[skip ci]')
+    runs-on: ubuntu-latest
+    needs: [check, unit]
+    permissions:
+      contents: write
+      # Required for the `gh workflow run release.yml` dispatch.
+      # Without this, the dispatch returns HTTP 403 ("Resource not
+      # accessible by integration").
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # cog needs full history for commit walk
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # cog.toml's post_bump_hooks push the bump commit + tag.
+      - name: Cocogitto bump
+        uses: cocogitto/cocogitto-action@v4
+        with:
+          command: bump
+          args: --auto
+          git-user: "github-actions[bot]"
+          git-user-email: "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Trigger release workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # If cog didn't bump this run (only chore/docs commits
+          # since last tag), there's nothing to release.
+          tag="$(git tag --points-at HEAD | grep '^v' | head -n1 || true)"
+          if [ -z "${tag}" ]; then
+            echo "No tag created — skipping release dispatch."
+            exit 0
+          fi
+          echo "Dispatching release.yml for ${tag}."
+          # GITHUB_TOKEN cannot trigger downstream `push` events,
+          # but it CAN trigger workflow_dispatch (GitHub's
+          # 2022-09-08 change).
+          gh workflow run release.yml --ref "${tag}" --field "tag=${tag}"

@@ -1,0 +1,206 @@
+name: Release
+
+# Triggered by:
+# - `push: tags: ["v*"]` — a maintainer running `git push origin
+#   v1.2.3` from their laptop (or cocogitto from a local bump).
+# - `workflow_dispatch` — ci.yml's `tag` job dispatches us after
+#   a successful main pipeline produces a fresh cocogitto tag.
+#   GITHUB_TOKEN-authored pushes don't fire downstream `push`
+#   events; workflow_dispatch can be triggered by GITHUB_TOKEN
+#   (GitHub's 2022-09-08 change).
+#
+# Layout:
+#   binaries        — matrix over (target × runner) producing
+#                      pso-e2e binaries for Linux x86_64/aarch64,
+#                      macOS x86_64/aarch64, Windows x86_64.
+#   testsuite-image — publishes the pso-e2e Docker image tagged
+#                      `:vX.Y.Z` AND `:latest` (Linux x86_64 only;
+#                      the image is pulled by pso-chain CI which
+#                      runs on Linux).
+#   github-release  — creates the GitHub release with every
+#                      binary attached as an artifact + a
+#                      docker-pull cheatsheet in the body.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag name to release (e.g. "v1.2.3").
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/pso-e2e
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  binaries:
+    name: Build ${{ matrix.label }} binary
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      # One platform failing must NOT cancel the others — we
+      # ship whatever made it through to the GitHub release step
+      # below.
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            target: x86_64-unknown-linux-gnu.2.34
+            runner: ubuntu-latest
+          - label: linux-aarch64
+            target: aarch64-unknown-linux-gnu.2.34
+            runner: ubuntu-latest
+          - label: macos-x86_64
+            target: x86_64-apple-darwin
+            runner: macos-latest
+          - label: macos-aarch64
+            target: aarch64-apple-darwin
+            runner: macos-latest
+          - label: windows-x86_64
+            target: x86_64-pc-windows-gnu
+            runner: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/configure-private-git
+        with:
+          token: ${{ secrets.PSONET_REPO_TOKEN }}
+
+      - name: Install C++ toolchain (Linux runner only)
+        if: startsWith(matrix.runner, 'ubuntu-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang \
+            libstdc++-12-dev \
+            libc++-dev libc++abi-dev \
+            pkg-config libssl-dev
+
+      - name: Build binary
+        uses: ./.github/actions/build-binaries
+        with:
+          target: ${{ matrix.target }}
+          output-name: pso-e2e-${{ matrix.label }}
+          # Tag-ref runs MUST NOT save rust-cache entries —
+          # they're scoped to a tag ref and unreachable from any
+          # branch. Same caveat for the sccache GHA backend.
+          save-cache: "false"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pso-e2e-${{ matrix.label }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  testsuite-image:
+    name: Publish versioned testsuite image
+    runs-on: ubuntu-latest
+    needs: binaries
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: Resolve version from tag
+        id: ver
+        run: |
+          version="${RELEASE_TAG#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Download linux-x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: pso-e2e-linux-x86_64
+          path: artifact/
+
+      - name: Stage binary for docker context
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp artifact/pso-e2e-linux-x86_64 dist/pso-e2e
+          chmod 0755 dist/pso-e2e
+          ls -la dist/
+
+      - uses: ./.github/actions/publish-image
+        with:
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.ver.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.ver.outputs.version }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          registry: ${{ env.REGISTRY }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+
+  github-release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    needs: testsuite-image
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          # All `pso-e2e-*` artifact names share the prefix; merge
+          # them into one tree below so the release upload picks
+          # up every variant.
+          pattern: pso-e2e-*
+          merge-multiple: true
+
+      - name: Compose release body
+        id: body
+        env:
+          TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          {
+            echo "## Container image"
+            echo
+            echo '```bash'
+            echo "docker pull ${REGISTRY}/${IMAGE_NAME}:${version}"
+            echo "docker pull ${REGISTRY}/${IMAGE_NAME}:latest"
+            echo '```'
+            echo
+            echo "## Binaries"
+            echo
+            echo "Pre-built \`pso-e2e\` for every supported platform is attached below."
+            echo "Each binary is a self-contained CLI; see the testsuite README for"
+            echo "invocation."
+          } > body.md
+          cat body.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          body_path: body.md
+          generate_release_notes: true
+          files: |
+            artifacts/pso-e2e-*

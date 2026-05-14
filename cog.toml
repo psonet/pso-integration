@@ -1,0 +1,20 @@
+tag_prefix = "v"
+branch_whitelist = ["main"]
+ignore_merge_commits = true
+generate_mono_repository_global_tag = false
+
+# After cog bumps the version + writes the tag, push both back to
+# the remote so `release.yml` (which is triggered by tag push or
+# workflow_dispatch) can pick it up. Without this, ci would have
+# to push manually — the tag job in main does have permission to
+# do that, but pinning the recipe inside cog.toml means a
+# maintainer running `cog bump --auto` locally gets the same
+# behaviour out of the box.
+post_bump_hooks = [
+    "git push origin HEAD:main",
+    "git push origin v{{version}}",
+]
+
+[changelog]
+path = "CHANGELOG.md"
+authors = []

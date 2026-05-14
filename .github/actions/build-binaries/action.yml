@@ -1,24 +1,42 @@
 name: Build pso-e2e binary
 description: >-
-  Cross-compile pso-e2e with cargo-zigbuild against a pinned
-  glibc floor (2.31) so the resulting binary runs on any distro
-  shipping glibc 2.31+ — including the `gcr.io/distroless/cc-debian12`
-  runtime image (glibc 2.36).
+  Cross-compile pso-e2e with cargo-zigbuild against a pinned-floor
+  target. Default is `x86_64-unknown-linux-gnu.2.34` — the binary
+  runs on any distro shipping glibc 2.34+ including the
+  `gcr.io/distroless/cc-debian12` runtime image (glibc 2.36).
+  Other supported targets (used by release.yml matrix):
+  `aarch64-unknown-linux-gnu.2.34`, `x86_64-apple-darwin`,
+  `aarch64-apple-darwin`, `x86_64-pc-windows-gnu`.
 
-  Why not pure MUSL: bank-data-provider builds fully-static MUSL
-  binaries `FROM scratch`. Our dep tree pulls in glibc-only
-  symbols (`mallinfo2`, `__res_init`) via `aws-lc-sys` /
+  Why glibc 2.34 floor rather than pure MUSL: bank-data-provider
+  builds fully-static MUSL `FROM scratch`. Our dep tree pulls in
+  glibc-only symbols (`mallinfo2`, `__res_init`) via aws-lc-sys /
   reqwest's TLS backend; MUSL link bails on undefined symbols
-  with no MUSL equivalent. Pinning glibc 2.31 + a distroless
+  with no MUSL equivalent. Pinning glibc 2.34 + a distroless
   base keeps every other bdp win — composite actions, sccache,
-  cross-compile, no `apt` on the build runner — while side-
-  stepping the missing-symbols issue.
+  cross-compile, no apt on the build runner — without the
+  missing-symbols dance.
 
 inputs:
-  cache-key:
-    description: Shared cache key for Swatinem/rust-cache.
+  target:
+    description: >-
+      Rust target triple (zigbuild syntax — append `.<glibc>` to
+      pin a glibc minimum, e.g. `x86_64-unknown-linux-gnu.2.34`).
     required: false
-    default: "build-gnu-2.31"
+    default: "x86_64-unknown-linux-gnu.2.34"
+  output-name:
+    description: >-
+      Filename to copy the built binary into under `dist/`. On
+      Windows targets `.exe` is appended automatically.
+    required: false
+    default: "pso-e2e"
+  cache-key:
+    description: >-
+      Shared cache key for Swatinem/rust-cache. Defaults to a
+      target-derived key so distinct targets don't trample each
+      other's caches.
+    required: false
+    default: ""
   save-cache:
     description: >-
       Whether to save the rust-cache entry after the build. "false"
@@ -35,13 +53,46 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Install Rust (from rust-toolchain.toml)
+    - name: Resolve target metadata
+      id: meta
+      shell: bash
+      env:
+        TARGET_IN: ${{ inputs.target }}
+        CACHE_KEY_IN: ${{ inputs.cache-key }}
+        OUTPUT_NAME_IN: ${{ inputs.output-name }}
+      run: |
+        set -euo pipefail
+        # zigbuild's "glibc-suffix" syntax (`x86_64-unknown-linux-gnu.2.34`)
+        # is NOT a real rust target; strip it for `rustup target add`
+        # and for the `target/<triple>/release` path lookup below.
+        target_full="${TARGET_IN}"
+        target_rust="${target_full%.*}"
+        # Cache key defaults to a normalised form of the full
+        # target (the glibc suffix matters — different floors
+        # produce different binaries).
+        if [ -z "${CACHE_KEY_IN}" ]; then
+          cache_key="build-${target_full//[^a-zA-Z0-9]/-}"
+        else
+          cache_key="${CACHE_KEY_IN}"
+        fi
+        # Windows binaries get `.exe` appended.
+        ext=""
+        case "${target_rust}" in
+          *-pc-windows-*) ext=".exe" ;;
+        esac
+        echo "target_full=${target_full}"     >> "$GITHUB_OUTPUT"
+        echo "target_rust=${target_rust}"     >> "$GITHUB_OUTPUT"
+        echo "cache_key=${cache_key}"         >> "$GITHUB_OUTPUT"
+        echo "ext=${ext}"                     >> "$GITHUB_OUTPUT"
+        echo "output_name=${OUTPUT_NAME_IN}${ext}" >> "$GITHUB_OUTPUT"
+
+    - name: Install Rust toolchain
       shell: bash
       run: rustup show active-toolchain || rustup toolchain install
 
-    - name: Install Linux x86_64 GNU target
+    - name: Install Rust target
       shell: bash
-      run: rustup target add x86_64-unknown-linux-gnu
+      run: rustup target add "${{ steps.meta.outputs.target_rust }}"
 
     - name: Install zig
       uses: mlugg/setup-zig@v1
@@ -54,14 +105,12 @@ runs:
     - name: Rust cache
       uses: Swatinem/rust-cache@v2
       with:
-        shared-key: ${{ inputs.cache-key }}
+        shared-key: ${{ steps.meta.outputs.cache_key }}
         save-if: ${{ inputs.save-cache }}
 
     # sccache caches per-rustc-invocation outputs in the GHA cache.
-    # It complements rust-cache (which caches target/ as a whole) by
-    # giving us cross-branch hits: two PRs touching the same crate
-    # share rustc output even though their target/ caches are
-    # ref-scoped.
+    # Complements rust-cache (whole-target cache) with cross-branch
+    # hits.
     - name: Install sccache
       uses: Mozilla-Actions/sccache-action@v0.0.10
 
@@ -72,29 +121,30 @@ runs:
           cargo install --locked cargo-zigbuild
         fi
 
-    - name: cargo zigbuild --release (x86_64-unknown-linux-gnu.2.34)
+    - name: cargo zigbuild --release
       shell: bash
       env:
         RUSTC_WRAPPER: sccache
-        # When save-cache=false (tag builds), disable the sccache
-        # GHA backend entirely. Tag-ref entries are unreachable
-        # from any branch, same caveat as rust-cache above.
         SCCACHE_GHA_ENABLED: ${{ inputs.save-cache }}
+        TARGET_FULL: ${{ steps.meta.outputs.target_full }}
+        TARGET_RUST: ${{ steps.meta.outputs.target_rust }}
+        OUTPUT_NAME: ${{ steps.meta.outputs.output_name }}
+        EXT: ${{ steps.meta.outputs.ext }}
       run: |
         set -euo pipefail
-        # Pin the glibc minimum to 2.34 — covers the symbols our
-        # dep tree needs (`mallinfo2` was added in glibc 2.33, used
-        # by aws-lc-sys / similar). 2.34 is still well below
-        # distroless/cc-debian12's glibc 2.36, and covers any
-        # modern long-supported distro (Debian 12, Ubuntu 22.04+,
-        # RHEL 9, anything from 2022 onwards).
         cargo zigbuild --release \
-          --target x86_64-unknown-linux-gnu.2.34 \
+          --target "${TARGET_FULL}" \
           -p pso-e2e-testsuite --bin pso-e2e
 
         mkdir -p dist
-        strip target/x86_64-unknown-linux-gnu/release/pso-e2e
-        cp target/x86_64-unknown-linux-gnu/release/pso-e2e dist/pso-e2e
+        src="target/${TARGET_RUST}/release/pso-e2e${EXT}"
+        # `strip` only runs on Linux/macOS targets — Windows
+        # cross-builds have no host strip available, so skip it.
+        case "${TARGET_RUST}" in
+          *-pc-windows-*) : "skip strip on Windows target" ;;
+          *)              strip "${src}" || true ;;
+        esac
+        cp "${src}" "dist/${OUTPUT_NAME}"
 
     - name: sccache stats
       shell: bash
@@ -102,4 +152,4 @@ runs:
 
     - name: Inspect binary
       shell: bash
-      run: file dist/pso-e2e && ls -lh dist/pso-e2e
+      run: file "dist/${{ steps.meta.outputs.output_name }}" && ls -lh dist/
