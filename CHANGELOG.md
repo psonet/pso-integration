@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.1.2 - 2026-05-14
+#### Bug Fixes
+- (**testsuite**) correct SRARecord field layout + drop S034 + add --list - (89b84f4) - Anton Velichko
+
+- - -
+
 ## v0.1.1 - 2026-05-14
 #### Bug Fixes
 - (**ci**) make cog bump rewrite every crate version, not just CHANGELOG - (a397246) - Anton Velichko
