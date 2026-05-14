@@ -65,8 +65,15 @@ runs:
         # zigbuild's "glibc-suffix" syntax (`x86_64-unknown-linux-gnu.2.34`)
         # is NOT a real rust target; strip it for `rustup target add`
         # and for the `target/<triple>/release` path lookup below.
+        # Strip EVERY trailing `.X[.Y]` versioning. Use `%%.[0-9]*`
+        # so the first dot followed by a digit anchors the cut —
+        # tolerant of either `.2.34` (current) or future `.2` (no
+        # minor).
         target_full="${TARGET_IN}"
-        target_rust="${target_full%.*}"
+        case "${target_full}" in
+          *-gnu.[0-9]*) target_rust="${target_full%%.[0-9]*}" ;;
+          *)            target_rust="${target_full}" ;;
+        esac
         # Cache key defaults to a normalised form of the full
         # target (the glibc suffix matters — different floors
         # produce different binaries).
