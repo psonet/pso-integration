@@ -171,21 +171,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Linux-only for now. macOS x86_64/aarch64 + Windows
+        # x86_64 cross-compile under zigbuild hit aws-lc-sys C
+        # build script failures (cargo:warning=ToolExecError on
+        # `bignum_sub_p384.o` and similar) — same family of
+        # missing-symbol issues that knocked out MUSL earlier in
+        # PR1, just at the macOS/Windows cross seam this time.
+        # macOS minutes also cost 10x ubuntu-latest so running
+        # them speculatively is real money. Adding them back once
+        # task #35 sorts out the aws-lc-sys path.
         include:
           - label: linux-x86_64
             target: x86_64-unknown-linux-gnu.2.34
             runner: ubuntu-latest
           - label: linux-aarch64
             target: aarch64-unknown-linux-gnu.2.34
-            runner: ubuntu-latest
-          - label: macos-x86_64
-            target: x86_64-apple-darwin
-            runner: macos-latest
-          - label: macos-aarch64
-            target: aarch64-apple-darwin
-            runner: macos-latest
-          - label: windows-x86_64
-            target: x86_64-pc-windows-gnu
             runner: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
