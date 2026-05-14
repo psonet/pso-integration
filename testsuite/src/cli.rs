@@ -32,10 +32,11 @@ pub enum ReportFormat {
 #[command(
     name = "pso-e2e",
     about = "End-to-end test harness for the PSO L2 (agents pool + actor pool).",
-    long_about = "Drives the SRA + Wallet round-trip plus 11 negative-path \
-                  invariants against a live PSO L2 devnet. Exits 0 on \
-                  full pass, 1 on at least one scenario failure, 2 on \
-                  bootstrap / arg-parse error."
+    long_about = "Drives the SRA + Wallet round-trip plus a suite of \
+                  negative-path invariants against a live PSO L2 devnet. \
+                  Exits 0 on full pass, 1 on at least one scenario \
+                  failure, 2 on bootstrap / arg-parse error. Use \
+                  `--list` to enumerate the compiled-in scenarios."
 )]
 pub struct Cli {
     /// Agents-pool JSON-RPC endpoint. The SRA-key signer submits SR /
@@ -54,22 +55,31 @@ pub struct Cli {
 
     /// Hex secret key of the SRARegistry admin (0x-prefixed or bare).
     /// Used to register the SRA signer and any per-scenario auxiliary
-    /// SRAs (S009).
-    #[arg(long, value_parser = parse_hex32)]
-    pub admin_key: [u8; 32],
+    /// SRAs. Not required with `--list`.
+    #[arg(long, value_parser = parse_hex32, required_unless_present = "list")]
+    pub admin_key: Option<[u8; 32]>,
 
     /// Hex secret key of the primary SRA. The suite registers this
     /// address with the registry (if not already active) and uses it
     /// for every agents-pool tx. Agents are otherwise dynamic — the
-    /// suite generates auxiliary keys at runtime.
-    #[arg(long, value_parser = parse_hex32)]
-    pub sra_key: [u8; 32],
+    /// suite generates auxiliary keys at runtime. Not required with
+    /// `--list`.
+    #[arg(long, value_parser = parse_hex32, required_unless_present = "list")]
+    pub sra_key: Option<[u8; 32]>,
 
     /// Wallet (actor-pool) signer. Optional; if omitted the suite
     /// rolls a fresh key per run. Useful only when CI wants stable
     /// addresses across reruns.
     #[arg(long, value_parser = parse_hex32)]
     pub wallet_key: Option<[u8; 32]>,
+
+    /// Print one row per compiled-in scenario (id + description) on
+    /// stdout, then exit 0 without touching the chain. Combine with
+    /// `--only` / `--skip` to preview which scenarios a given filter
+    /// would actually run. The key parameters (`--admin-key`,
+    /// `--sra-key`) are NOT required when this flag is set.
+    #[arg(long)]
+    pub list: bool,
 
     /// Filter scenarios by id substring. Accepts comma-separated list.
     /// e.g. `--only S001,S009`. Empty = run all.

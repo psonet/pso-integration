@@ -92,11 +92,21 @@ impl TestEnv {
         // The admin owns `SRARegistry`. Bootstrap before building
         // the SRA-0 client so every `onlyActiveSRA`-gated submit
         // path accepts it from tick zero.
-        bootstrap_register_sra(&rpc_url, chain_id, &cli.sra_key, &cli.admin_key).await?;
+        // CLI `required_unless_present = "list"` means both keys
+        // ARE here when we reach this code path (bootstrap is only
+        // called for a real scenario run, not for `--list`).
+        let admin_key = cli
+            .admin_key
+            .ok_or_else(|| eyre::eyre!("--admin-key required for live runs"))?;
+        let sra_key = cli
+            .sra_key
+            .ok_or_else(|| eyre::eyre!("--sra-key required for live runs"))?;
 
-        let admin = AdminClient::new(&rpc_url, chain_id, &cli.admin_key)
+        bootstrap_register_sra(&rpc_url, chain_id, &sra_key, &admin_key).await?;
+
+        let admin = AdminClient::new(&rpc_url, chain_id, &admin_key)
             .map_err(|e| eyre::eyre!("AdminClient: {e}"))?;
-        let sra_zero = SraClient::new(&rpc_url, chain_id, &cli.sra_key)?;
+        let sra_zero = SraClient::new(&rpc_url, chain_id, &sra_key)?;
         let bridge = spawn_sra_loop(sra_zero.clone());
 
         Ok(Self {
@@ -106,7 +116,7 @@ impl TestEnv {
             admin,
             sra_zero,
             bridge,
-            sra_zero_key: cli.sra_key,
+            sra_zero_key: sra_key,
         })
     }
 

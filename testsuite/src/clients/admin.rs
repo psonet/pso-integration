@@ -55,16 +55,17 @@ sol! {
         function setRotationCandidate(address sra, bool isRotationCandidate) external;
         function isActive(address sra) external view returns (bool);
 
-        /// Subset of `SRARecord` we surface to scenarios. The
-        /// contract's struct is wider; we keep the four fields
-        /// that match the suite-level assertions and rely on
-        /// alloy decoding strict-by-position.
+        /// Mirror of `ISRARegistry.SRARecord` byte-for-byte. Field
+        /// order MUST match the Solidity struct exactly — alloy
+        /// decodes by position, not by name, so a misalignment
+        /// silently reads garbage into adjacent slots.
+        /// See `pso-chain/contracts/src/interfaces/ISRARegistry.sol:14`.
         struct SRARecord {
-            address sra;
+            bool active;
             uint32 permissionMask;
             uint64 rateLimit;
+            uint64 registeredAt;
             bool isRotationCandidate;
-            bool active;
         }
         function getRecord(address sra) external view returns (SRARecord memory);
     }

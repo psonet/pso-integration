@@ -52,9 +52,13 @@ Hex inputs accept either `0x`-prefixed or bare 64-hex-char strings.
 
 ## Scenarios
 
-35 scenarios at the time of writing. Each one is a single
-`testsuite/src/scenarios/sNNN_*.rs` file with a module-level
-doc-comment explaining the chain-side guard it exercises.
+`pso-e2e --list` prints the live count + every scenario's id and
+description (without touching the chain). At the time of this
+README:
+
+Each scenario is a single `testsuite/src/scenarios/sNNN_*.rs`
+file with a module-level doc-comment explaining the chain-side
+guard it exercises.
 
 | id    | invariant                                                                                |
 | ----- | ---------------------------------------------------------------------------------------- |
@@ -89,18 +93,26 @@ doc-comment explaining the chain-side guard it exercises.
 | S030  | `SR.submit` from a never-registered SRA reverts `SRANotActive`.                          |
 | S031  | Actor RPC rejects envelope with VDF computed at `T` outside current ∪ previous epoch's. |
 | S033  | Revoked SRA's `SR.submit` reverts `SRANotActive` (lifecycle).                            |
-| S034  | `SRARegistry.register` on already-registered address reverts `AlreadyRegistered(addr)`.  |
 | S035  | `admin.update_mask` round-trips through `getRecord`.                                     |
 | S036  | `admin.set_rotation_candidate` round-trips through `getRecord`.                          |
 | S037  | `admin.revoke_sra` on never-registered address reverts `NotRegistered(addr)`.            |
 
-S024 (`AggregationTierUnavailable`) was dropped — the contract's
-`_selectTier(n)` rounds n upward, so only n > 64 triggers the
-revert, which would need 65 SU mints per scenario run. Re-added
-later if we have a cheaper path. S032 (cross-epoch positive: a
-proof computed under the previous epoch's `T` still verifies after
-a difficulty transition) is pending a chain-side
-`pso_dev_advanceEpoch` RPC.
+Intentional gaps in the numbering:
+
+- **S024 (`AggregationTierUnavailable`)** — the contract's
+  `_selectTier(n)` rounds n upward, so only n > 64 triggers the
+  revert, which would need 65 SU mints per scenario run. Drop
+  until we have a cheaper path.
+- **S032 (cross-epoch positive)** — a proof computed under the
+  previous epoch's `T` should still verify after a difficulty
+  transition. Blocked on a chain-side `pso_dev_advanceEpoch` RPC
+  to fast-forward the epoch deterministically in a test.
+- **S034 (`AlreadyRegistered`)** — initial premise was that
+  re-registering an active SRA reverts. The contract is actually
+  idempotent (`register` is the canonical way to UPDATE an
+  existing record's mask / rate-limit / rotation flag in one
+  call); the `AlreadyRegistered` error variant exists in the
+  ABI but is dead code. Scenario dropped.
 
 ## Exit codes
 

@@ -73,9 +73,21 @@ fn main() -> ExitCode {
 /// passed). Any error from this function is a bootstrap-level
 /// problem (not a scenario assertion failure) and exits 2.
 async fn run(cli: Cli) -> eyre::Result<usize> {
-    let env = TestEnv::bootstrap_from_cli(&cli).await?;
+    // `--list` short-circuits before we touch the chain: enumerate
+    // the compiled-in scenarios (post-filter, so `--only` /
+    // `--skip` preview is meaningful) and exit 0.
     let all = scenarios::all();
     let filtered = apply_filters(all, cli.only.as_deref(), cli.skip.as_deref());
+
+    if cli.list {
+        println!("{} compiled-in scenario(s):", filtered.len());
+        for sc in &filtered {
+            println!("  {}  {}", sc.id(), sc.description());
+        }
+        return Ok(0);
+    }
+
+    let env = TestEnv::bootstrap_from_cli(&cli).await?;
 
     let mut report = Report::new();
     for sc in &filtered {

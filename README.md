@@ -228,7 +228,8 @@ pso-e2e \
 # 3. Filter to a single scenario / family while iterating.
 pso-e2e --admin-key … --sra-key … --only S001 -vv
 pso-e2e --admin-key … --sra-key … --only S013,S014,S015,S016,S017,S031   # envelope/VDF tampering
-pso-e2e --admin-key … --sra-key … --only S033,S034,S035,S036,S037         # SRA admin lifecycle
+pso-e2e --admin-key … --sra-key … --only S033,S035,S036,S037              # SRA admin lifecycle
+pso-e2e --list                                                              # enumerate the suite without touching the chain
 ```
 
 ### Pre-built image
@@ -250,7 +251,8 @@ docker run --rm --network host ghcr.io/psonet/pso-e2e:main \
 
 ### Scenario surface
 
-35 scenarios at the time of writing. Grouped by what they exercise:
+`pso-e2e --list` prints the live count + ids. Grouped by what
+they exercise:
 
 | Group        | Range           | What                                                                           |
 | ------------ | --------------- | ------------------------------------------------------------------------------ |
@@ -262,7 +264,7 @@ docker run --rm --network host ghcr.io/psonet/pso-e2e:main \
 | Envelope tampering | S013 – S017, S031 | Magic prefix, nullifier replay, stale `submitted_block`, bit-flipped VDF proof, bit-flipped VDF output, wrong VDF iteration count `T`. |
 | Aggregation negatives | S018, S019 | `MalformedAggregationProof` (length) + `InvalidAggregationProof` (public-input mismatch). |
 | Contract guards | S025 – S030 | `InvalidMetadata`, `InvalidAmount`, `NotAdmin`, `ZeroAddress`, `InvalidMask`, `SRANotActive`. |
-| SRA lifecycle | S033 – S037     | Revoke → SR.submit reverts SRANotActive; double-register → `AlreadyRegistered`; `updateMask` / `setRotationCandidate` round-trip; revoke unknown → `NotRegistered`. |
+| SRA lifecycle | S033, S035 – S037 | Revoke → SR.submit reverts `SRANotActive`; `updateMask` / `setRotationCandidate` round-trip; revoke unknown → `NotRegistered`. |
 
 The full table with descriptions lives in
 [`testsuite/README.md`](testsuite/README.md); each scenario file is
