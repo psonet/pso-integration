@@ -145,6 +145,11 @@ pub fn parse_hex32(input: &str) -> Result<[u8; 32], String> {
 /// - `1` → `info`.
 /// - `2` → `debug`.
 /// - `>=3` → `trace`.
+///
+/// All tracing output is written to **stderr** so it never collides
+/// with the markdown / JSON report on stdout — without this, a `-vv`
+/// CI run hits the 1 MiB `$GITHUB_STEP_SUMMARY` ceiling because tee
+/// captures debug events mixed into the report file.
 pub fn init_tracing(verbosity: u8) {
     let level = match verbosity {
         0 => "warn",
@@ -153,6 +158,7 @@ pub fn init_tracing(verbosity: u8) {
         _ => "trace",
     };
     let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_new(level)
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
