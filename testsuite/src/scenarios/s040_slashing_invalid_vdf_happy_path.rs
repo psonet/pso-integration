@@ -76,10 +76,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .await
         .map_err(|e| eyre::eyre!("S040: receipt: {e}"))?;
     if !receipt.status() {
-        return Err(eyre::eyre!(
-            "S040: proveInvalidVDF reverted: {:?}",
-            receipt
-        ));
+        return Err(eyre::eyre!("S040: proveInvalidVDF reverted: {:?}", receipt));
     }
 
     let mut saw_invalid_vdf = false;

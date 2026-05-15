@@ -184,10 +184,7 @@ impl TestEnv {
     ///
     /// Returns the `(current, previous, epoch_start_block)` triple the
     /// server reports back so the caller can assert on the rollover.
-    pub async fn advance_epoch(
-        &self,
-        new_difficulty: u64,
-    ) -> eyre::Result<(u64, u64, u64)> {
+    pub async fn advance_epoch(&self, new_difficulty: u64) -> eyre::Result<(u64, u64, u64)> {
         use alloy::transports::http::reqwest::{Client, Url};
         use serde_json::{json, Value};
         let url: Url = self

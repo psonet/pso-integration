@@ -68,10 +68,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // reproducible across runs without depending on chain history.
     let anchor: FixedBytes<32> = FixedBytes::from([0xAB; 32]);
 
-    let leader = epoch
-        .leaderForEpoch(current_epoch, anchor)
-        .call()
-        .await?;
+    let leader = epoch.leaderForEpoch(current_epoch, anchor).call().await?;
     if leader == Address::ZERO {
         return Err(eyre::eyre!(
             "S038: leaderForEpoch returned the zero address (no active SRAs?)"

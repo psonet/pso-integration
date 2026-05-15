@@ -90,9 +90,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .new_actor_as_sra_zero()?
         .submit_tx_with_difficulty(SPENDING_RECORD, inner, Some(old_t), |env_bytes| env_bytes)
         .await
-        .map_err(|e| {
-            eyre::eyre!("S032: expected previous-T fallback acceptance, got {e}")
-        })?;
+        .map_err(|e| eyre::eyre!("S032: expected previous-T fallback acceptance, got {e}"))?;
 
     tracing::info!(
         scenario = "S032",
