@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.0 - 2026-05-15
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**l2-client**) sync ISlashingVerifier ABI with pso-chain Phase 5 - (0d20f6e) - Anton Velichko
+
+- - -
+
 ## v0.2.2 - 2026-05-15
 #### Bug Fixes
 - (**testsuite**) route tracing-subscriber to stderr - (709f05d) - Anton Velichko
