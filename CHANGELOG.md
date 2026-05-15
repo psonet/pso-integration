@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.2.2 - 2026-05-15
+#### Bug Fixes
+- (**testsuite**) route tracing-subscriber to stderr - (709f05d) - Anton Velichko
+
+- - -
+
 ## v0.2.1 - 2026-05-15
 #### Bug Fixes
 - (**testsuite**) make S039/S040 proofHash unique per run - (c07b784) - Anton Velichko
