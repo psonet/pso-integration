@@ -149,12 +149,19 @@ alloy::sol! {
 
         struct OfflineProof {
             uint64 epochNumber;
-            bytes32 l1AnchorHash;
             uint64 silentFromBlock;
             uint64 takenOverAtBlock;
             bytes attestorSignature;
         }
         function proveOffline(OfflineProof calldata proof) external;
+
+        struct BatchWithholdingProof {
+            uint64 epochNumber;
+            uint64 unsafeHead;
+            uint64 safeHead;
+            bytes[] attestorSignatures;
+        }
+        function proveBatchWithholding(BatchWithholdingProof calldata proof) external;
 
         struct InvalidVDFProof {
             bytes32 vdfInput;
