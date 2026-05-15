@@ -92,10 +92,17 @@ guard it exercises.
 | S029  | `SRARegistry.register(addr, 0, ...)` reverts `InvalidMask`.                              |
 | S030  | `SR.submit` from a never-registered SRA reverts `SRANotActive`.                          |
 | S031  | Actor RPC rejects envelope with VDF computed at `T` outside current ∪ previous epoch's. |
+| S032  | Actor RPC accepts envelope with VDF computed at the **previous** epoch's `T` after rollover. |
 | S033  | Revoked SRA's `SR.submit` reverts `SRANotActive` (lifecycle).                            |
 | S035  | `admin.update_mask` round-trips through `getRecord`.                                     |
 | S036  | `admin.set_rotation_candidate` round-trips through `getRecord`.                          |
 | S037  | `admin.revoke_sra` on never-registered address reverts `NotRegistered(addr)`.            |
+| S038  | `SequencerEpoch` view round-trip: constants + `currentEpoch` + `leaderForEpoch` ↔ `rankedLeadersForEpoch[0]`. |
+| S039  | `SlashingVerifier.proveEquivocation` happy path: two same-height signatures emit `EquivocationProven` + `Slashed`. |
+| S040  | `SlashingVerifier.proveInvalidVDF` happy path: zero-bytes proof against non-zero input emits `InvalidVDFProven` + `Slashed`. |
+
+S032 needs the chain spawned with `PSO_DEV_RPC=1` (gates
+`pso_dev_advanceEpoch`); the CI workflow sets it on the dev node.
 
 Intentional gaps in the numbering:
 
@@ -103,10 +110,6 @@ Intentional gaps in the numbering:
   `_selectTier(n)` rounds n upward, so only n > 64 triggers the
   revert, which would need 65 SU mints per scenario run. Drop
   until we have a cheaper path.
-- **S032 (cross-epoch positive)** — a proof computed under the
-  previous epoch's `T` should still verify after a difficulty
-  transition. Blocked on a chain-side `pso_dev_advanceEpoch` RPC
-  to fast-forward the epoch deterministically in a test.
 - **S034 (`AlreadyRegistered`)** — initial premise was that
   re-registering an active SRA reverts. The contract is actually
   idempotent (`register` is the canonical way to UPDATE an

@@ -35,10 +35,14 @@ pub mod s028_registry_zero_address_rejected;
 pub mod s029_registry_invalid_mask_rejected;
 pub mod s030_sra_not_active_rejected;
 pub mod s031_envelope_wrong_difficulty_rejected;
+pub mod s032_envelope_previous_difficulty_accepted;
 pub mod s033_revoked_sra_submit_rejected;
 pub mod s035_update_mask_round_trip;
 pub mod s036_rotation_candidate_round_trip;
 pub mod s037_revoke_unknown_rejected;
+pub mod s038_sequencer_epoch_view_roundtrip;
+pub mod s039_slashing_equivocation_happy_path;
+pub mod s040_slashing_invalid_vdf_happy_path;
 
 use crate::scenario::Scenario;
 
@@ -76,9 +80,13 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s029_registry_invalid_mask_rejected::S029),
         Box::new(s030_sra_not_active_rejected::S030),
         Box::new(s031_envelope_wrong_difficulty_rejected::S031),
+        Box::new(s032_envelope_previous_difficulty_accepted::S032),
         Box::new(s033_revoked_sra_submit_rejected::S033),
         Box::new(s035_update_mask_round_trip::S035),
         Box::new(s036_rotation_candidate_round_trip::S036),
         Box::new(s037_revoke_unknown_rejected::S037),
+        Box::new(s038_sequencer_epoch_view_roundtrip::S038),
+        Box::new(s039_slashing_equivocation_happy_path::S039),
+        Box::new(s040_slashing_invalid_vdf_happy_path::S040),
     ]
 }

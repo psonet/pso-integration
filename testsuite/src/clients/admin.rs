@@ -25,10 +25,9 @@
 //! [`AdminClient::current_difficulty`].
 //!
 //! Stubbed (returning `Err` until the chain ships the dev RPC):
-//! [`AdminClient::set_difficulty`], [`AdminClient::advance_epoch`].
-//! Both are tracked in the suite-level TODO. Scenarios needing
-//! them can still reference the method today and they will Just
-//! Work once the chain side lands.
+//! [`AdminClient::set_difficulty`]. Tracked in the suite-level
+//! TODO. `advance_epoch` shipped as a `TestEnv` method (uses the
+//! actor-RPC port).
 
 use alloy::primitives::{Address, TxHash};
 use alloy::sol;
@@ -219,11 +218,11 @@ impl AdminClient {
     // -----------------------------------------------------------------
     // Network parameter writes — stubs.
     //
-    // These need chain-side dev RPCs that don't ship today
-    // (`pso_dev_setDifficulty`, `pso_dev_advanceEpoch`). The
-    // signatures are stable; once the chain side lands, the
-    // implementations become real RPC calls without breaking
-    // scenarios that already reference these methods.
+    // `advance_epoch` shipped on the chain side as
+    // `pso_dev_advanceEpoch` (S032 unblock); the real implementation
+    // lives on [`crate::env::TestEnv::advance_epoch`] because the
+    // method targets the actor RPC port. `set_difficulty` is still a
+    // stub pending its chain-side counterpart.
     // -----------------------------------------------------------------
 
     /// Stub — pinning the chain's MinRoot difficulty for a
@@ -232,15 +231,6 @@ impl AdminClient {
     pub async fn set_difficulty(&self, _difficulty: u64) -> eyre::Result<()> {
         Err(eyre::eyre!(
             "AdminClient::set_difficulty: needs `pso_dev_setDifficulty` RPC on the chain; \
-             see suite TODO. No-op stub."
-        ))
-    }
-
-    /// Stub — forcing an epoch transition (needed for the S032
-    /// previous-T-fallback positive scenario). Tracked as task #34.
-    pub async fn advance_epoch(&self) -> eyre::Result<()> {
-        Err(eyre::eyre!(
-            "AdminClient::advance_epoch: needs `pso_dev_advanceEpoch` RPC on the chain; \
              see suite TODO. No-op stub."
         ))
     }

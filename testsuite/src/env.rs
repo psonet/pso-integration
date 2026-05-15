@@ -12,9 +12,12 @@
 //!   registry-mutating API (`register_sra` / `revoke_sra` /
 //!   `update_mask` / `set_rotation_candidate`), the read views
 //!   (`is_active` / `get_record`), and a small set of network
-//!   parameter accessors (`current_difficulty`, plus stubs for
-//!   `set_difficulty` / `advance_epoch` that need chain-side dev
-//!   RPCs not landed yet).
+//!   parameter accessors (`current_difficulty`; `set_difficulty`
+//!   still stubbed pending a chain-side dev RPC).
+//! - **`env.advance_epoch(new_difficulty)`** — test-only knob that
+//!   rolls the chain's `DifficultyState` via `pso_dev_advanceEpoch`
+//!   on the actor RPC. Used by S032 (cross-epoch positive). Needs
+//!   pso-chain spawned with `PSO_DEV_RPC=1`.
 //! - **`env.sra_zero`** — Hardhat #1 in the devnet genesis,
 //!   pre-registered by [`bootstrap_register_sra`] before any
 //!   scenario runs. Use this for the "happy-path SRA" view.
@@ -171,6 +174,55 @@ impl TestEnv {
     pub fn new_actor_as_sra_zero(&self) -> eyre::Result<ActorClient> {
         ActorClient::new(&self.actor_rpc_url, self.chain_id, &self.sra_zero_key)
             .map_err(|e| eyre::eyre!("new_actor_as_sra_zero: {e}"))
+    }
+
+    /// Test-only: roll the chain's `DifficultyState` so the validator's
+    /// `previous` slot holds the current `T` and `current` slot holds
+    /// `new_difficulty`. Hits `pso_dev_advanceEpoch` on the actor RPC,
+    /// which is gated server-side behind `PSO_DEV_RPC=1` — pso-chain
+    /// must be spawned with that env var for this to succeed.
+    ///
+    /// Returns the `(current, previous, epoch_start_block)` triple the
+    /// server reports back so the caller can assert on the rollover.
+    pub async fn advance_epoch(
+        &self,
+        new_difficulty: u64,
+    ) -> eyre::Result<(u64, u64, u64)> {
+        use alloy::transports::http::reqwest::{Client, Url};
+        use serde_json::{json, Value};
+        let url: Url = self
+            .actor_rpc_url
+            .parse()
+            .map_err(|e| eyre::eyre!("actor rpc url: {e}"))?;
+        let body = json!({
+            "jsonrpc": "2.0",
+            "id":      1,
+            "method":  "pso_dev_advanceEpoch",
+            "params":  [new_difficulty],
+        });
+        let resp: Value = Client::new()
+            .post(url)
+            .json(&body)
+            .send()
+            .await?
+            .json()
+            .await?;
+        if let Some(err) = resp.get("error") {
+            return Err(eyre::eyre!("pso_dev_advanceEpoch: {err}"));
+        }
+        let result = resp
+            .get("result")
+            .ok_or_else(|| eyre::eyre!("pso_dev_advanceEpoch: missing 'result' in {resp}"))?;
+        let current = result["current"]
+            .as_u64()
+            .ok_or_else(|| eyre::eyre!("missing 'current' in {result}"))?;
+        let previous = result["previous"]
+            .as_u64()
+            .ok_or_else(|| eyre::eyre!("missing 'previous' in {result}"))?;
+        let epoch_start_block = result["epoch_start_block"]
+            .as_u64()
+            .ok_or_else(|| eyre::eyre!("missing 'epoch_start_block' in {result}"))?;
+        Ok((current, previous, epoch_start_block))
     }
 }
 

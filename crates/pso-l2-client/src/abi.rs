@@ -38,6 +38,15 @@ pub const SPENDING_UNIT: Address = address!("52000000000000000000000000000000000
 /// The wallet calls `submit(tdId, derivedOwner, suIds, aggregationProof)`.
 pub const TRIBUTE_DRAFT: Address = address!("5200000000000000000000000000000000000007");
 
+/// `SequencerEpoch` — read-only view of the per-epoch leader rotation.
+/// Predeployed alongside SRARegistry; testsuite hits this for S038.
+pub const SEQUENCER_EPOCH: Address = address!("5200000000000000000000000000000000000002");
+
+/// `SlashingVerifier` — accepts equivocation / offline / withholding /
+/// invalid-VDF proofs. Predeployed alongside SequencerEpoch; testsuite
+/// hits this for the slashing happy-path scenarios.
+pub const SLASHING_VERIFIER: Address = address!("5200000000000000000000000000000000000003");
+
 alloy::sol! {
     #[allow(missing_docs)]
     #[sol(rpc)]
@@ -98,5 +107,64 @@ alloy::sol! {
             uint256[] calldata suIds,
             bytes calldata aggregationProof
         ) external;
+    }
+
+    /// `SequencerEpoch` — read-only view of the per-epoch leader
+    /// rotation. Mirrors `contracts/src/interfaces/ISequencerEpoch.sol`
+    /// byte-for-byte (alloy decodes by position, not by name).
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    interface ISequencerEpoch {
+        function EPOCH_LENGTH() external view returns (uint64);
+        function TAKEOVER_DELAY() external view returns (uint64);
+        function currentEpoch() external view returns (uint64);
+        function leaderForEpoch(uint64 epoch, bytes32 l1AnchorHash)
+            external view returns (address);
+        function rankedLeadersForEpoch(uint64 epoch, bytes32 l1AnchorHash)
+            external view returns (address[] memory);
+    }
+
+    /// `SlashingVerifier` — proof-submission surface used by the
+    /// slashing happy-path scenarios. Mirrors
+    /// `contracts/src/SlashingVerifier.sol` + its `ISlashingVerifier`
+    /// interface byte-for-byte.
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    interface ISlashingVerifier {
+        event Slashed(address indexed sra, uint8 slashType, bytes32 proofHash);
+        event EquivocationProven(address indexed sra, uint64 blockNumber);
+        event OfflineProven(address indexed sra, uint64 indexed epochNumber, address attestor);
+        event BatchWithholdingProven(address indexed sra, uint64 indexed epochNumber, uint256 attestorCount);
+        event InvalidVDFProven(address indexed sra);
+
+        struct EquivocationProof {
+            bytes32 blockHash1;
+            uint64 blockNumber1;
+            bytes signature1;
+            bytes32 blockHash2;
+            uint64 blockNumber2;
+            bytes signature2;
+        }
+        function proveEquivocation(EquivocationProof calldata proof) external;
+
+        struct OfflineProof {
+            uint64 epochNumber;
+            bytes32 l1AnchorHash;
+            uint64 silentFromBlock;
+            uint64 takenOverAtBlock;
+            bytes attestorSignature;
+        }
+        function proveOffline(OfflineProof calldata proof) external;
+
+        struct InvalidVDFProof {
+            bytes32 vdfInput;
+            bytes vdfOutput;
+            bytes vdfProof;
+            uint64 difficulty;
+            address batchSender;
+        }
+        function proveInvalidVDF(InvalidVDFProof calldata proof) external;
+
+        function proofSubmitted(bytes32 proofHash) external view returns (bool);
     }
 }
