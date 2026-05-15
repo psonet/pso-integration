@@ -49,14 +49,19 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .map_err(|e| eyre::eyre!("S039: signer: {e}"))?;
     let sra = signer.address();
 
-    // Deterministic but distinct hashes at the same height. Real
-    // equivocation in the field would produce two genuine block
-    // headers; here any pair of distinct 32-byte values works since
-    // the contract decides equivocation purely from signature
-    // recovery + height equality.
+    // Randomised hashes so re-runs against the same chain state
+    // don't collide with the previous `proofHash` (the contract
+    // tracks `proofSubmitted[proofHash]` and rejects duplicates).
+    // Any pair of distinct 32-byte values works since the contract
+    // decides equivocation purely from signature recovery + height
+    // equality.
     let height: u64 = 42;
-    let hash1: FixedBytes<32> = FixedBytes::from([0x11; 32]);
-    let hash2: FixedBytes<32> = FixedBytes::from([0x22; 32]);
+    let mut h1 = [0u8; 32];
+    let mut h2 = [0u8; 32];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut h1);
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut h2);
+    let hash1: FixedBytes<32> = FixedBytes::from(h1);
+    let hash2: FixedBytes<32> = FixedBytes::from(h2);
 
     // `signer.sign_message(bytes)` performs the EIP-191 wrap
     // (`"\x19Ethereum Signed Message:\n32" ‖ hash`) that the

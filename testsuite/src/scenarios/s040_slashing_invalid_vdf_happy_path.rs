@@ -1,12 +1,19 @@
 //! S040 — `SlashingVerifier.proveInvalidVDF` happy path.
 //!
-//! Submit a deliberately-invalid VDF proof (all-zero output / proof
-//! against a non-zero input) attributed to SRA-0. The contract
+//! Submit a deliberately-invalid VDF proof (all-`0xFF` bytes for both
+//! output and proof — these exceed the field modulus so
+//! `Fq::deserialize_compressed` errors inside the MinRoot verifier,
+//! which then returns `false`) attributed to SRA-0. The contract
 //! staticcalls the VDF verifier precompile at `0x0200`; since the
 //! proof doesn't verify, the precompile returns `false`, the contract
 //! accepts the slashing claim, and emits:
 //!   * `InvalidVDFProven(sra_zero)`
 //!   * `Slashed(sra_zero, InvalidVDF, proofHash)`
+//!
+//! Note: a zero-bytes proof + zero-bytes output is **not** a working
+//! invalid proof — both sides of the Wesolowski check degenerate to
+//! zero and the precompile reports `true`. Use bytes that fail
+//! field-element deserialisation instead.
 //!
 //! Contract behaviour ([`SlashingVerifier.sol::proveInvalidVDF`]):
 //!   1. `registry.isActive(batchSender)` — SRA-0 is bootstrap-registered
@@ -46,13 +53,19 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .map_err(|e| eyre::eyre!("S040: signer: {e}"))?;
     let sra: Address = signer.address();
 
-    // Construct an obviously-invalid proof: non-zero input, zero
-    // output + proof bytes. MinRoot's verifier returns false; the
-    // precompile abi-encodes that `false` and the contract accepts
-    // the slashing claim.
-    let vdf_input: FixedBytes<32> = FixedBytes::from([0x5A; 32]);
-    let vdf_output = Bytes::from(vec![0u8; 48]); // MinRoot BLS12-381 output size
-    let vdf_proof = Bytes::from(vec![0u8; 48]); // matching proof size
+    // Construct an obviously-invalid proof. Using all-`0xFF` bytes
+    // for both output and proof forces a non-canonical field-element
+    // encoding; `Fq::deserialize_compressed` returns `Err`, which
+    // MinRoot's verifier maps to `valid = false`. The precompile
+    // abi-encodes that `false` and the contract accepts the slashing
+    // claim. `vdf_input` is randomised per run so the resulting
+    // `proofHash` differs from prior submissions against the same
+    // chain state (the contract tracks `proofSubmitted[proofHash]`).
+    let mut input_bytes = [0u8; 32];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut input_bytes);
+    let vdf_input: FixedBytes<32> = FixedBytes::from(input_bytes);
+    let vdf_output = Bytes::from(vec![0xFFu8; 48]); // MinRoot BLS12-381 output size
+    let vdf_proof = Bytes::from(vec![0xFFu8; 48]); // matching proof size
     let difficulty: u64 = 100_000;
 
     let proof = ISlashingVerifier::InvalidVDFProof {
