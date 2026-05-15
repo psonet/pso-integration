@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.2.0 - 2026-05-15
+#### Features
+- (**testsuite**) S032 cross-epoch positive + Tier C slashing/rotation - (f77e794) - Anton Velichko
+#### Style
+- rustfmt PR3e scenarios + env helper - (75843e5) - Anton Velichko
+
+- - -
+
 ## v0.1.2 - 2026-05-14
 #### Bug Fixes
 - (**testsuite**) correct SRARecord field layout + drop S034 + add --list - (89b84f4) - Anton Velichko
