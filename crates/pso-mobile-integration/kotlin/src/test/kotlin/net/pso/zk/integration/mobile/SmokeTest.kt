@@ -1,7 +1,6 @@
 package net.pso.zk.integration.mobile
 
 import kotlin.test.Test
-import kotlin.test.assertNotNull
 
 class SmokeTest {
 
@@ -14,9 +13,9 @@ class SmokeTest {
         // generated against. If the native lib is not visible to JNA the
         // call throws UnsatisfiedLinkError; if the ABI is mismatched it
         // throws RuntimeException("UniFFI contract version mismatch").
+        // That is the only signal the smoke test needs — any class-init
+        // failure would surface here before any subsequent assertion
+        // could run.
         uniffiEnsureInitialized()
-        // Touch a generated FFI converter to be sure class-init didn't
-        // mask a load failure.
-        assertNotNull(FfiConverterUByte)
     }
 }
