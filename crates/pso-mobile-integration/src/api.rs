@@ -449,19 +449,24 @@ pub fn prove_su_ownership_aggregation(
             detail: e.to_string(),
         }
     })?;
-    let witness_map = pso_zk_circuit_noir::witness::from_vec_to_witness_map(witness_vec).map_err(|e| {
-        MobileError::WitnessGenerationFailed {
-            detail: format!("witness map: {e}"),
-        }
-    })?;
+    let witness_map =
+        pso_zk_circuit_noir::witness::from_vec_to_witness_map(witness_vec).map_err(|e| {
+            MobileError::WitnessGenerationFailed {
+                detail: format!("witness map: {e}"),
+            }
+        })?;
 
     // Load the bytecode for this tier and prove against the canonical
     // VK from `pso_zk_canonical`.
     let bytecode = circuits::flat_aggregation_bytecode(tier.tier_n)?;
-    let _ = pso_zk_circuit_noir::barretenberg::srs::setup_srs_from_bytecode(&bytecode.bytecode, None, true)
-        .map_err(|e| MobileError::CircuitInitFailed {
-            detail: format!("setup_srs: {e}"),
-        })?;
+    let _ = pso_zk_circuit_noir::barretenberg::srs::setup_srs_from_bytecode(
+        &bytecode.bytecode,
+        None,
+        true,
+    )
+    .map_err(|e| MobileError::CircuitInitFailed {
+        detail: format!("setup_srs: {e}"),
+    })?;
     let proof = pso_zk_circuit_noir::barretenberg::prove::prove_ultra_honk_keccak(
         &bytecode.bytecode,
         witness_map,
@@ -650,8 +655,10 @@ mod tests {
         }
         combined.extend_from_slice(&result.proof);
         let vk = pso_zk_canonical::FLAT_AGGREGATION_N1.vk_bytes.to_vec();
-        let ok = pso_zk_circuit_noir::barretenberg::verify::verify_ultra_honk_keccak(combined, vk, false)
-            .expect("verify must succeed");
+        let ok = pso_zk_circuit_noir::barretenberg::verify::verify_ultra_honk_keccak(
+            combined, vk, false,
+        )
+        .expect("verify must succeed");
         assert!(ok, "round trip: prove + verify against canonical VK");
     }
 

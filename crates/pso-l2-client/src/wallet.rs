@@ -233,8 +233,9 @@ pub fn prove_su_aggregation(
 
     // Load the bytecode for this tier from the embedded canonical JSON.
     let bytecode_b64 = flat_aggregation_bytecode_b64(tier_resolved.tier_n)?;
-    let _ = pso_zk_circuit_noir::barretenberg::srs::setup_srs_from_bytecode(bytecode_b64, None, true)
-        .map_err(|e| L2ClientError::Witness(format!("setup_srs: {e}")))?;
+    let _ =
+        pso_zk_circuit_noir::barretenberg::srs::setup_srs_from_bytecode(bytecode_b64, None, true)
+            .map_err(|e| L2ClientError::Witness(format!("setup_srs: {e}")))?;
     let proof_bytes = pso_zk_circuit_noir::barretenberg::prove::prove_ultra_honk_keccak(
         bytecode_b64,
         witness_map,
