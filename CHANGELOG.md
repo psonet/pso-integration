@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.6 - 2026-05-20
+#### Bug Fixes
+- (**release**) move Kotlin JAR from pso-mobile-integration to pso-sra-integration - (fc91b9e) - Anton Velichko
+
+- - -
+
 ## v0.3.5 - 2026-05-20
 #### Bug Fixes
 - (**ci**) drop uniffiEnsureInitialized from SmokeTest (internal symbol) - (d2c62c6) - Anton Velichko
