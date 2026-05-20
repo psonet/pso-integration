@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.3 - 2026-05-20
+#### Bug Fixes
+- (**release**) JAR native libs dynamic (.dylib/.so), darwin built natively - (00a2514) - Anton Velichko
+
+- - -
+
 ## v0.3.2 - 2026-05-20
 #### Bug Fixes
 - (**release**) attach mobile slices, uniffi-bindgen-mobile, and Kotlin JAR - (0a130b9) - Anton Velichko
