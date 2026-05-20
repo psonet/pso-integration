@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.1 - 2026-05-20
+#### Bug Fixes
+- bump version to capture dep-graph cleanup - (00ddbb2) - Anton Velichko
+#### Miscellaneous Chores
+- (**deps**) bump pso-poseidon "0.2" → "0.3" - (c3152c0) - Anton Velichko
+- (**deps**) replace direct noir_rs deps with pso-zk-circuit-noir re-exports - (9f843ec) - Anton Velichko
+- (**deps**) switch pso-protocol + pso-zk-canonical to crates.io; tag-pin pso-zk-circuit-noir; bump pso-vdf - (34786a7) - Anton Velichko
+#### Style
+- cargo fmt after noir_rs → pso_zk_circuit_noir rename - (0fbacbe) - Anton Velichko
+
+- - -
+
 ## v0.3.0 - 2026-05-15
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**l2-client**) sync ISlashingVerifier ABI with pso-chain Phase 5 - (0d20f6e) - Anton Velichko
