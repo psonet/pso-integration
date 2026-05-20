@@ -4161,7 +4161,7 @@ dependencies = [
  "once_cell",
  "pso-integrations-shared",
  "pso-nft",
- "pso-poseidon 0.2.0",
+ "pso-poseidon",
  "pso-protocol",
  "pso-vdf",
  "pso-zk-canonical",
@@ -4183,22 +4183,11 @@ dependencies = [
  "generic-array",
  "iso_currency",
  "pso-integrations-shared",
- "pso-poseidon 0.2.0",
+ "pso-poseidon",
  "pso-protocol",
  "rand 0.8.6",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "pso-poseidon"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcb44ea70d1d456257f1294e351171285d0e38ad80122221c2cb4200614f0f74"
-dependencies = [
- "ark-bn254",
- "ark-ff 0.5.0",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -4220,7 +4209,7 @@ checksum = "09825c8a47d2ba3fc24f1e74f00b9b645c78738591f98bc9619b3f0e1249be73"
 dependencies = [
  "ark-bn254",
  "ark-ff 0.5.0",
- "pso-poseidon 0.3.1",
+ "pso-poseidon",
  "thiserror 2.0.18",
 ]
 
@@ -4334,7 +4323,7 @@ dependencies = [
  "k256 0.14.0-rc.9",
  "pso-integrations-shared",
  "pso-nft",
- "pso-poseidon 0.2.0",
+ "pso-poseidon",
  "pso-protocol",
  "pso-zk-canonical",
  "pso-zk-circuit-noir",

@@ -36,7 +36,7 @@ pso-integrations-shared  = { path = "crates/pso-integrations-shared" }
 pso-l2-client            = { path = "crates/pso-l2-client" }
 
 # External
-pso-poseidon = "0.2"
+pso-poseidon = "0.3"
 # MinRoot VDF over BLS12-381. Used by `pso-mobile-integration::vdf` for
 # the proof-of-personhood challenge wallets attach to Users-pool txs.
 pso-vdf      = "0.2"
