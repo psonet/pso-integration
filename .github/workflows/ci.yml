@@ -511,12 +511,67 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Native macOS build of pso-mobile-integration as a cdylib. Split
+  # out of `build-kotlin-jar` because the Linux→Mac cross-compile path
+  # under cargo-zigbuild fails resolving the CoreFoundation framework
+  # (Apple SDK not present on ubuntu-latest runners). Running it
+  # natively on macos-latest sidesteps the SDK lookup entirely.
+  # Hard-fail (no `continue-on-error`) — `build-kotlin-jar` needs the
+  # uploaded dylib to assemble the JAR.
+  build-kotlin-native-darwin:
+    name: Build pso-mobile-integration darwin-arm64 dynamic lib
+    needs: [resolve, tag]
+    if: |
+      always() &&
+      (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
+       needs.resolve.outputs.release_tag != '')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/configure-private-git
+        with:
+          token: ${{ secrets.PSONET_REPO_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Add Rust target
+        run: rustup target add aarch64-apple-darwin
+
+      - name: cargo build --release --target aarch64-apple-darwin
+        run: cargo build --release --target aarch64-apple-darwin -p pso-mobile-integration
+
+      - name: Stage cdylib
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "target/aarch64-apple-darwin/release/libpso_mobile_integration.dylib" \
+             "dist/libpso_mobile_integration.dylib"
+          ls -lh dist/
+
+      - name: Upload darwin-arm64 dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: pso-mobile-integration-darwin-arm64-dylib
+          path: dist/libpso_mobile_integration.dylib
+          if-no-files-found: error
+          # Workflow-internal handoff to `build-kotlin-jar`. Not
+          # attached to the GH Release on its own — the dylib ships
+          # bundled inside `pso-mobile-integration-kotlin.jar`.
+          retention-days: 1
+
   build-kotlin-jar:
     name: Build pso-mobile-integration Kotlin JAR
-    needs: [resolve, tag, build-bindgen]
+    needs: [resolve, tag, build-bindgen, build-kotlin-native-darwin]
     if: |
       always() &&
       needs.build-bindgen.result == 'success' &&
+      needs.build-kotlin-native-darwin.result == 'success' &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
        needs.resolve.outputs.release_tag != '')
     runs-on: ubuntu-latest
@@ -534,19 +589,17 @@ jobs:
         with:
           toolchain: stable
 
-      # The 3 desktop targets we need static `.a` archives for. The
-      # Linux pair are host-native + zigbuild aarch64; the macOS slice
-      # cross-builds from ubuntu via zigbuild as well. If the macOS
-      # cross-build ever stops working under zigbuild (barretenberg-rs
-      # CMake config drift on the apple-darwin seam), the documented
-      # fallback is a parallel job on macos-latest that uploads the
-      # darwin-arm64 .a and a download-artifact step here.
+      # Linux desktop targets only. The aarch64-apple-darwin slice
+      # comes from the `build-kotlin-native-darwin` job (downloaded
+      # below). cargo-zigbuild's Linux→Mac cross-compile fails at
+      # CoreFoundation framework resolution because vanilla
+      # ubuntu-latest doesn't carry the Apple SDK — see v0.3.2
+      # incident.
       - name: Add Rust targets
         run: |
           rustup target add \
             x86_64-unknown-linux-gnu \
-            aarch64-unknown-linux-gnu \
-            aarch64-apple-darwin
+            aarch64-unknown-linux-gnu
 
       - name: Install C++ toolchain
         run: |
@@ -568,13 +621,12 @@ jobs:
             cargo install --locked cargo-zigbuild
           fi
 
-      - name: cargo zigbuild static archives (3 targets)
+      - name: cargo zigbuild Linux cdylibs (2 targets)
         run: |
           set -euo pipefail
           for target in \
               x86_64-unknown-linux-gnu \
-              aarch64-unknown-linux-gnu \
-              aarch64-apple-darwin
+              aarch64-unknown-linux-gnu
           do
             echo "::group::cargo zigbuild --target ${target}"
             cargo zigbuild --release \
@@ -583,7 +635,13 @@ jobs:
             echo "::endgroup::"
           done
 
-      - name: Stage native archives under crates/.../kotlin/native
+      - name: Download darwin-arm64 dylib from native job
+        uses: actions/download-artifact@v4
+        with:
+          name: pso-mobile-integration-darwin-arm64-dylib
+          path: dist/darwin-arm64/
+
+      - name: Stage native dynamic libs under crates/.../kotlin/native
         run: |
           set -euo pipefail
           stage="crates/pso-mobile-integration/kotlin/native"
@@ -591,12 +649,12 @@ jobs:
             "${stage}/darwin-arm64" \
             "${stage}/linux-x86_64" \
             "${stage}/linux-aarch64"
-          cp "target/aarch64-apple-darwin/release/libpso_mobile_integration.a" \
-             "${stage}/darwin-arm64/libpso_mobile_integration.a"
-          cp "target/x86_64-unknown-linux-gnu/release/libpso_mobile_integration.a" \
-             "${stage}/linux-x86_64/libpso_mobile_integration.a"
-          cp "target/aarch64-unknown-linux-gnu/release/libpso_mobile_integration.a" \
-             "${stage}/linux-aarch64/libpso_mobile_integration.a"
+          cp "dist/darwin-arm64/libpso_mobile_integration.dylib" \
+             "${stage}/darwin-arm64/libpso_mobile_integration.dylib"
+          cp "target/x86_64-unknown-linux-gnu/release/libpso_mobile_integration.so" \
+             "${stage}/linux-x86_64/libpso_mobile_integration.so"
+          cp "target/aarch64-unknown-linux-gnu/release/libpso_mobile_integration.so" \
+             "${stage}/linux-aarch64/libpso_mobile_integration.so"
           ls -lhR "${stage}/"
 
       - name: Download linux-x86_64 uniffi-bindgen-mobile
@@ -817,7 +875,7 @@ jobs:
             echo
             echo "### Kotlin"
             echo
-            echo "- \`pso-mobile-integration-kotlin.jar\` — UniFFI-generated Kotlin bindings + 3 bundled native static archives (\`darwin-arm64\`, \`linux-x86_64\`, \`linux-aarch64\`) under \`META-INF/native/<os>-<arch>/libpso_mobile_integration.a\`."
+            echo "- \`pso-mobile-integration-kotlin.jar\` — UniFFI-generated Kotlin bindings + 3 bundled native dynamic libs (\`darwin-arm64/libpso_mobile_integration.dylib\`, \`linux-x86_64/libpso_mobile_integration.so\`, \`linux-aarch64/libpso_mobile_integration.so\`) under \`META-INF/native/<os>-<arch>/\`. Call \`NativeLoader.ensureLoaded()\` before any UniFFI function."
             echo
             echo "### Verification"
             echo

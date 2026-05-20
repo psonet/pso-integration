@@ -1,0 +1,10 @@
+# mise-managed JVM toolchain for the pso-mobile-integration Kotlin
+# subproject. Scoped to this directory so the rest of the (Rust-only)
+# workspace doesn't pull JDK / Gradle into its environment.
+#
+# After cloning, run `mise install` here (or `mise trust` first if
+# prompted). CI uses actions/setup-java + gradle/actions/setup-gradle
+# instead — this file is dev-side only.
+[tools]
+java = "temurin-21"
+gradle = "8.10"
