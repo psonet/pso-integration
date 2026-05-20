@@ -25,7 +25,18 @@ name: ci
 #   - push: branches: [main]      Full pipeline. check + unit + image +
 #                                 tag (cog auto-bump) and, if cog made
 #                                 a tag, the release-* jobs.
-#   - pull_request                check + unit only.
+#   - pull_request (paths)        check + unit and, when the diff
+#                                 touches the build paths, the
+#                                 mobile/sra build jobs too — so the
+#                                 release pipeline gets exercised
+#                                 pre-merge. Previously the build
+#                                 jobs were release-gated only, which
+#                                 burned 3 ghost tags (v0.3.2 / v0.3.3
+#                                 / v0.3.4) on build-time issues that
+#                                 could've been caught on a PR. The
+#                                 paths filter scopes this so most PRs
+#                                 still skip the heavy mobile cross
+#                                 builds.
 #   - push: tags: ["v*"]          Manual tag push. Skip
 #                                 check/unit/image/tag — re-run the
 #                                 release pipeline against the tag.
@@ -40,6 +51,11 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+    branches: [main]
+    paths:
+      - 'crates/pso-sra-integration/**'
+      - 'crates/pso-mobile-integration/**'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
     inputs:
       tag:
@@ -221,16 +237,20 @@ jobs:
   release-binaries:
     name: Build ${{ matrix.label }} binary
     needs: [resolve, tag]
-    # Two entry paths:
+    # Three entry paths:
     #   - the `tag` job (main push) bumped and emitted outputs.tag
     #   - the `resolve` job set release_tag (manual tag push /
     #     workflow_dispatch). `tag` was skipped in this case.
+    #   - `pull_request` event whose diff matched the workflow's
+    #     `on: pull_request.paths` filter — runs the build pre-merge
+    #     so we don't burn another ghost tag on a build-time issue.
     # `always()` lets us combine the conditions even when `tag`
     # was skipped.
     if: |
       always() &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '')
+       needs.resolve.outputs.release_tag != '' ||
+       github.event_name == 'pull_request')
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -312,7 +332,8 @@ jobs:
     if: |
       always() &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '')
+       needs.resolve.outputs.release_tag != '' ||
+       github.event_name == 'pull_request')
     runs-on: macos-latest
     continue-on-error: true
     strategy:
@@ -370,7 +391,8 @@ jobs:
     if: |
       always() &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '')
+       needs.resolve.outputs.release_tag != '' ||
+       github.event_name == 'pull_request')
     runs-on: ubuntu-latest
     continue-on-error: true
     strategy:
@@ -451,7 +473,8 @@ jobs:
     if: |
       always() &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '')
+       needs.resolve.outputs.release_tag != '' ||
+       github.event_name == 'pull_request')
     runs-on: ${{ matrix.runner }}
     strategy:
       # Linux + macOS only — Windows dropped per T-0019 brief
@@ -511,20 +534,21 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Native macOS build of pso-mobile-integration as a cdylib. Split
-  # out of `build-kotlin-jar` because the Linux→Mac cross-compile path
+  # Native macOS build of pso-sra-integration as a cdylib. Split out
+  # of `build-sra-kotlin-jar` because the Linux→Mac cross-compile path
   # under cargo-zigbuild fails resolving the CoreFoundation framework
   # (Apple SDK not present on ubuntu-latest runners). Running it
   # natively on macos-latest sidesteps the SDK lookup entirely.
-  # Hard-fail (no `continue-on-error`) — `build-kotlin-jar` needs the
-  # uploaded dylib to assemble the JAR.
-  build-kotlin-native-darwin:
-    name: Build pso-mobile-integration darwin-arm64 dynamic lib
+  # Hard-fail (no `continue-on-error`) — `build-sra-kotlin-jar` needs
+  # the uploaded dylib to assemble the JAR.
+  build-sra-native-darwin:
+    name: Build pso-sra-integration darwin-arm64 dynamic lib
     needs: [resolve, tag]
     if: |
       always() &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '')
+       needs.resolve.outputs.release_tag != '' ||
+       github.event_name == 'pull_request')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -544,36 +568,36 @@ jobs:
         run: rustup target add aarch64-apple-darwin
 
       - name: cargo build --release --target aarch64-apple-darwin
-        run: cargo build --release --target aarch64-apple-darwin -p pso-mobile-integration
+        run: cargo build --release --target aarch64-apple-darwin -p pso-sra-integration
 
       - name: Stage cdylib
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp "target/aarch64-apple-darwin/release/libpso_mobile_integration.dylib" \
-             "dist/libpso_mobile_integration.dylib"
+          cp "target/aarch64-apple-darwin/release/libpso_sra_integration.dylib" \
+             "dist/libpso_sra_integration.dylib"
           ls -lh dist/
 
       - name: Upload darwin-arm64 dylib
         uses: actions/upload-artifact@v4
         with:
-          name: pso-mobile-integration-darwin-arm64-dylib
-          path: dist/libpso_mobile_integration.dylib
+          name: pso-sra-integration-darwin-arm64-dylib
+          path: dist/libpso_sra_integration.dylib
           if-no-files-found: error
-          # Workflow-internal handoff to `build-kotlin-jar`. Not
+          # Workflow-internal handoff to `build-sra-kotlin-jar`. Not
           # attached to the GH Release on its own — the dylib ships
-          # bundled inside `pso-mobile-integration-kotlin.jar`.
+          # bundled inside `pso-sra-integration-kotlin.jar`.
           retention-days: 1
 
-  build-kotlin-jar:
-    name: Build pso-mobile-integration Kotlin JAR
-    needs: [resolve, tag, build-bindgen, build-kotlin-native-darwin]
+  build-sra-kotlin-jar:
+    name: Build pso-sra-integration Kotlin JAR
+    needs: [resolve, tag, build-sra-native-darwin]
     if: |
       always() &&
-      needs.build-bindgen.result == 'success' &&
-      needs.build-kotlin-native-darwin.result == 'success' &&
+      needs.build-sra-native-darwin.result == 'success' &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '')
+       needs.resolve.outputs.release_tag != '' ||
+       github.event_name == 'pull_request')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -590,11 +614,11 @@ jobs:
           toolchain: stable
 
       # Linux desktop targets only. The aarch64-apple-darwin slice
-      # comes from the `build-kotlin-native-darwin` job (downloaded
+      # comes from the `build-sra-native-darwin` job (downloaded
       # below). cargo-zigbuild's Linux→Mac cross-compile fails at
       # CoreFoundation framework resolution because vanilla
       # ubuntu-latest doesn't carry the Apple SDK — see v0.3.2
-      # incident.
+      # incident on the mobile crate; same constraint applies here.
       - name: Add Rust targets
         run: |
           rustup target add \
@@ -621,54 +645,52 @@ jobs:
             cargo install --locked cargo-zigbuild
           fi
 
-      - name: cargo zigbuild Linux cdylibs (2 targets)
+      - name: cargo build x86_64-unknown-linux-gnu (host)
         run: |
           set -euo pipefail
-          for target in \
-              x86_64-unknown-linux-gnu \
-              aarch64-unknown-linux-gnu
-          do
-            echo "::group::cargo zigbuild --target ${target}"
-            cargo zigbuild --release \
-              --target "${target}" \
-              -p pso-mobile-integration
-            echo "::endgroup::"
-          done
+          # Host build — no zig needed, plain cargo.
+          cargo build --release \
+            --target x86_64-unknown-linux-gnu \
+            -p pso-sra-integration
+
+      - name: cargo zigbuild aarch64-unknown-linux-gnu
+        run: |
+          set -euo pipefail
+          cargo zigbuild --release \
+            --target aarch64-unknown-linux-gnu \
+            -p pso-sra-integration
 
       - name: Download darwin-arm64 dylib from native job
         uses: actions/download-artifact@v4
         with:
-          name: pso-mobile-integration-darwin-arm64-dylib
+          name: pso-sra-integration-darwin-arm64-dylib
           path: dist/darwin-arm64/
 
       - name: Stage native dynamic libs under crates/.../kotlin/native
         run: |
           set -euo pipefail
-          stage="crates/pso-mobile-integration/kotlin/native"
+          stage="crates/pso-sra-integration/kotlin/native"
           mkdir -p \
             "${stage}/darwin-arm64" \
             "${stage}/linux-x86_64" \
             "${stage}/linux-aarch64"
-          cp "dist/darwin-arm64/libpso_mobile_integration.dylib" \
-             "${stage}/darwin-arm64/libpso_mobile_integration.dylib"
-          cp "target/x86_64-unknown-linux-gnu/release/libpso_mobile_integration.so" \
-             "${stage}/linux-x86_64/libpso_mobile_integration.so"
-          cp "target/aarch64-unknown-linux-gnu/release/libpso_mobile_integration.so" \
-             "${stage}/linux-aarch64/libpso_mobile_integration.so"
+          cp "dist/darwin-arm64/libpso_sra_integration.dylib" \
+             "${stage}/darwin-arm64/libpso_sra_integration.dylib"
+          cp "target/x86_64-unknown-linux-gnu/release/libpso_sra_integration.so" \
+             "${stage}/linux-x86_64/libpso_sra_integration.so"
+          cp "target/aarch64-unknown-linux-gnu/release/libpso_sra_integration.so" \
+             "${stage}/linux-aarch64/libpso_sra_integration.so"
           ls -lhR "${stage}/"
 
-      - name: Download linux-x86_64 uniffi-bindgen-mobile
-        uses: actions/download-artifact@v4
-        with:
-          name: uniffi-bindgen-mobile-linux-x86_64
-          path: crates/pso-mobile-integration/kotlin/
+      - name: cargo build --release --bin uniffi-bindgen-sra
+        run: cargo build --release --bin uniffi-bindgen-sra -p pso-sra-integration
 
-      - name: Make bindgen executable
+      - name: Stage bindgen binary
         run: |
           set -euo pipefail
-          mv crates/pso-mobile-integration/kotlin/uniffi-bindgen-mobile-linux-x86_64 \
-             crates/pso-mobile-integration/kotlin/uniffi-bindgen-mobile
-          chmod 0755 crates/pso-mobile-integration/kotlin/uniffi-bindgen-mobile
+          cp target/release/uniffi-bindgen-sra \
+             crates/pso-sra-integration/kotlin/uniffi-bindgen-sra
+          chmod 0755 crates/pso-sra-integration/kotlin/uniffi-bindgen-sra
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -680,24 +702,24 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Gradle build (generate bindings + assemble JAR)
-        working-directory: crates/pso-mobile-integration/kotlin
+        working-directory: crates/pso-sra-integration/kotlin
         run: gradle --no-daemon build
 
       - name: Stage JAR for upload
         run: |
           set -euo pipefail
           mkdir -p dist
-          # Gradle archives `pso-mobile-integration-kotlin.jar` under
+          # Gradle archives `pso-sra-integration-kotlin.jar` under
           # build/libs/ (archiveBaseName + empty archiveVersion).
-          cp crates/pso-mobile-integration/kotlin/build/libs/pso-mobile-integration-kotlin.jar \
-             dist/pso-mobile-integration-kotlin.jar
-          unzip -l dist/pso-mobile-integration-kotlin.jar
+          cp crates/pso-sra-integration/kotlin/build/libs/pso-sra-integration-kotlin.jar \
+             dist/pso-sra-integration-kotlin.jar
+          unzip -l dist/pso-sra-integration-kotlin.jar
 
       - name: Upload Kotlin JAR
         uses: actions/upload-artifact@v4
         with:
-          name: pso-mobile-integration-kotlin
-          path: dist/pso-mobile-integration-kotlin.jar
+          name: pso-sra-integration-kotlin
+          path: dist/pso-sra-integration-kotlin.jar
           if-no-files-found: error
           retention-days: 7
 
@@ -762,12 +784,12 @@ jobs:
       - build-mobile-ios
       - build-mobile-android
       - build-bindgen
-      - build-kotlin-jar
+      - build-sra-kotlin-jar
     if: |
       always() &&
       needs.release-image.result == 'success' &&
       needs.build-bindgen.result == 'success' &&
-      needs.build-kotlin-jar.result == 'success' &&
+      needs.build-sra-kotlin-jar.result == 'success' &&
       (needs.tag.outputs.tag != '' || needs.resolve.outputs.release_tag != '')
     runs-on: ubuntu-latest
     steps:
@@ -788,7 +810,7 @@ jobs:
       # collide. The staging step below walks the subdirs and copies
       # each file out with the artifact-name prefix already applied
       # by the upload step.
-      - name: Download mobile + bindgen + kotlin artifacts
+      - name: Download mobile artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts/mobile/
@@ -801,6 +823,17 @@ jobs:
           path: artifacts/bindgen/
           pattern: uniffi-bindgen-mobile-*
           merge-multiple: false
+
+      # SRA Kotlin JAR. We download by exact name rather than
+      # `pso-sra-integration-*` because that pattern would also pick
+      # up the workflow-internal `pso-sra-integration-darwin-arm64-dylib`
+      # artifact (1-day retention, not for release — the dylib it
+      # carries already ships bundled inside the JAR).
+      - name: Download SRA Kotlin JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: pso-sra-integration-kotlin
+          path: artifacts/sra-kotlin/
 
       - name: Stage release artifacts + SHA256SUMS
         run: |
@@ -830,6 +863,11 @@ jobs:
               cp "$f" "release/$(basename "$f")"
             done
           done
+
+          # SRA Kotlin JAR — single file, downloaded by exact name so
+          # it lands directly under artifacts/sra-kotlin/.
+          cp artifacts/sra-kotlin/pso-sra-integration-kotlin.jar \
+             release/pso-sra-integration-kotlin.jar
 
           ls -lh release/
           cd release
@@ -873,9 +911,11 @@ jobs:
             echo "- \`uniffi-bindgen-mobile-linux-x86_64\` — \`x86_64-unknown-linux-gnu\`"
             echo "- \`uniffi-bindgen-mobile-darwin-arm64\` — \`aarch64-apple-darwin\`"
             echo
-            echo "### Kotlin"
+            echo "### SRA Kotlin bindings (pso-sra-integration)"
             echo
-            echo "- \`pso-mobile-integration-kotlin.jar\` — UniFFI-generated Kotlin bindings + 3 bundled native dynamic libs (\`darwin-arm64/libpso_mobile_integration.dylib\`, \`linux-x86_64/libpso_mobile_integration.so\`, \`linux-aarch64/libpso_mobile_integration.so\`) under \`META-INF/native/<os>-<arch>/\`. Call \`NativeLoader.ensureLoaded()\` before any UniFFI function."
+            echo "- \`pso-sra-integration-kotlin.jar\` — UniFFI-generated Kotlin bindings + 3 bundled native dynamic libs (\`darwin-arm64/libpso_sra_integration.dylib\`, \`linux-x86_64/libpso_sra_integration.so\`, \`linux-aarch64/libpso_sra_integration.so\`) under \`META-INF/native/<os>-<arch>/\`. Call \`NativeLoader.ensureLoaded()\` before any UniFFI function."
+            echo
+            echo "SRA is server-side, JVM-only — no standalone \`libpso_sra_integration.*\` files are attached; the JAR is the only SRA artifact on this release."
             echo
             echo "### Verification"
             echo
