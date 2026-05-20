@@ -20,11 +20,15 @@ resolver = "2"
 # Sibling-repo crates.
 # - `pso-protocol` and `pso-zk-canonical` are published to crates.io
 #   and consumed from the registry.
-# - `pso-zk-circuit-noir` is not on crates.io (it carries a git-only
-#   noir_rs dep tree); still consumed via git+branch=main.
+# - `pso-zk-circuit-noir` is not on crates.io (it vendors `noir_rs`
+#   which transitively depends on git-only `noir-lang/noir` crates);
+#   consumed via git+tag. It re-exports the noir_rs proving glue
+#   downstream consumers in this workspace need, so we no longer
+#   carry a separate `noir_rs` dep or the `[patch.zkpassport/noir_rs]`
+#   override here.
 pso-protocol         = "0.2"
 pso-zk-canonical     = "0.2"
-pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.2.2" }
+pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.2.3" }
 
 # Crates internal to this workspace
 pso-nft                  = { path = "domain/pso-nft" }
@@ -73,14 +77,6 @@ tokio = { version = "1", features = ["full"] }
 eyre  = "0.6"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Mirror pso-zk-circuits' and pso-chain's noir_rs override so the
-# prover here shares the same barretenberg-rs (5.x) backend the
-# canonical VKs were generated against. Without this we silently link
-# bb 4.2 via the upstream zkpassport tag and proofs don't verify
-# against the chain's canonical VK.
-[patch."https://github.com/zkpassport/noir_rs"]
-noir_rs = { git = "https://github.com/psonet/noir_rs.git", rev = "9c206b22cd702373751dbab20501815090d6d7ba" }
 
 # Same profile shape as pso-zk-circuits — proving times collapse
 # under opt-level=3 even in dev.

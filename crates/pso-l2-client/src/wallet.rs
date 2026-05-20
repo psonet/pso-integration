@@ -185,7 +185,7 @@ pub struct SuAggregationInput {
 /// [`pso_integrations_shared::witness::build_flat_aggregation_witness`]
 /// (zero-padding unused slots), loads the tier bytecode from
 /// `pso-zk-circuit-noir`'s embedded data, and calls
-/// `noir_rs::prove_ultra_honk_keccak` against the canonical
+/// `pso_zk_circuit_noir::prove_ultra_honk_keccak` against the canonical
 /// `FLAT_AGGREGATION_N{N}` VK.
 ///
 /// The returned [`AggregationProofBundle`] is ready for
@@ -228,14 +228,14 @@ pub fn prove_su_aggregation(
 
     let witness_vec = build_flat_aggregation_witness(&slots, tier_resolved.tier_n)
         .map_err(|e| L2ClientError::Witness(format!("flat witness: {e}")))?;
-    let witness_map = noir_rs::witness::from_vec_to_witness_map(witness_vec)
+    let witness_map = pso_zk_circuit_noir::witness::from_vec_to_witness_map(witness_vec)
         .map_err(|e| L2ClientError::Witness(format!("witness map: {e}")))?;
 
     // Load the bytecode for this tier from the embedded canonical JSON.
     let bytecode_b64 = flat_aggregation_bytecode_b64(tier_resolved.tier_n)?;
-    let _ = noir_rs::barretenberg::srs::setup_srs_from_bytecode(bytecode_b64, None, true)
+    let _ = pso_zk_circuit_noir::barretenberg::srs::setup_srs_from_bytecode(bytecode_b64, None, true)
         .map_err(|e| L2ClientError::Witness(format!("setup_srs: {e}")))?;
-    let proof_bytes = noir_rs::barretenberg::prove::prove_ultra_honk_keccak(
+    let proof_bytes = pso_zk_circuit_noir::barretenberg::prove::prove_ultra_honk_keccak(
         bytecode_b64,
         witness_map,
         tier_resolved.descriptor.vk_bytes.to_vec(),

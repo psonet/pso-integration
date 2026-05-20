@@ -72,7 +72,7 @@ pub fn ownership_circuit() -> Result<&'static NoirOwnershipCircuit, MobileError>
 // `N`, so the caller in `api.rs::prove_su_ownership_aggregation`
 // builds the witness via
 // `pso_integrations_shared::witness::build_flat_aggregation_witness`
-// and calls `noir_rs::prove_ultra_honk_keccak` directly with the
+// and calls `pso_zk_circuit_noir::prove_ultra_honk_keccak` directly with the
 // canonical VK bytes from `pso_zk_canonical::FLAT_AGGREGATION_N{N}`.
 
 /// Load the bytecode for the chosen flat-aggregation tier.

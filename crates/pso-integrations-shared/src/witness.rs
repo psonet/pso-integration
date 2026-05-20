@@ -17,8 +17,8 @@
 //! - [`FlatAggregationSlot`], [`build_flat_aggregation_witness`] --
 //!   helper for assembling the witness vector for the
 //!   `pso-flat-aggregation-circuit-n{N}` family. Returns a
-//!   `Vec<noir_rs::FieldElement>` already in the order the circuit's
-//!   `main()` expects, ready to feed to `noir_rs::prove_ultra_honk_keccak`.
+//!   `Vec<pso_zk_circuit_noir::FieldElement>` already in the order the circuit's
+//!   `main()` expects, ready to feed to `pso_zk_circuit_noir::prove_ultra_honk_keccak`.
 //!
 //! ## ECDH compatibility
 //!
@@ -230,8 +230,8 @@ pub struct FlatAggregationSlot {
 ///   public_inputs : pub [Field; 2 * N]        -> 2N Fr (owner_0, nft_hash_0, ...)
 /// ```
 ///
-/// Returns a `Vec<noir_rs::FieldElement>` ready to feed to
-/// `noir_rs::witness::from_vec_to_witness_map`. Caller is responsible
+/// Returns a `Vec<pso_zk_circuit_noir::FieldElement>` ready to feed to
+/// `pso_zk_circuit_noir::witness::from_vec_to_witness_map`. Caller is responsible
 /// for picking the right tier circuit (`pso_zk_canonical::FLAT_AGGREGATION_N{N}`)
 /// and `tier_n`.
 ///
@@ -243,8 +243,8 @@ pub struct FlatAggregationSlot {
 pub fn build_flat_aggregation_witness(
     real_slots: &[FlatAggregationSlot],
     tier_n: u32,
-) -> anyhow::Result<Vec<noir_rs::FieldElement>> {
-    use noir_rs::{AcirField, FieldElement};
+) -> anyhow::Result<Vec<pso_zk_circuit_noir::FieldElement>> {
+    use pso_zk_circuit_noir::{AcirField, FieldElement};
 
     if (real_slots.len() as u32) > tier_n {
         anyhow::bail!(

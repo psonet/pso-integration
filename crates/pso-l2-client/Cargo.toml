@@ -13,10 +13,9 @@ pso-integrations-shared.workspace = true
 pso-zk-circuit-noir.workspace = true
 # Canonical descriptors (circuit_hash + VK bytes per tier).
 pso-zk-canonical.workspace = true
-# noir_rs FFI for the flat-aggregation prove path. Required so the
-# wallet's prove call shares the same barretenberg backend as the
-# `pso-zk-circuit-noir` wrappers and the on-chain verifier.
-noir_rs = { git = "https://github.com/zkpassport/noir_rs", tag = "v1.0.0-beta.20-1", features = ["barretenberg"] }
+# Flat-aggregation prove path uses pso-zk-circuit-noir's re-exported
+# `barretenberg::prove::prove_ultra_honk_keccak`; that crate is the
+# single source of barretenberg-backend linkage in the workspace.
 
 # RPC + ABI + signing.
 alloy.workspace = true

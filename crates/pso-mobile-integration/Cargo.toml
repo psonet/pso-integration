@@ -39,11 +39,11 @@ ark-bn254 = { workspace = true }
 # App. A ECDH step; in-circuit signing is on Grumpkin).
 k256.workspace = true
 
-# noir_rs FFI for the flat-aggregation prove path. The standalone
-# ownership / full-proof circuits go through pso-zk-circuit-noir's
-# `NoirCircuit` trait wrappers, but the flat-aggregation tier circuits
-# have an N-parameterised witness shape so we drive prove() directly.
-noir_rs = { git = "https://github.com/zkpassport/noir_rs", tag = "v1.0.0-beta.20-1", features = ["barretenberg"] }
+# Flat-aggregation prove path goes through pso-zk-circuit-noir's
+# re-exported `barretenberg::prove::prove_ultra_honk_keccak`
+# directly (its N-parameterised witness shape doesn't fit the
+# trait wrappers used for the standalone ownership / full-proof
+# circuits).
 
 # Direct dep on barretenberg-rs for the standalone Schnorr-on-Grumpkin
 # verify FFI exposed in `mod schnorr` — sign re-uses
