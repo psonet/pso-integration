@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.2 - 2026-05-20
+#### Bug Fixes
+- (**release**) attach mobile slices, uniffi-bindgen-mobile, and Kotlin JAR - (0a130b9) - Anton Velichko
+
+- - -
+
 ## v0.3.1 - 2026-05-20
 #### Bug Fixes
 - bump version to capture dep-graph cleanup - (00ddbb2) - Anton Velichko
