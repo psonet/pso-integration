@@ -17,14 +17,14 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-# Sibling-repo crates. Git-tracked against `main` while the
-# multi-repo layout co-evolves; pin to a specific rev or tag at
-# release time. Cargo discovers `pso-zk-circuit-noir` and
-# `pso-zk-canonical` inside the `pso-zk-circuits` workspace by
-# package name — no subpath needed.
-pso-protocol         = { git = "ssh://git@github.com/psonet/pso-protocol.git",   branch = "main" }
-pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", branch = "main" }
-pso-zk-canonical     = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", branch = "main" }
+# Sibling-repo crates.
+# - `pso-protocol` and `pso-zk-canonical` are published to crates.io
+#   and consumed from the registry.
+# - `pso-zk-circuit-noir` is not on crates.io (it carries a git-only
+#   noir_rs dep tree); still consumed via git+branch=main.
+pso-protocol         = "0.2"
+pso-zk-canonical     = "0.2"
+pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.2.2" }
 
 # Crates internal to this workspace
 pso-nft                  = { path = "domain/pso-nft" }
@@ -35,7 +35,7 @@ pso-l2-client            = { path = "crates/pso-l2-client" }
 pso-poseidon = "0.2"
 # MinRoot VDF over BLS12-381. Used by `pso-mobile-integration::vdf` for
 # the proof-of-personhood challenge wallets attach to Users-pool txs.
-pso-vdf      = "0.1"
+pso-vdf      = "0.2"
 k256         = { version = "0.14.0-rc.8", features = ["std"] }
 ark-ff       = { version = "0.5", features = ["asm", "parallel"] }
 ark-bn254    = { version = "0.5", features = ["default"] }
