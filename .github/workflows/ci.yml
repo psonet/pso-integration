@@ -295,6 +295,354 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # ----------------------------------------------------------------
+  # Mobile + bindgen + Kotlin artifacts.
+  #
+  # Same `release_tag` / `tag.outputs.tag` gating as `release-binaries`
+  # — these all attach to the GH Release. Mobile cross-builds run
+  # `continue-on-error: true` because `barretenberg-rs` links a C++
+  # static lib whose CMake config can drift on iOS / Android seams;
+  # the bindgen + Kotlin JAR jobs hard-fail because they have no
+  # such excuse.
+  # ----------------------------------------------------------------
+
+  build-mobile-ios:
+    name: Build pso-mobile-integration ${{ matrix.label }} static lib
+    needs: [resolve, tag]
+    if: |
+      always() &&
+      (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
+       needs.resolve.outputs.release_tag != '')
+    runs-on: macos-latest
+    continue-on-error: true
+    strategy:
+      # `barretenberg-rs`'s build.rs ships prebuilt FFI for
+      # aarch64-apple-ios + aarch64-apple-ios-sim only — there is no
+      # x86_64-apple-ios-sim FFI upstream, and the Intel simulator
+      # rust target (`x86_64-apple-ios`) is deprecated for our use
+      # case. Apple-Silicon-only matrix matches pso-zk-circuits.
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-ios
+            label: ios-arm64
+          - target: aarch64-apple-ios-sim
+            label: ios-sim-arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/configure-private-git
+        with:
+          token: ${{ secrets.PSONET_REPO_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: cargo build --release -p pso-mobile-integration
+        run: cargo build --release -p pso-mobile-integration --target ${{ matrix.target }}
+
+      - name: Stage static lib
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/libpso_mobile_integration.a" \
+             "dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration.a"
+          ls -lh dist/
+
+      - name: Upload iOS static lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: pso-mobile-integration-${{ matrix.label }}
+          path: dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration.a
+          if-no-files-found: error
+          retention-days: 7
+
+  build-mobile-android:
+    name: Build pso-mobile-integration ${{ matrix.label }} shared lib
+    needs: [resolve, tag]
+    if: |
+      always() &&
+      (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
+       needs.resolve.outputs.release_tag != '')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      # barretenberg-rs ships prebuilt FFI for the 64-bit Android
+      # ABIs only — 32-bit (armeabi-v7a / x86) hard-fail in the
+      # build script before invoking the NDK toolchain.
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-linux-android
+            label: android-arm64-v8a
+            abi: arm64-v8a
+          - target: x86_64-linux-android
+            label: android-x86_64
+            abi: x86_64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/configure-private-git
+        with:
+          token: ${{ secrets.PSONET_REPO_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+          add-to-path: false
+
+      - name: Install C++ toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang pkg-config
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: cargo ndk build -p pso-mobile-integration
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cargo ndk \
+            --target ${{ matrix.abi }} \
+            --platform 24 \
+            --output-dir ./jniLibs \
+            build --release -p pso-mobile-integration
+
+      - name: Stage shared lib
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "jniLibs/${{ matrix.abi }}/libpso_mobile_integration.so" \
+             "dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration.so"
+          ls -lh dist/
+
+      - name: Upload Android shared lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: pso-mobile-integration-${{ matrix.label }}
+          path: dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration.so
+          if-no-files-found: error
+          retention-days: 7
+
+  build-bindgen:
+    name: Build uniffi-bindgen-mobile (${{ matrix.label }})
+    needs: [resolve, tag]
+    if: |
+      always() &&
+      (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
+       needs.resolve.outputs.release_tag != '')
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # Linux + macOS only — Windows dropped per T-0019 brief
+      # (barretenberg-rs has no Windows target, and the bindgen
+      # binary still links the full workspace dep graph so it
+      # inherits the same constraint).
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            label: linux-x86_64
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            label: darwin-arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/configure-private-git
+        with:
+          token: ${{ secrets.PSONET_REPO_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install C++ toolchain (Linux runner only)
+        if: startsWith(matrix.runner, 'ubuntu-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang \
+            libstdc++-12-dev \
+            libc++-dev libc++abi-dev \
+            pkg-config libssl-dev
+
+      - name: cargo build --release --bin uniffi-bindgen-mobile
+        run: cargo build --release --bin uniffi-bindgen-mobile -p pso-mobile-integration
+
+      - name: Stage bindgen binary
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "target/release/uniffi-bindgen-mobile" \
+             "dist/uniffi-bindgen-mobile-${{ matrix.label }}"
+          chmod 0755 "dist/uniffi-bindgen-mobile-${{ matrix.label }}"
+          ls -lh dist/
+
+      - name: Upload bindgen binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: uniffi-bindgen-mobile-${{ matrix.label }}
+          path: dist/uniffi-bindgen-mobile-${{ matrix.label }}
+          if-no-files-found: error
+          retention-days: 7
+
+  build-kotlin-jar:
+    name: Build pso-mobile-integration Kotlin JAR
+    needs: [resolve, tag, build-bindgen]
+    if: |
+      always() &&
+      needs.build-bindgen.result == 'success' &&
+      (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
+       needs.resolve.outputs.release_tag != '')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/configure-private-git
+        with:
+          token: ${{ secrets.PSONET_REPO_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      # The 3 desktop targets we need static `.a` archives for. The
+      # Linux pair are host-native + zigbuild aarch64; the macOS slice
+      # cross-builds from ubuntu via zigbuild as well. If the macOS
+      # cross-build ever stops working under zigbuild (barretenberg-rs
+      # CMake config drift on the apple-darwin seam), the documented
+      # fallback is a parallel job on macos-latest that uploads the
+      # darwin-arm64 .a and a download-artifact step here.
+      - name: Add Rust targets
+        run: |
+          rustup target add \
+            x86_64-unknown-linux-gnu \
+            aarch64-unknown-linux-gnu \
+            aarch64-apple-darwin
+
+      - name: Install C++ toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang \
+            libstdc++-12-dev \
+            libc++-dev libc++abi-dev \
+            pkg-config libssl-dev
+
+      - name: Install zig + cargo-zigbuild
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+
+      - name: Install cargo-zigbuild
+        run: |
+          if ! command -v cargo-zigbuild >/dev/null 2>&1; then
+            cargo install --locked cargo-zigbuild
+          fi
+
+      - name: cargo zigbuild static archives (3 targets)
+        run: |
+          set -euo pipefail
+          for target in \
+              x86_64-unknown-linux-gnu \
+              aarch64-unknown-linux-gnu \
+              aarch64-apple-darwin
+          do
+            echo "::group::cargo zigbuild --target ${target}"
+            cargo zigbuild --release \
+              --target "${target}" \
+              -p pso-mobile-integration
+            echo "::endgroup::"
+          done
+
+      - name: Stage native archives under crates/.../kotlin/native
+        run: |
+          set -euo pipefail
+          stage="crates/pso-mobile-integration/kotlin/native"
+          mkdir -p \
+            "${stage}/darwin-arm64" \
+            "${stage}/linux-x86_64" \
+            "${stage}/linux-aarch64"
+          cp "target/aarch64-apple-darwin/release/libpso_mobile_integration.a" \
+             "${stage}/darwin-arm64/libpso_mobile_integration.a"
+          cp "target/x86_64-unknown-linux-gnu/release/libpso_mobile_integration.a" \
+             "${stage}/linux-x86_64/libpso_mobile_integration.a"
+          cp "target/aarch64-unknown-linux-gnu/release/libpso_mobile_integration.a" \
+             "${stage}/linux-aarch64/libpso_mobile_integration.a"
+          ls -lhR "${stage}/"
+
+      - name: Download linux-x86_64 uniffi-bindgen-mobile
+        uses: actions/download-artifact@v4
+        with:
+          name: uniffi-bindgen-mobile-linux-x86_64
+          path: crates/pso-mobile-integration/kotlin/
+
+      - name: Make bindgen executable
+        run: |
+          set -euo pipefail
+          mv crates/pso-mobile-integration/kotlin/uniffi-bindgen-mobile-linux-x86_64 \
+             crates/pso-mobile-integration/kotlin/uniffi-bindgen-mobile
+          chmod 0755 crates/pso-mobile-integration/kotlin/uniffi-bindgen-mobile
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Gradle build (generate bindings + assemble JAR)
+        working-directory: crates/pso-mobile-integration/kotlin
+        run: gradle --no-daemon build
+
+      - name: Stage JAR for upload
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # Gradle archives `pso-mobile-integration-kotlin.jar` under
+          # build/libs/ (archiveBaseName + empty archiveVersion).
+          cp crates/pso-mobile-integration/kotlin/build/libs/pso-mobile-integration-kotlin.jar \
+             dist/pso-mobile-integration-kotlin.jar
+          unzip -l dist/pso-mobile-integration-kotlin.jar
+
+      - name: Upload Kotlin JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: pso-mobile-integration-kotlin
+          path: dist/pso-mobile-integration-kotlin.jar
+          if-no-files-found: error
+          retention-days: 7
+
   release-image:
     name: Publish versioned testsuite image
     needs: [resolve, tag, release-binaries]
@@ -348,10 +696,20 @@ jobs:
 
   github-release:
     name: Create GitHub release
-    needs: [resolve, tag, release-binaries, release-image]
+    needs:
+      - resolve
+      - tag
+      - release-binaries
+      - release-image
+      - build-mobile-ios
+      - build-mobile-android
+      - build-bindgen
+      - build-kotlin-jar
     if: |
       always() &&
       needs.release-image.result == 'success' &&
+      needs.build-bindgen.result == 'success' &&
+      needs.build-kotlin-jar.result == 'success' &&
       (needs.tag.outputs.tag != '' || needs.resolve.outputs.release_tag != '')
     runs-on: ubuntu-latest
     steps:
@@ -359,12 +717,69 @@ jobs:
         with:
           ref: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
 
-      - name: Download all binary artifacts
+      - name: Download pso-e2e binary artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts/
+          path: artifacts/e2e/
           pattern: pso-e2e-*
           merge-multiple: true
+
+      # Mobile iOS + Android artifacts. `merge-multiple: false` keeps
+      # each upload under its own subdir so the two iOS slices (both
+      # named `libpso_mobile_integration.a` inside the artifact) don't
+      # collide. The staging step below walks the subdirs and copies
+      # each file out with the artifact-name prefix already applied
+      # by the upload step.
+      - name: Download mobile + bindgen + kotlin artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/mobile/
+          pattern: pso-mobile-integration-*
+          merge-multiple: false
+
+      - name: Download uniffi-bindgen-mobile binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/bindgen/
+          pattern: uniffi-bindgen-mobile-*
+          merge-multiple: false
+
+      - name: Stage release artifacts + SHA256SUMS
+        run: |
+          set -euo pipefail
+          mkdir -p release/
+          shopt -s nullglob
+
+          # pso-e2e binaries — already named pso-e2e-<label>.
+          for f in artifacts/e2e/pso-e2e-*; do
+            cp "$f" "release/$(basename "$f")"
+          done
+
+          # Mobile slices — actions/download-artifact@v4 with
+          # merge-multiple: false places each artifact into a subdir.
+          # The upload step already prefixed the .a / .so filename
+          # with `pso-mobile-integration-<label>-`, so we can copy
+          # the inner file out directly.
+          for dir in artifacts/mobile/pso-mobile-integration-*/; do
+            for f in "$dir"*; do
+              cp "$f" "release/$(basename "$f")"
+            done
+          done
+
+          # Bindgen binaries — already named uniffi-bindgen-mobile-<label>.
+          for dir in artifacts/bindgen/uniffi-bindgen-mobile-*/; do
+            for f in "$dir"*; do
+              cp "$f" "release/$(basename "$f")"
+            done
+          done
+
+          ls -lh release/
+          cd release
+          # Hash every file in release/, stripping the `./` prefix so
+          # SHA256SUMS lines match the bare filenames at the release.
+          shasum -a 256 -- * > SHA256SUMS
+          echo "--- SHA256SUMS ---"
+          cat SHA256SUMS
 
       - name: Compose release body
         env:
@@ -383,6 +798,30 @@ jobs:
             echo "## Binaries"
             echo
             echo "Pre-built \`pso-e2e\` for every supported platform is attached below."
+            echo
+            echo "## Artifacts"
+            echo
+            echo "### Mobile (pso-mobile-integration)"
+            echo
+            echo "- \`pso-mobile-integration-ios-arm64-libpso_mobile_integration.a\` — iOS device static lib (\`aarch64-apple-ios\`)"
+            echo "- \`pso-mobile-integration-ios-sim-arm64-libpso_mobile_integration.a\` — iOS Apple-Silicon simulator static lib (\`aarch64-apple-ios-sim\`)"
+            echo "- \`pso-mobile-integration-android-arm64-v8a-libpso_mobile_integration.so\` — Android arm64-v8a shared lib (\`aarch64-linux-android\`)"
+            echo "- \`pso-mobile-integration-android-x86_64-libpso_mobile_integration.so\` — Android x86_64 shared lib (\`x86_64-linux-android\`)"
+            echo
+            echo "Mobile slices are best-effort cross-builds. Missing slices indicate a barretenberg-rs cross-toolchain failure on that target — see workflow logs."
+            echo
+            echo "### Bindgen (uniffi-bindgen-mobile)"
+            echo
+            echo "- \`uniffi-bindgen-mobile-linux-x86_64\` — \`x86_64-unknown-linux-gnu\`"
+            echo "- \`uniffi-bindgen-mobile-darwin-arm64\` — \`aarch64-apple-darwin\`"
+            echo
+            echo "### Kotlin"
+            echo
+            echo "- \`pso-mobile-integration-kotlin.jar\` — UniFFI-generated Kotlin bindings + 3 bundled native static archives (\`darwin-arm64\`, \`linux-x86_64\`, \`linux-aarch64\`) under \`META-INF/native/<os>-<arch>/libpso_mobile_integration.a\`."
+            echo
+            echo "### Verification"
+            echo
+            echo "- \`SHA256SUMS\` — SHA-256 of every other file attached to this release."
           } > body.md
 
       - name: Create release
@@ -392,4 +831,5 @@ jobs:
           body_path: body.md
           generate_release_notes: true
           files: |
-            artifacts/pso-e2e-*
+            release/*
+          fail_on_unmatched_files: false
