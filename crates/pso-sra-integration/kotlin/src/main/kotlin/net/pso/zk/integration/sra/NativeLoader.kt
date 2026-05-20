@@ -1,58 +1,76 @@
 package net.pso.zk.integration.sra
 
-import java.io.File
-import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Extracts the platform-specific native library from JAR resources
- * and registers it for JNA/UniFFI loading.
+ * Extracts the host-arch dynamic library bundled inside the JAR at
+ * `META-INF/native/<os>-<arch>/libpso_sra_integration.{dylib,so}`,
+ * registers it with the JVM via `System.load`, and points UniFFI's
+ * generated JNA `Native.register(...)` call at the extracted file
+ * via the `uniffi.component.pso_sra_integration.libraryOverride`
+ * system property.
  *
- * Call [load] once before using any ownership functions.
+ * Both hooks are needed:
+ *   - `System.load(...)` — for any direct-JNI consumer that drops down
+ *     past the UniFFI surface.
+ *   - `libraryOverride` — for UniFFI itself, whose generated
+ *     `findLibraryName(...)` reads this property first before falling
+ *     back to a bare `dlopen("pso_sra_integration")`, which would
+ *     fail in a JAR-distributed setup (the dylib lives in a tempdir,
+ *     not on the OS library search path).
+ *
+ * Call [ensureLoaded] once before invoking any UniFFI-generated
+ * function. Idempotent within a JVM lifetime.
  */
 object NativeLoader {
-    private var loaded = false
 
-    @Synchronized
-    fun load() {
-        if (loaded) return
+    private val loaded = AtomicBoolean(false)
 
-        val os = System.getProperty("os.name").lowercase()
-        val arch = System.getProperty("os.arch").lowercase()
+    fun ensureLoaded() {
+        if (!loaded.compareAndSet(false, true)) return
 
-        val (dirName, libName) = when {
-            "mac" in os && arch in listOf("aarch64", "arm64") ->
-                "darwin-aarch64" to "libpso_sra_integration.dylib"
-            "linux" in os && arch in listOf("amd64", "x86_64") ->
-                "linux-x86-64" to "libpso_sra_integration.so"
-            else -> throw UnsatisfiedLinkError(
-                "Unsupported platform: os=$os arch=$arch. " +
-                "Supported: macOS ARM64, Linux x86_64."
+        val osArch = detectOsArch()
+        val ext = if (osArch.startsWith("darwin")) "dylib" else "so"
+        val resource = "/META-INF/native/$osArch/libpso_sra_integration.$ext"
+
+        val stream = NativeLoader::class.java.getResourceAsStream(resource)
+            ?: error("Native library not found in JAR: $resource (host=$osArch)")
+
+        val tempFile = Files.createTempFile(
+            "libpso_sra_integration",
+            ".$ext",
+        ).toFile().apply { deleteOnExit() }
+
+        stream.use { input ->
+            Files.copy(
+                input,
+                tempFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
             )
         }
 
-        val resourcePath = "/native/$dirName/$libName"
-        val stream = NativeLoader::class.java.getResourceAsStream(resourcePath)
-            ?: throw UnsatisfiedLinkError("Native library not found in JAR: $resourcePath")
-
-        val tmpDir = File(System.getProperty("java.io.tmpdir"), "pso-sra-integration-native")
-        tmpDir.mkdirs()
-        val tmpFile = File(tmpDir, libName)
-
-        stream.use { input ->
-            FileOutputStream(tmpFile).use { output ->
-                input.copyTo(output)
-            }
-        }
-
-        // Point UniFFI's generated loadIndirect() to the extracted file.
-        // This uses the built-in override mechanism (findLibraryName checks
-        // this property first) and avoids mutating the global jna.library.path.
+        System.load(tempFile.absolutePath)
         System.setProperty(
             "uniffi.component.pso_sra_integration.libraryOverride",
-            tmpFile.absolutePath
+            tempFile.absolutePath,
         )
+    }
 
-        tmpFile.deleteOnExit()
-        loaded = true
+    private fun detectOsArch(): String {
+        val os = System.getProperty("os.name").lowercase()
+        val arch = System.getProperty("os.arch").lowercase()
+        val osTag = when {
+            "mac" in os || "darwin" in os -> "darwin"
+            "linux" in os -> "linux"
+            else -> error("Unsupported OS: $os")
+        }
+        val archTag = when (arch) {
+            "aarch64", "arm64" -> if (osTag == "darwin") "arm64" else "aarch64"
+            "x86_64", "amd64" -> "x86_64"
+            else -> error("Unsupported arch: $arch")
+        }
+        return "$osTag-$archTag"
     }
 }
