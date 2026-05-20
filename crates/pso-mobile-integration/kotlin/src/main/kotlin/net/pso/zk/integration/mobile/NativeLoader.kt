@@ -1,54 +1,76 @@
 package net.pso.zk.integration.mobile
 
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.concurrent.atomic.AtomicBoolean
+
 /**
- * Locates the platform-specific static archive bundled inside the JAR
- * at META-INF/native/<os>-<arch>/libpso_mobile_integration.a.
+ * Extracts the host-arch dynamic library bundled inside the JAR at
+ * `META-INF/native/<os>-<arch>/libpso_mobile_integration.{dylib,so}`,
+ * registers it with the JVM via `System.load`, and points UniFFI's
+ * generated JNA `Native.register(...)` call at the extracted file
+ * via the `uniffi.component.pso_mobile_integration.libraryOverride`
+ * system property.
  *
- * Unlike pso-sra-integration which ships a dynamic library (.so /
- * .dylib) loadable through JNA's `loadIndirect`, pso-mobile-integration
- * ships *static* archives because the downstream consumers (build
- * tools, repro builds, audit pipelines) link them into their own
- * outputs. This loader therefore exposes the archive path on disk
- * rather than registering it with JNA — extraction-only, no dlopen.
+ * Both hooks are needed:
+ *   - `System.load(...)` — for any direct-JNI consumer that drops down
+ *     past the UniFFI surface.
+ *   - `libraryOverride` — for UniFFI itself, whose generated
+ *     `findLibraryName(...)` reads this property first before falling
+ *     back to a bare `dlopen("pso_mobile_integration")`, which would
+ *     fail in a JAR-distributed setup (the dylib lives in a tempdir,
+ *     not on the OS library search path).
+ *
+ * Call [ensureLoaded] once before invoking any UniFFI-generated
+ * function. Idempotent within a JVM lifetime.
  */
 object NativeLoader {
 
-    data class Archive(val osArch: String, val path: java.io.File)
+    private val loaded = AtomicBoolean(false)
 
-    /**
-     * Extracts the host's static archive to a temp file and returns
-     * its path. Idempotent within a JVM lifetime.
-     */
-    @Synchronized
-    fun extract(): Archive {
-        val os = System.getProperty("os.name").lowercase()
-        val arch = System.getProperty("os.arch").lowercase()
+    fun ensureLoaded() {
+        if (!loaded.compareAndSet(false, true)) return
 
-        val osArch = when {
-            "mac" in os && arch in listOf("aarch64", "arm64") -> "darwin-arm64"
-            "linux" in os && arch in listOf("amd64", "x86_64") -> "linux-x86_64"
-            "linux" in os && arch == "aarch64" -> "linux-aarch64"
-            else -> throw UnsatisfiedLinkError(
-                "Unsupported host: os=$os arch=$arch. " +
-                "Supported: darwin-arm64, linux-x86_64, linux-aarch64."
+        val osArch = detectOsArch()
+        val ext = if (osArch.startsWith("darwin")) "dylib" else "so"
+        val resource = "/META-INF/native/$osArch/libpso_mobile_integration.$ext"
+
+        val stream = NativeLoader::class.java.getResourceAsStream(resource)
+            ?: error("Native library not found in JAR: $resource (host=$osArch)")
+
+        val tempFile = Files.createTempFile(
+            "libpso_mobile_integration",
+            ".$ext",
+        ).toFile().apply { deleteOnExit() }
+
+        stream.use { input ->
+            Files.copy(
+                input,
+                tempFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
             )
         }
 
-        val resourcePath = "/META-INF/native/$osArch/libpso_mobile_integration.a"
-        val stream = NativeLoader::class.java.getResourceAsStream(resourcePath)
-            ?: throw UnsatisfiedLinkError("Native archive not found in JAR: $resourcePath")
+        System.load(tempFile.absolutePath)
+        System.setProperty(
+            "uniffi.component.pso_mobile_integration.libraryOverride",
+            tempFile.absolutePath,
+        )
+    }
 
-        val tmpDir = java.io.File(
-            System.getProperty("java.io.tmpdir"),
-            "pso-mobile-integration-native"
-        ).apply { mkdirs() }
-        val tmpFile = java.io.File(tmpDir, "libpso_mobile_integration.a")
-        stream.use { input ->
-            java.io.FileOutputStream(tmpFile).use { output ->
-                input.copyTo(output)
-            }
+    private fun detectOsArch(): String {
+        val os = System.getProperty("os.name").lowercase()
+        val arch = System.getProperty("os.arch").lowercase()
+        val osTag = when {
+            "mac" in os || "darwin" in os -> "darwin"
+            "linux" in os -> "linux"
+            else -> error("Unsupported OS: $os")
         }
-        tmpFile.deleteOnExit()
-        return Archive(osArch, tmpFile)
+        val archTag = when (arch) {
+            "aarch64", "arm64" -> if (osTag == "darwin") "arm64" else "aarch64"
+            "x86_64", "amd64" -> "x86_64"
+            else -> error("Unsupported arch: $arch")
+        }
+        return "$osTag-$archTag"
     }
 }

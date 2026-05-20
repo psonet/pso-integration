@@ -1,22 +1,24 @@
 // Gradle subproject that bundles the UniFFI Kotlin bindings for
-// pso-mobile-integration into a JAR alongside the native static
-// archives consumed by JNI/JNA on the host.
+// pso-mobile-integration into a JAR alongside dynamic native libs
+// (libpso_mobile_integration.dylib on darwin, .so on linux) so a
+// vanilla Kotlin/JVM consumer can `System.load(...)` them via JNI.
 //
 // Inputs (staged by the CI job `build-kotlin-jar` before `gradle build`):
-//   - $rootDir/uniffi-bindgen-mobile        — host-arch bindgen binary
-//   - $rootDir/native/<os>-<arch>/libpso_mobile_integration.a  (×3)
+//   - $rootDir/uniffi-bindgen-mobile                              — host-arch bindgen binary
+//   - $rootDir/native/darwin-arm64/libpso_mobile_integration.dylib
+//   - $rootDir/native/linux-x86_64/libpso_mobile_integration.so
+//   - $rootDir/native/linux-aarch64/libpso_mobile_integration.so
 //
 // The build performs three steps:
 //   1. `generateKotlinBindings` runs `uniffi-bindgen-mobile generate
-//      --language kotlin --library <one of the .a files>` and lays
-//      the output under src/main/kotlin/. (UniFFI's bindgen only
-//      needs *one* of the native archives to extract the component
-//      metadata — they all expose the same UniFFI scaffolding
-//      symbols.)
-//   2. `stageNativeArchives` copies the three .a files into
+//      --language kotlin --library <host slice>` and lays the
+//      output under src/main/kotlin/. (UniFFI's bindgen only needs
+//      *one* of the dynamic libs to extract the component metadata
+//      — all slices expose the same UniFFI scaffolding symbols.)
+//   2. `stageNativeLibraries` copies the three dynamic libs into
 //      src/main/resources/META-INF/native/<os>-<arch>/ so they end
-//      up inside the JAR at well-known paths a downstream loader
-//      can extract at runtime.
+//      up inside the JAR at well-known paths NativeLoader can
+//      extract + System.load at runtime.
 //   3. The standard `jar` task picks both the compiled Kotlin
 //      classes and the staged resources up automatically.
 //
@@ -54,11 +56,12 @@ val nativeStageDir = (findProperty("nativeStageDir") as String?)
 val bindgenBinary = (findProperty("bindgenBinary") as String?)
     ?: "${rootDir}/uniffi-bindgen-mobile"
 
-// Pick any one of the three .a files for `--library` — UniFFI only
-// reads component metadata, so the host-arch slice is the natural
-// choice (no cross-arch loader gymnastics at build time).
+// Pick any one of the three dynamic libs for `--library`. The
+// linux-x86_64 .so is the natural default because the CI host
+// running gradle is ubuntu-latest; local dev on macOS overrides
+// via `-PbindgenLibraryArchive=.../libpso_mobile_integration.dylib`.
 val bindgenLibraryArchive = (findProperty("bindgenLibraryArchive") as String?)
-    ?: "${nativeStageDir}/linux-x86_64/libpso_mobile_integration.a"
+    ?: "${nativeStageDir}/linux-x86_64/libpso_mobile_integration.so"
 
 val kotlinBindingsDir = layout.buildDirectory.dir("generated/kotlin")
 
@@ -100,14 +103,14 @@ tasks.named("compileKotlin") {
     dependsOn(generateKotlinBindings)
 }
 
-val stageNativeArchives = tasks.register<Copy>("stageNativeArchives") {
-    description = "Copy the 3 cross-compiled static archives into the JAR resources"
+val stageNativeLibraries = tasks.register<Copy>("stageNativeLibraries") {
+    description = "Copy the 3 cross-compiled dynamic libs into the JAR resources"
     group = "build"
 
     from(nativeStageDir) {
-        include("darwin-arm64/libpso_mobile_integration.a")
-        include("linux-x86_64/libpso_mobile_integration.a")
-        include("linux-aarch64/libpso_mobile_integration.a")
+        include("darwin-arm64/libpso_mobile_integration.dylib")
+        include("linux-x86_64/libpso_mobile_integration.so")
+        include("linux-aarch64/libpso_mobile_integration.so")
     }
     into(layout.buildDirectory.dir("staged-resources/META-INF/native"))
 }
@@ -119,7 +122,7 @@ sourceSets {
 }
 
 tasks.named("processResources") {
-    dependsOn(stageNativeArchives)
+    dependsOn(stageNativeLibraries)
 }
 
 tasks.named<Jar>("jar") {
