@@ -341,7 +341,7 @@ gh release download "$TAG" --repo psonet/pso-integration \
 cosign verify-blob \
   --certificate "$ARTIFACT.pem" --signature "$ARTIFACT.sig" \
   --certificate-identity-regexp \
-    '^https://github\.com/psonet/pso-integration/\.github/workflows/ci\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
+    '^https://github\.com/psonet/pso-integration/\.github/workflows/ci\.yml@refs/(heads/main|tags/v[0-9]+\.[0-9]+\.[0-9]+)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   "$ARTIFACT"
 ```

@@ -63,7 +63,7 @@ The mobile build matrix (`build-mobile-ios`, `build-mobile-android`) runs with `
 The signing pipeline protects against:
 
 - **Tampered binaries on the Release page.** A re-uploaded JAR, e2e binary, mobile slice, or `SHA256SUMS` won't verify against the original cert + sig.
-- **A compromised release token.** A maintainer who can push tags cannot mint a sigstore signature whose Fulcio cert identity matches `https://github.com/psonet/pso-integration/.github/workflows/ci.yml@refs/tags/vX.Y.Z` — that identity is only obtainable from inside a tag-triggered GitHub Actions run of this repo.
+- **A compromised release token.** A maintainer who can push tags cannot mint a sigstore signature whose Fulcio cert identity matches `https://github.com/psonet/pso-integration/.github/workflows/ci.yml@refs/heads/main` (the cog flow) or `@refs/tags/vX.Y.Z` (a manual tag-push re-release). Those identities are only obtainable from inside a GitHub Actions run of this repo's `ci.yml` workflow.
 - **A tampered native lib inside the JAR.** Modifying any byte of the JAR — including the bundled `.so`/`.dylib` files under `META-INF/native/` — invalidates the JAR's cosign signature.
 - **A typo or mis-targeted action update** silently weakening verification. The post-publish `verify-release` job hard-fails the workflow on any bad signature.
 
@@ -94,7 +94,7 @@ cosign verify-blob \
   --certificate "$ARTIFACT.pem" \
   --signature   "$ARTIFACT.sig" \
   --certificate-identity-regexp \
-    '^https://github\.com/psonet/pso-integration/\.github/workflows/ci\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
+    '^https://github\.com/psonet/pso-integration/\.github/workflows/ci\.yml@refs/(heads/main|tags/v[0-9]+\.[0-9]+\.[0-9]+)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   "$ARTIFACT"
 
@@ -103,7 +103,7 @@ gh release download "$TAG" --repo "$REPO" --pattern 'SHA256SUMS*'
 cosign verify-blob \
   --certificate SHA256SUMS.pem --signature SHA256SUMS.sig \
   --certificate-identity-regexp \
-    '^https://github\.com/psonet/pso-integration/\.github/workflows/ci\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
+    '^https://github\.com/psonet/pso-integration/\.github/workflows/ci\.yml@refs/(heads/main|tags/v[0-9]+\.[0-9]+\.[0-9]+)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 gh release download "$TAG" --repo "$REPO"  # download everything else
