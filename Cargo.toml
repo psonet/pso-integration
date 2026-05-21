@@ -28,7 +28,7 @@ resolver = "2"
 #   override here.
 pso-protocol         = "0.2"
 pso-zk-canonical     = "0.2"
-pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.2.3" }
+pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.2.5" }
 
 # Crates internal to this workspace
 pso-nft                  = { path = "domain/pso-nft" }
