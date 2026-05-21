@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.7 - 2026-05-21
+#### Bug Fixes
+- (**release**) broaden verify-release identity regex to accept refs/heads/main - (018d25d) - Anton Velichko
+- (**release**) downgrade cosign tooling to v3.x / v2.x action lines - (b9244a0) - Anton Velichko
+- (**release**) sign release artifacts with sigstore cosign + SLSA attest - (4468aa9) - Anton Velichko
+#### Miscellaneous Chores
+- (**deps**) bump pso-zk-circuits git tag to v0.2.5 (first signed release) - (fa1038f) - Anton Velichko
+
+- - -
+
 ## v0.3.6 - 2026-05-20
 #### Bug Fixes
 - (**release**) move Kotlin JAR from pso-mobile-integration to pso-sra-integration - (fc91b9e) - Anton Velichko
