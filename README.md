@@ -325,6 +325,27 @@ own CI (see [pso-chain `.github/workflows/ci.yml::e2e`](https://github.com/psone
 - `pso-vdf` — MinRoot VDF prover.
 - `clap` — CLI surface.
 
+## Verifying releases
+
+Releases tagged from `v0.3.7` onward ship sigstore cosign signatures + SLSA build-provenance attestations for every artifact: the e2e binaries, the mobile slices (best-effort matrix), the bindgen binaries, the `pso-sra-integration-kotlin.jar`, and `SHA256SUMS`. The JAR is signed as the unit; its bundled native libs are verified transitively via the JAR's SHA-256.
+
+See [SECURITY.md](SECURITY.md) for the threat model, the matrix-aware semantics, and the full verify recipe.
+
+Quick check (JAR):
+
+```sh
+TAG=v0.3.7
+ARTIFACT=pso-sra-integration-kotlin.jar
+gh release download "$TAG" --repo psonet/pso-integration \
+  --pattern "$ARTIFACT" --pattern "$ARTIFACT.sig" --pattern "$ARTIFACT.pem"
+cosign verify-blob \
+  --certificate "$ARTIFACT.pem" --signature "$ARTIFACT.sig" \
+  --certificate-identity-regexp \
+    '^https://github\.com/psonet/pso-integration/\.github/workflows/ci\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$ARTIFACT"
+```
+
 ## License
 
 [MIT](LICENSE) — same as `pso-protocol` / `pso-zk-circuits` / `pso-vdf`.
