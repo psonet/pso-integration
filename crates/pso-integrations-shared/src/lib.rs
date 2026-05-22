@@ -15,8 +15,10 @@
 
 pub mod witness;
 
+use hmac::{Hmac, Mac};
 use k256::elliptic_curve::sec1::ToSec1Point;
 use k256::{ProjectivePoint, PublicKey, SecretKey};
+use sha2::Sha256;
 use thiserror::Error;
 
 // ---------------------------------------------------------------------------
@@ -71,41 +73,72 @@ pub fn parse_secret_key(scalar: &[u8]) -> Result<SecretKey, CryptoError> {
 }
 
 // ---------------------------------------------------------------------------
-// ECDH + KDF
+// ECDH + KDF (App. A: ECDH-x → HKDF-SHA256 → reduce mod q_secp256k1)
 // ---------------------------------------------------------------------------
+//
+// Spec ref. (privacy-preserving L2 architecture, App. A):
+//
+//     S         = ECDH(local_sk, remote_pk)        // shared point
+//     k_shared  = HKDF-SHA256(salt=nonce, ikm=S.x, info="")
+//     nft_sk    = k_shared mod q                    // secp256k1 scalar
+//
+// The previous implementation here used raw HMAC-SHA256 over the full
+// 65-byte SEC1 point and emitted a different `nft_sk` than the bridge
+// + wallet path in `pso-l2-client::shared_key`. The two surfaces are
+// now unified on this spec-correct derivation; `pso-l2-client` is a
+// thin wrapper around the helpers below.
 
-/// ECDH scalar multiplication: shared_point = sk * pk.
+/// ECDH x-coordinate: `(sk · pk).x` as 32 big-endian bytes.
 ///
-/// Returns the shared point as 65-byte uncompressed SEC1 encoding.
-pub fn ecdh_multiply(secret_key: &SecretKey, public_key: &PublicKey) -> Vec<u8> {
+/// The canonical App. A input to HKDF — stops at the x-coordinate
+/// rather than serialising the full SEC1 point, which would change
+/// the IKM and break interop with every spec-correct consumer.
+pub fn ecdh_x(secret_key: &SecretKey, public_key: &PublicKey) -> [u8; 32] {
     let shared = ProjectivePoint::from(*public_key.as_affine()) * *secret_key.to_nonzero_scalar();
-    shared.to_affine().to_sec1_point(false).as_bytes().to_vec()
+    let sec1 = shared.to_affine().to_sec1_point(false);
+    let bytes = sec1.as_bytes();
+    // SEC1 uncompressed = 0x04 || x (32) || y (32). x lives at [1..33].
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes[1..33]);
+    out
 }
 
-/// HMAC-SHA256 key derivation: `HMAC-SHA256(shared_point, nonce)`.
+/// HKDF-SHA256 Extract+Expand for 32-byte output, empty `info`.
 ///
-/// Returns 32 bytes suitable for use as a secp256k1 secret key.
-pub fn kdf_derive_key(shared_point: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CryptoError> {
-    use hmac::{Hmac, Mac};
-    use sha2::Sha256;
+/// `salt` is App. A's per-SU `nonce`; `ikm` is the ECDH x-coordinate.
+/// Inlined rather than pulling in the `hkdf` crate because for L=32
+/// (single output block) Expand is a single HMAC application.
+pub fn hkdf_sha256(salt: &[u8], ikm: &[u8]) -> Result<[u8; 32], CryptoError> {
+    // Extract: prk = HMAC(key=salt, data=ikm)
+    let mut extract = <Hmac<Sha256> as Mac>::new_from_slice(salt)
+        .map_err(|e| CryptoError::CryptoOperation(format!("HKDF extract init: {}", e)))?;
+    extract.update(ikm);
+    let prk = extract.finalize().into_bytes();
 
-    let mut mac = Hmac::<Sha256>::new_from_slice(shared_point)
-        .map_err(|e| CryptoError::CryptoOperation(format!("HMAC init failed: {}", e)))?;
-    mac.update(nonce);
-    Ok(mac.finalize().into_bytes().to_vec())
+    // Expand for L=32: okm = HMAC(key=prk, data="" || info || 0x01)
+    // with info="" this is HMAC(prk, [0x01]).
+    let mut expand = <Hmac<Sha256> as Mac>::new_from_slice(&prk)
+        .map_err(|e| CryptoError::CryptoOperation(format!("HKDF expand init: {}", e)))?;
+    expand.update(&[0x01]);
+    let okm = expand.finalize().into_bytes();
+
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&okm);
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
 // High-level: derive NFT keypair
 // ---------------------------------------------------------------------------
 
-/// Derive an NFT keypair from ECDH shared secret + nonce.
+/// Derive an NFT secret key from ECDH shared secret + nonce per App. A.
 ///
-/// Performs: ECDH(local_sk, remote_pk) → KDF(shared_point, nonce) → nft_sk.
+/// Performs: ECDH(local_sk, remote_pk) → HKDF-SHA256(salt=nonce,
+/// ikm=S.x) → reduce mod q_secp256k1.
 ///
 /// * `local_sk` — secp256k1 secret key: raw 32 bytes or SEC1 DER
 /// * `remote_pk` — secp256k1 public key: compressed (33) or uncompressed (65)
-/// * `nonce` — nonce bytes fed to the KDF
+/// * `nonce` — App. A salt; the spec mandates exactly 32 bytes
 pub fn derive_nft_keypair(
     local_sk: &[u8],
     remote_pk: &[u8],
@@ -113,9 +146,9 @@ pub fn derive_nft_keypair(
 ) -> Result<SecretKey, CryptoError> {
     let secret_key = parse_secret_key_auto(local_sk)?;
     let public_key = parse_public_key(remote_pk)?;
-    let shared_point = ecdh_multiply(&secret_key, &public_key);
-    let nft_sk_bytes = kdf_derive_key(&shared_point, nonce)?;
-    parse_secret_key(&nft_sk_bytes)
+    let x = ecdh_x(&secret_key, &public_key);
+    let okm = hkdf_sha256(nonce, &x)?;
+    parse_secret_key(&okm)
 }
 
 #[cfg(test)]
@@ -174,18 +207,25 @@ mod tests {
     }
 
     #[test]
-    fn test_ecdh_multiply() {
-        let sk = random_secret_key();
-        let result = ecdh_multiply(&sk, &sk.public_key());
-        assert_eq!(result.len(), 65);
+    fn test_ecdh_x_length_and_symmetry() {
+        let sk_a = random_secret_key();
+        let sk_b = random_secret_key();
+        let x_ab = ecdh_x(&sk_a, &sk_b.public_key());
+        let x_ba = ecdh_x(&sk_b, &sk_a.public_key());
+        assert_eq!(x_ab.len(), 32);
+        assert_eq!(x_ab, x_ba, "ECDH-x must be symmetric");
     }
 
     #[test]
-    fn test_kdf_determinism() {
-        let key1 = kdf_derive_key(&[1u8; 65], &[2u8; 32]).unwrap();
-        let key2 = kdf_derive_key(&[1u8; 65], &[2u8; 32]).unwrap();
-        assert_eq!(key1, key2);
-        assert_eq!(key1.len(), 32);
+    fn test_hkdf_determinism_and_length() {
+        let okm1 = hkdf_sha256(&[2u8; 32], &[1u8; 32]).unwrap();
+        let okm2 = hkdf_sha256(&[2u8; 32], &[1u8; 32]).unwrap();
+        assert_eq!(okm1, okm2);
+        assert_eq!(okm1.len(), 32);
+        // Different salt → different output (well-known HKDF property,
+        // pinned here so a regression in the salt argument-order is caught).
+        let okm3 = hkdf_sha256(&[3u8; 32], &[1u8; 32]).unwrap();
+        assert_ne!(okm1, okm3);
     }
 
     #[test]

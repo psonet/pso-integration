@@ -20,12 +20,17 @@
 //! function is here for symmetry tests and for any future SRA Rust
 //! integration that wants to reuse the same primitive.
 
-use hmac::{Hmac, Mac};
-use k256::elliptic_curve::sec1::ToSec1Point;
-use k256::{ProjectivePoint, PublicKey, SecretKey};
-use sha2::Sha256;
+use k256::{PublicKey, SecretKey};
+
+use pso_integrations_shared::{ecdh_x, hkdf_sha256, parse_secret_key, CryptoError};
 
 use crate::error::L2ClientError;
+
+impl From<CryptoError> for L2ClientError {
+    fn from(err: CryptoError) -> Self {
+        L2ClientError::Witness(format!("shared-key derive: {err}"))
+    }
+}
 
 /// Output of [`derive_shared_key`]. Both fields are derived from the
 /// same scalar; callers usually want one or the other (the wallet
@@ -53,9 +58,7 @@ pub fn derive_shared_key(
     pk_cu: &PublicKey,
     su_nonce: &[u8; 32],
 ) -> Result<SharedKey, L2ClientError> {
-    let shared_point = ecdh_x(consent_sk, pk_cu);
-    let okm = hkdf_sha256(&shared_point, su_nonce)?;
-    scalar_from_okm(&okm)
+    derive_shared_key_inner(consent_sk, pk_cu, su_nonce)
 }
 
 /// SRA-side derivation (mirrors the SRA branch of App. A). Same
@@ -71,61 +74,24 @@ pub fn derive_shared_key_sra_side(
     consent_pk: &PublicKey,
     su_nonce: &[u8; 32],
 ) -> Result<SharedKey, L2ClientError> {
-    let shared_point = ecdh_x(sk_cu, consent_pk);
-    let okm = hkdf_sha256(&shared_point, su_nonce)?;
-    scalar_from_okm(&okm)
+    derive_shared_key_inner(sk_cu, consent_pk, su_nonce)
 }
 
-/// ECDH: returns the x-coordinate of `sk · pk` as 32 big-endian bytes,
-/// the canonical input to HKDF per App. A.
-///
-/// Same access path `pso-integrations-shared::ecdh_multiply` uses,
-/// stopping at the x-coordinate rather than serialising the full
-/// SEC1 point.
-fn ecdh_x(sk: &SecretKey, pk: &PublicKey) -> [u8; 32] {
-    let shared = ProjectivePoint::from(*pk.as_affine()) * *sk.to_nonzero_scalar();
-    let sec1 = shared.to_affine().to_sec1_point(false);
-    let bytes = sec1.as_bytes();
-    // SEC1 uncompressed = 0x04 || x (32) || y (32). x lives at [1..33].
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&bytes[1..33]);
-    out
-}
-
-/// HKDF-SHA256 with `salt = nonce`, `ikm = ecdh_x`, empty info,
-/// output 32 bytes. The spec's `encode(S.x)` is "32-byte big-endian"
-/// — we feed that as IKM.
-fn hkdf_sha256(ikm: &[u8; 32], salt: &[u8; 32]) -> Result<[u8; 32], L2ClientError> {
-    // HKDF = Extract + Expand. For 32-byte output the Expand pass is
-    // a single HMAC-SHA256 application; we inline both steps here
-    // rather than pulling in a separate `hkdf` crate.
-    let mut extract = <Hmac<Sha256> as Mac>::new_from_slice(salt)
-        .map_err(|e| L2ClientError::InvalidInput(format!("hkdf extract: {e}")))?;
-    extract.update(ikm);
-    let prk = extract.finalize().into_bytes();
-
-    let mut expand = <Hmac<Sha256> as Mac>::new_from_slice(&prk)
-        .map_err(|e| L2ClientError::InvalidInput(format!("hkdf expand: {e}")))?;
-    expand.update(&[0x01]);
-    let okm = expand.finalize().into_bytes();
-
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&okm);
-    Ok(out)
-}
-
-/// Wrap the OKM as a secp256k1 secret key. `SecretKey::from_slice`
-/// performs the canonical scalar reduction internally and rejects
-/// zero — the failure mode the spec's `mod q` step worries about.
-///
-/// Note: HKDF output is uniform over 256 bits; secp256k1's order
-/// `q` is very close to `2^256` (the bias is ~2^-128), so the
-/// reduction is statistically indistinguishable from a uniformly
-/// random scalar mod q. Acceptable per App. A.
-fn scalar_from_okm(okm: &[u8; 32]) -> Result<SharedKey, L2ClientError> {
-    let secret = SecretKey::from_slice(okm).map_err(|e| {
-        L2ClientError::Witness(format!("shared scalar invalid: {e} — re-roll su_nonce"))
-    })?;
+/// Shared inner. The two public entry points exist purely for
+/// readability at call sites — the math is symmetric so the
+/// implementation is identical.
+fn derive_shared_key_inner(
+    local_sk: &SecretKey,
+    remote_pk: &PublicKey,
+    su_nonce: &[u8; 32],
+) -> Result<SharedKey, L2ClientError> {
+    // App. A primitives live in `pso-integrations-shared` so the
+    // bridge / wallet / UniFFI surfaces all derive the same value.
+    // See the module doc above for the spec recipe.
+    let x = ecdh_x(local_sk, remote_pk);
+    let okm = hkdf_sha256(su_nonce, &x)?;
+    let secret = parse_secret_key(&okm)
+        .map_err(|e| L2ClientError::Witness(format!("shared scalar invalid: {e}")))?;
     let public = secret.public_key();
     Ok(SharedKey { secret, public })
 }

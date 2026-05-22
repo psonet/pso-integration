@@ -38,10 +38,5 @@ serde_json.workspace = true
 hex.workspace        = true
 once_cell.workspace  = true
 
-# HKDF-SHA256 for the App. A shared-key derivation, used by the
-# wallet to reconstruct `shared_sk` from `consent_sk + pk_cu + su_nonce`.
-hmac.workspace = true
-sha2.workspace = true
-
 # Logging.
 tracing.workspace = true

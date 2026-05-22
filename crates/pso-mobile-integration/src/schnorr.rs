@@ -18,10 +18,10 @@
 //!   Internally we hand them straight to barretenberg-rs's
 //!   `schnorr_construct_signature`, which interprets them as a Grumpkin
 //!   scalar reduced mod `q_Grumpkin`.
-//! - `public_key` (verify): 64 bytes, layout `pk_x_le || pk_y_le` — the
+//! - `public_key` (verify): 64 bytes, layout `pk_x_be || pk_y_be` — the
 //!   exact bytes returned in [`NftKeypair::pk`] from
-//!   [`crate::derive_nft_keypair`]. Each coord is a 32-byte LE Fr
-//!   encoding. We swap to barretenberg's BE wire format internally.
+//!   [`crate::derive_nft_keypair`]. Each coord is a 32-byte BE Fr
+//!   encoding, which is what barretenberg-rs consumes natively.
 //! - `message`: exactly 32 bytes, big-endian. By convention this is
 //!   `Poseidon2(nft_hash, nonce).to_be_bytes()` for ownership
 //!   witnesses — the same byte string the in-circuit
@@ -50,7 +50,6 @@ use ark_bn254::Fr;
 use ark_ff::PrimeField;
 use barretenberg_rs::{backends::FfiBackend, generated_types::GrumpkinPoint, BarretenbergApi};
 
-use pso_integrations_shared::witness::fr_to_be32;
 use pso_zk_circuit_noir::schnorr_grumpkin::schnorr_sign_be;
 
 use crate::types::MobileError;
@@ -93,7 +92,7 @@ pub fn schnorr_sign_grumpkin(
 /// digest. Returns `true` if the signature is valid.
 ///
 /// `public_key` is 64 bytes in the same LE layout
-/// [`crate::derive_nft_keypair`] returns: `pk_x_le || pk_y_le`.
+/// [`crate::derive_nft_keypair`] returns: `pk_x_be || pk_y_be`.
 #[uniffi::export]
 pub fn schnorr_verify_grumpkin(
     public_key: Vec<u8>,
@@ -103,7 +102,7 @@ pub fn schnorr_verify_grumpkin(
     if public_key.len() != 64 {
         return Err(MobileError::InvalidPublicKey {
             detail: format!(
-                "public_key must be 64 bytes (pk_x_le||pk_y_le), got {}",
+                "public_key must be 64 bytes (pk_x_be||pk_y_be), got {}",
                 public_key.len()
             ),
         });
@@ -122,18 +121,12 @@ pub fn schnorr_verify_grumpkin(
         });
     }
 
-    // Convert the FFI-side LE Fr encodings into the BE wire format
-    // barretenberg expects. Round-trip via Fr so we don't trust the
-    // raw bytes are canonical (a malformed input would still be
-    // safely rejected by bb, but reducing here gives a cleaner error
-    // boundary).
-    let pk_x_le: [u8; 32] = public_key[0..32].try_into().expect("len checked");
-    let pk_y_le: [u8; 32] = public_key[32..64].try_into().expect("len checked");
-    let pk_x_fr = Fr::from_le_bytes_mod_order(&pk_x_le);
-    let pk_y_fr = Fr::from_le_bytes_mod_order(&pk_y_le);
+    // pk arrives in BE — the same wire format barretenberg-rs expects.
+    // No LE↔BE round-trip needed (was required earlier when the FFI
+    // surface emitted LE; unified on BE in PR #6).
     let pk = GrumpkinPoint {
-        x: fr_to_be32(&pk_x_fr).to_vec(),
-        y: fr_to_be32(&pk_y_fr).to_vec(),
+        x: public_key[0..32].to_vec(),
+        y: public_key[32..64].to_vec(),
     };
 
     let s_be: &[u8] = &signature[0..32];
@@ -159,13 +152,13 @@ fn api_handle() -> Result<BarretenbergApi<FfiBackend>, MobileError> {
 mod tests {
     use super::*;
     use ark_ff::UniformRand;
-    use pso_integrations_shared::witness::{fr_to_le32, random_grumpkin_key};
+    use pso_integrations_shared::witness::{fr_to_be32, random_grumpkin_key};
     use rand::rngs::OsRng;
 
-    fn pk_le_bytes(key: &pso_integrations_shared::witness::GrumpkinKey) -> Vec<u8> {
+    fn pk_be_bytes(key: &pso_integrations_shared::witness::GrumpkinKey) -> Vec<u8> {
         let mut v = Vec::with_capacity(64);
-        v.extend_from_slice(&fr_to_le32(&key.pk_x));
-        v.extend_from_slice(&fr_to_le32(&key.pk_y));
+        v.extend_from_slice(&fr_to_be32(&key.pk_x));
+        v.extend_from_slice(&fr_to_be32(&key.pk_y));
         v
     }
 
@@ -180,7 +173,7 @@ mod tests {
         assert_eq!(sig.len(), 64);
 
         let ok =
-            schnorr_verify_grumpkin(pk_le_bytes(&key), msg, sig).expect("verify call must succeed");
+            schnorr_verify_grumpkin(pk_be_bytes(&key), msg, sig).expect("verify call must succeed");
         assert!(ok, "valid signature must verify");
     }
 
@@ -194,7 +187,7 @@ mod tests {
         // Tamper: sign over one digest, verify against a different one.
         let other_digest = Fr::rand(&mut OsRng);
         let other_msg = fr_to_be32(&other_digest).to_vec();
-        let ok = schnorr_verify_grumpkin(pk_le_bytes(&key), other_msg, sig)
+        let ok = schnorr_verify_grumpkin(pk_be_bytes(&key), other_msg, sig)
             .expect("verify call must succeed");
         assert!(!ok, "tampered message must not verify");
     }
@@ -210,7 +203,7 @@ mod tests {
         // Flip one bit in the signature's `s` portion.
         sig[0] ^= 0x01;
         let ok =
-            schnorr_verify_grumpkin(pk_le_bytes(&key), msg, sig).expect("verify call must succeed");
+            schnorr_verify_grumpkin(pk_be_bytes(&key), msg, sig).expect("verify call must succeed");
         assert!(!ok, "bit-flipped signature must not verify");
     }
 

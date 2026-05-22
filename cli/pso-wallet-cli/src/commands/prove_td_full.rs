@@ -48,13 +48,13 @@ pub fn run(_consent_key: &[u8; 32], args: Args) -> Result<()> {
     if td_hash_bytes.len() != 32 {
         eyre::bail!("td_hash must be 32 bytes, got {}", td_hash_bytes.len());
     }
-    let td_hash = Fr::from_le_bytes_mod_order(&td_hash_bytes);
+    let td_hash = Fr::from_be_bytes_mod_order(&td_hash_bytes);
 
     let proof = prove_td_ownership(&material, tdid, td_hash)?;
     crate::write_json(&args.output, &proof)?;
     println!(
         "{{\"tribute_draft_id\":\"{}\",\"td_derived_owner\":\"{}\"}}",
-        proof.tribute_draft_id, proof.td_derived_owner_le_hex
+        proof.tribute_draft_id, proof.td_derived_owner_be_hex
     );
     Ok(())
 }

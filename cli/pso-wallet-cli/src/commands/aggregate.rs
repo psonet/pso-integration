@@ -52,7 +52,7 @@ pub fn run(_consent_key: &[u8; 32], _chain_id: u64, args: Args) -> Result<()> {
         .iter()
         .map(crate::read_json::<SuOwnershipWitness>)
         .collect::<Result<_>>()?;
-    let su_hashes = parse_fr_le_list(&args.su_hashes)?;
+    let su_hashes = parse_fr_be_list(&args.su_hashes)?;
 
     if witnesses.len() != su_hashes.len() {
         eyre::bail!(
@@ -72,13 +72,13 @@ pub fn run(_consent_key: &[u8; 32], _chain_id: u64, args: Args) -> Result<()> {
         .zip(su_hashes.iter())
         .map(|(w, h)| {
             let sk = decode_hex32(&w.shared_sk_hex)?;
-            let nonce_arr = decode_hex32(&w.su_nonce_le_hex)?;
-            let owner_arr = decode_hex32(&w.derived_owner_le_hex)?;
+            let nonce_arr = decode_hex32(&w.su_nonce_hex)?;
+            let owner_arr = decode_hex32(&w.derived_owner_be_hex)?;
             Ok::<_, eyre::Report>(SuAggregationInput {
                 su_id: w.su_id.clone(),
                 grumpkin_sk: sk,
-                nonce: Fr::from_le_bytes_mod_order(&nonce_arr),
-                derived_owner: Fr::from_le_bytes_mod_order(&owner_arr),
+                nonce: Fr::from_be_bytes_mod_order(&nonce_arr),
+                derived_owner: Fr::from_be_bytes_mod_order(&owner_arr),
                 nft_hash: *h,
             })
         })
@@ -86,10 +86,10 @@ pub fn run(_consent_key: &[u8; 32], _chain_id: u64, args: Args) -> Result<()> {
 
     // Step 3: prove. One pass; chosen tier picks the smallest size
     // >= witnesses.len().
-    let td_id_bytes = decode_hex32(&td_material.td_derived_owner_le_hex)?;
+    let td_id_bytes = decode_hex32(&td_material.td_derived_owner_be_hex)?;
     let td_id = U256::from_be_bytes(td_id_bytes);
     let td_owner_fr =
-        Fr::from_le_bytes_mod_order(&decode_hex32(&td_material.td_derived_owner_le_hex)?);
+        Fr::from_be_bytes_mod_order(&decode_hex32(&td_material.td_derived_owner_be_hex)?);
     let bundle = prove_su_aggregation(&inputs, td_id, td_owner_fr)?;
     crate::write_json(&args.output, &bundle)?;
     println!(
@@ -99,11 +99,11 @@ pub fn run(_consent_key: &[u8; 32], _chain_id: u64, args: Args) -> Result<()> {
     Ok(())
 }
 
-fn parse_fr_le_list(s: &str) -> Result<Vec<Fr>> {
+fn parse_fr_be_list(s: &str) -> Result<Vec<Fr>> {
     s.split(',')
         .map(|tok| {
             let bytes = decode_hex32(tok.trim())?;
-            Ok(Fr::from_le_bytes_mod_order(&bytes))
+            Ok(Fr::from_be_bytes_mod_order(&bytes))
         })
         .collect()
 }

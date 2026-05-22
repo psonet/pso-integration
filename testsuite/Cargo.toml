@@ -27,6 +27,15 @@ pso-protocol.workspace             = true
 pso-vdf.workspace                  = true
 pso-nft.workspace                  = true
 pso-mobile-integration             = { path = "../crates/pso-mobile-integration" }
+# The SRA crate is the one Kotlin/JVM SRA clients consume via UniFFI.
+# The bridge calls it directly so the bridge's e2e path exercises the
+# same public surface real clients hit.
+pso-sra-integration                = { path = "../crates/pso-sra-integration" }
+
+# Bs58 decode for the `GeneratedOwnership.ownership` field the SRA
+# crate returns. The bridge re-interprets those LE-encoded bytes as
+# the BE bytes the `0x0212` SU-hash precompile expects.
+bs58.workspace                     = true
 
 # RPC / signing / ABI.
 alloy.workspace                    = true

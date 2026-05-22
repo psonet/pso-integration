@@ -68,7 +68,7 @@ pub fn handle_proof_generate(
     let nonce_arr: [u8; 32] = nonce_bytes
         .try_into()
         .map_err(|_| anyhow!("nonce_hex must decode to exactly 32 bytes"))?;
-    let nonce: Fr = Fr::from_le_bytes_mod_order(&nonce_arr);
+    let nonce: Fr = Fr::from_be_bytes_mod_order(&nonce_arr);
 
     // 4. Reconstruct the Merkle path from the serialized form.
     let merkle_path = from_serializable_merkle_path(&generated_output.merkle_path)

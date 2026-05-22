@@ -7,7 +7,14 @@ description = "Mobile-friendly UniFFI wrapper for PSO ZK proof generation"
 [lib]
 crate-type = [
     "staticlib", # for iOS
-    "cdylib"    # for Android
+    "cdylib",    # for Android
+    # rlib so in-workspace Rust consumers (notably the e2e testsuite's
+    # `appa_symmetry_across_all_four_surfaces` regression test) can
+    # link against the mobile UniFFI surface to assert it stays in
+    # lockstep with the SRA UniFFI + wallet Rust paths. Both `cargo ndk
+    # build` (cdylib) and the iOS `cargo build` (staticlib) keep
+    # producing their own artifacts unchanged.
+    "rlib",
 ]
 name = "pso_mobile_integration"
 
