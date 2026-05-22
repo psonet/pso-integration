@@ -4278,9 +4278,9 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-canonical"
-version = "0.2.3"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92506537de44073b124f9c516260d8291066be1475b990498e66aa41c86d57d6"
+checksum = "6c94b74138e6ec069024b3ebf6f5ea168298bdb8ddebbf9facc3b8ede7878537"
 dependencies = [
  "hex-literal",
 ]

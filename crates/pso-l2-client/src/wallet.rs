@@ -320,17 +320,22 @@ fn flat_aggregation_bytecode_b64(tier_n: u32) -> Result<&'static str, L2ClientEr
 /// Submit the TributeDraft on L2 using a previously-built
 /// [`AggregationProofBundle`].
 ///
-/// Contract signature unchanged from the current deployment:
+/// Contract signature:
 ///
 /// ```solidity
 /// TributeDraft.submit(tdId, derivedOwner, suIds, aggregationProof)
 /// ```
 ///
-/// What changed is the meaning of `aggregationProof` — it's now the
-/// output of the recursion fold, not the flat one-keypair-N-nonces
-/// proof the current chain still expects. Until both pso-zk-circuits
-/// and pso-chain land their pieces of the redesign, this call will
-/// produce a proof the chain rejects.
+/// `aggregationProof` is the flat per-tier aggregation proof
+/// [`prove_su_aggregation`] emits: tier-N is picked by
+/// `pso_zk_canonical::select_aggregation_tier(n_su)`, the proof
+/// commits one Grumpkin keypair per SU slot, and the chain-side
+/// `TributeDraft.submit` resolves the same tier from `suIds.length`
+/// to look up the matching VK + circuit_hash. Tier 1 through 64 in
+/// powers of two; the contract reverts `AggregationTierUnavailable`
+/// for n > 64. No recursion fold — the redesign considered earlier
+/// was dropped in favour of keeping the on-chain verifier shape
+/// flat.
 pub async fn submit_tribute_draft(
     client: &L2Client,
     bundle: &AggregationProofBundle,
