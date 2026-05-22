@@ -2,6 +2,22 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.9 - 2026-05-22
+#### Bug Fixes
+- (**integrations**) unify App. A KDF on spec-correct HKDF/ECDH-x - (5f4f407) - Anton Velichko
+- (**mobile**) reduce nft sk mod q_Grumpkin before bb derive - (9bf5f46) - Anton Velichko
+#### Documentation
+- (**wallet**) correct stale aggregation-proof doc on submit_tribute_draft - (c6024ca) - Anton Velichko
+#### Refactoring
+- (**integrations**) unify Fr wire format on big-endian everywhere - (9b3f4bd) - Anton Velichko
+- (**witness**) flip witness builders to BE; bump pso-protocol + pso-zk-circuits to ^0.3 - (b529d7d) - Anton Velichko
+#### Miscellaneous Chores
+- (**deps**) pin pso-zk-circuits to v0.3.0 tag, drop patch overrides - (cceb686) - Anton Velichko
+#### Style
+- cargo fmt (rustfmt-required multi-line on bs58 decode) - (aea2127) - Anton Velichko
+
+- - -
+
 ## v0.3.8 - 2026-05-22
 #### Bug Fixes
 - (**ci**) build libbb-external.a from source for Android - (93a1ece) - Anton Velichko
