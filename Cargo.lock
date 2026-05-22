@@ -4203,9 +4203,9 @@ dependencies = [
 
 [[package]]
 name = "pso-protocol"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09825c8a47d2ba3fc24f1e74f00b9b645c78738591f98bc9619b3f0e1249be73"
+checksum = "391422efcf4c9302a86a96e5b562ca18695ce712405566560010a14f1cbab4c3"
 dependencies = [
  "ark-bn254",
  "ark-ff 0.5.0",
@@ -4278,17 +4278,15 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-canonical"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c94b74138e6ec069024b3ebf6f5ea168298bdb8ddebbf9facc3b8ede7878537"
+version = "0.3.0"
 dependencies = [
  "hex-literal",
 ]
 
 [[package]]
 name = "pso-zk-circuit-noir"
-version = "0.2.5"
-source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?tag=v0.2.5#ec67f2c3ed3e35086083ebb8442d54fcb1f08fca"
+version = "0.3.0"
+source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?branch=unify-be-encoding#6c95e18ceef46452a0749aaa009cc80c41d5cf79"
 dependencies = [
  "acvm",
  "acvm_blackbox_solver",

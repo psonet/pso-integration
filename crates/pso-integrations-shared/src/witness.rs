@@ -125,15 +125,16 @@ pub struct FullProofWitnessCtx<'a> {
 ///
 /// The signature is `Schnorr_Grumpkin(Poseidon2(nft_hash,
 /// nonce).to_be_bytes(), key.sk)`. The 32-byte `(pk.x, pk.y)` bytes
-/// encoded into `OwnershipPrivateInputs` are LE Fr encodings (the
-/// witness map serialiser in `pso-zk-circuit-noir` decodes them via
-/// `FieldElement::from_le_bytes_reduce`).
+/// encoded into `OwnershipPrivateInputs` are BE Fr encodings (per
+/// pso-protocol v0.3 — the witness map serialiser in
+/// `pso-zk-circuit-noir` decodes them via
+/// `FieldElement::from_be_bytes_reduce`).
 pub fn build_ownership_witness<T: OwnableNFT + ?Sized>(
     nft: &T,
     ctx: OwnershipWitnessCtx<'_>,
 ) -> anyhow::Result<OwnershipWitness> {
     let ownership_fr = nft.ownership();
-    let ownership = fr_to_le32(&ownership_fr);
+    let ownership = fr_to_be32(&ownership_fr);
 
     let prehash_fr = pso_protocol::hash::poseidon2(ctx.nft_hash, ctx.nonce)
         .map_err(|e| anyhow::anyhow!("poseidon2(nft_hash, nonce): {e}"))?;
@@ -141,13 +142,13 @@ pub fn build_ownership_witness<T: OwnableNFT + ?Sized>(
 
     Ok(OwnershipWitness {
         private_inputs: OwnershipPrivateInputs {
-            nonce: fr_to_le32(&ctx.nonce),
-            public_key_x: fr_to_le32(&ctx.key.pk_x),
-            public_key_y: fr_to_le32(&ctx.key.pk_y),
+            nonce: fr_to_be32(&ctx.nonce),
+            public_key_x: fr_to_be32(&ctx.key.pk_x),
+            public_key_y: fr_to_be32(&ctx.key.pk_y),
         },
         public_inputs: OwnershipPublicInputs {
             ownership,
-            nft_hash: fr_to_le32(&ctx.nft_hash),
+            nft_hash: fr_to_be32(&ctx.nft_hash),
             signature,
         },
     })
@@ -161,10 +162,10 @@ pub fn build_full_proof_witness<T: OwnableNFT + HashableNFT + ?Sized>(
     ctx: FullProofWitnessCtx<'_>,
 ) -> anyhow::Result<FullProofWitness> {
     let ownership_fr = nft.ownership();
-    let ownership = fr_to_le32(&ownership_fr);
+    let ownership = fr_to_be32(&ownership_fr);
 
     let nft_hash_fr = nft.hash().map_err(|e| anyhow::anyhow!("nft hash: {e}"))?;
-    let nft_hash = fr_to_le32(&nft_hash_fr);
+    let nft_hash = fr_to_be32(&nft_hash_fr);
 
     let prehash_fr = pso_protocol::hash::poseidon2(nft_hash_fr, ctx.nonce)
         .map_err(|e| anyhow::anyhow!("poseidon2(nft_hash, nonce): {e}"))?;
@@ -176,14 +177,14 @@ pub fn build_full_proof_witness<T: OwnableNFT + HashableNFT + ?Sized>(
         pso_protocol::merkle::SPARSE_MERKLE_PATH_DEPTH,
     )
     .map_err(|e| anyhow::anyhow!("merkle root: {e}"))?;
-    let merkle_root = fr_to_le32(&merkle_root_fr);
+    let merkle_root = fr_to_be32(&merkle_root_fr);
 
     Ok(FullProofWitness {
         private_inputs: FullProofPrivateInputs {
             ownership: OwnershipPrivateInputs {
-                nonce: fr_to_le32(&ctx.nonce),
-                public_key_x: fr_to_le32(&ctx.key.pk_x),
-                public_key_y: fr_to_le32(&ctx.key.pk_y),
+                nonce: fr_to_be32(&ctx.nonce),
+                public_key_x: fr_to_be32(&ctx.key.pk_x),
+                public_key_y: fr_to_be32(&ctx.key.pk_y),
             },
             merkle_path: ctx.merkle_path.to_vec(),
         },

@@ -97,14 +97,9 @@ pub fn parse_currency(code: u16) -> Result<Currency, MobileError> {
 // -- Merkle path --
 
 /// Convert `MerklePathElementInput` slice to `Vec<MerklePathElement>`.
-///
-/// Note: `node_hash` bytes are passed verbatim into `pso-protocol`'s
-/// `compute_merkle_root`, which interprets them as **LE-encoded Fr**
-/// (`Fr::from_le_bytes_mod_order`). That's the one PSO surface the
-/// BE unification doesn't cover — `pso-protocol 0.2.1` is pinned and
-/// publishes the LE convention. Treat the `node_hash` field as
-/// LE-encoded on the wire. Flipping it would require a `pso-protocol`
-/// minor bump.
+/// `node_hash` bytes are BE-encoded Fr — same convention as the
+/// rest of the PSO wire format (pso-protocol v0.3+ interprets them
+/// via `Fr::from_be_bytes_mod_order` in `compute_merkle_root`).
 pub fn parse_merkle_path(
     elements: &[MerklePathElementInput],
 ) -> Result<Vec<MerklePathElement>, MobileError> {
