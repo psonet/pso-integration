@@ -42,7 +42,7 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
-use pso_integrations_shared::witness::{derive_grumpkin_public_key, fr_to_le32, GrumpkinKey};
+use pso_integrations_shared::witness::{derive_grumpkin_public_key, fr_to_be32, GrumpkinKey};
 
 use crate::abi::{ITributeDraft, TRIBUTE_DRAFT};
 use crate::artifacts::{AggregationProofBundle, AggregationTier};
@@ -63,21 +63,23 @@ use crate::shared_key::{derive_shared_key, SharedKey};
 pub struct SuOwnershipWitness {
     /// On-chain SU id (32-byte uint256, big-endian hex).
     pub su_id: String,
-    /// 32-byte LE Fr nonce used during owner derivation.
-    pub su_nonce_le_hex: String,
-    /// 32-byte LE Fr `derivedOwner` value -- matches the SU's
-    /// on-chain `derivedOwner` field. The wallet stores this so it
-    /// doesn't have to re-derive at proving time, and so a corrupted
-    /// shared key surfaces immediately (mismatch with the on-chain
-    /// value).
-    pub derived_owner_le_hex: String,
-    /// Grumpkin public-key x coordinate, 32-byte LE Fr hex. (Was a
+    /// 32-byte raw su_nonce hex — the same canonical bytes the SRA
+    /// emits in the receipt, fed verbatim to both the App. A KDF
+    /// (raw salt) and the Poseidon ownership commit (interpreted BE
+    /// as an Fr).
+    pub su_nonce_hex: String,
+    /// 32-byte BE Fr `derivedOwner` value — matches the SU's on-chain
+    /// `derivedOwner` slot. The wallet stores this so it doesn't have
+    /// to re-derive at proving time, and so a corrupted shared key
+    /// surfaces immediately (mismatch with the on-chain value).
+    pub derived_owner_be_hex: String,
+    /// Grumpkin public-key x coordinate, 32-byte BE Fr hex. (Was a
     /// SEC1-compressed secp256k1 pubkey in the pre-Schnorr design.)
-    pub shared_pk_x_le_hex: String,
-    /// Grumpkin public-key y coordinate, 32-byte LE Fr hex.
-    pub shared_pk_y_le_hex: String,
+    pub shared_pk_x_be_hex: String,
+    /// Grumpkin public-key y coordinate, 32-byte BE Fr hex.
+    pub shared_pk_y_be_hex: String,
     /// 32-byte raw Grumpkin secret-key bytes. **Sensitive.** Persist
-    /// in keystore only -- never write to plain disk. This is the
+    /// in keystore only — never write to plain disk. This is the
     /// signing key the in-circuit Schnorr verification cares about;
     /// leak ⇒ anyone holding it can claim the SU.
     pub shared_sk_hex: String,
@@ -130,18 +132,21 @@ pub fn prepare_su_ownership_material(
     let grumpkin = derive_grumpkin_public_key(&sk_bytes)
         .map_err(|e| L2ClientError::Witness(format!("derive grumpkin pk: {e}")))?;
 
-    // The `su_nonce` is a 32-byte LE-encoded BN254 Fr.
-    let nonce_fr = Fr::from_le_bytes_mod_order(&su_nonce);
+    // `su_nonce` is 32 raw bytes the bridge/SRA generated. We interpret
+    // them BE here — same as every other PSO surface that converts
+    // these bytes to an Fr (mobile `bytes_to_fr`, SRA crate, on-chain
+    // Poseidon precompile).
+    let nonce_fr = Fr::from_be_bytes_mod_order(&su_nonce);
     let owner_fr =
         pso_protocol::ownership::compute_ownership_grumpkin(grumpkin.pk_x, grumpkin.pk_y, nonce_fr)
             .map_err(|e| L2ClientError::Witness(format!("compute_ownership: {e}")))?;
 
     Ok(SuOwnershipWitness {
         su_id: format!("0x{:064x}", su_id),
-        su_nonce_le_hex: format!("0x{}", hex::encode(su_nonce)),
-        derived_owner_le_hex: format!("0x{}", hex::encode(fr_to_le32(&owner_fr))),
-        shared_pk_x_le_hex: format!("0x{}", hex::encode(fr_to_le32(&grumpkin.pk_x))),
-        shared_pk_y_le_hex: format!("0x{}", hex::encode(fr_to_le32(&grumpkin.pk_y))),
+        su_nonce_hex: format!("0x{}", hex::encode(su_nonce)),
+        derived_owner_be_hex: format!("0x{}", hex::encode(fr_to_be32(&owner_fr))),
+        shared_pk_x_be_hex: format!("0x{}", hex::encode(fr_to_be32(&grumpkin.pk_x))),
+        shared_pk_y_be_hex: format!("0x{}", hex::encode(fr_to_be32(&grumpkin.pk_y))),
         shared_sk_hex: format!("0x{}", hex::encode(sk_bytes)),
     })
 }
@@ -250,7 +255,7 @@ pub fn prove_su_aggregation(
     let _ = td_derived_owner; // bound on-chain via TributeDraft's stored `derivedOwner`; carried for clarity here.
     Ok(AggregationProofBundle {
         tribute_draft_id: format!("0x{:064x}", tribute_draft_id),
-        td_derived_owner: format!("0x{}", hex::encode(fr_to_le32(&td_derived_owner))),
+        td_derived_owner: format!("0x{}", hex::encode(fr_to_be32(&td_derived_owner))),
         su_ids: inputs.iter().map(|i| i.su_id.clone()).collect(),
         tier: AggregationTier {
             tier_n: tier_resolved.tier_n,
@@ -373,22 +378,23 @@ pub async fn submit_tribute_draft(
 pub struct TdOwnershipMaterial {
     /// 32-byte raw Grumpkin `td_sk`. **Sensitive.**
     pub td_sk_hex: String,
-    /// Grumpkin x coordinate of `td_pk` (32-byte LE Fr hex).
-    pub td_pk_x_le_hex: String,
-    /// Grumpkin y coordinate of `td_pk` (32-byte LE Fr hex).
-    pub td_pk_y_le_hex: String,
-    /// 32-byte LE Fr nonce used during owner derivation.
-    pub td_nonce_le_hex: String,
-    /// 32-byte LE Fr `derivedOwner` value -- what the wallet passes
+    /// Grumpkin x coordinate of `td_pk` (32-byte BE Fr hex).
+    pub td_pk_x_be_hex: String,
+    /// Grumpkin y coordinate of `td_pk` (32-byte BE Fr hex).
+    pub td_pk_y_be_hex: String,
+    /// 32-byte raw nonce used during owner derivation. Interpreted
+    /// BE as an Fr in the Poseidon ownership commit.
+    pub td_nonce_hex: String,
+    /// 32-byte BE Fr `derivedOwner` value — what the wallet passes
     /// to `TributeDraft.submit`'s `derivedOwner` argument.
-    pub td_derived_owner_le_hex: String,
+    pub td_derived_owner_be_hex: String,
 }
 
 /// Roll a fresh per-TD keypair + nonce and compute `td_derived_owner`.
 ///
 /// The wallet calls this once per TributeDraft before aggregation.
 /// The output goes both into the aggregation request (so the
-/// recursive proof binds against the same TD owner) and stored
+/// aggregation proof binds against the same TD owner) and stored
 /// locally for Phase 2.
 pub fn prepare_td_keypair() -> Result<TdOwnershipMaterial, L2ClientError> {
     let mut sk_raw = [0u8; 32];
@@ -401,7 +407,7 @@ pub fn prepare_td_keypair() -> Result<TdOwnershipMaterial, L2ClientError> {
 
     let mut nonce_bytes = [0u8; 32];
     OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce_fr = Fr::from_le_bytes_mod_order(&nonce_bytes);
+    let nonce_fr = Fr::from_be_bytes_mod_order(&nonce_bytes);
 
     let owner_fr =
         pso_protocol::ownership::compute_ownership_grumpkin(td_key.pk_x, td_key.pk_y, nonce_fr)
@@ -409,10 +415,10 @@ pub fn prepare_td_keypair() -> Result<TdOwnershipMaterial, L2ClientError> {
 
     Ok(TdOwnershipMaterial {
         td_sk_hex: format!("0x{}", hex::encode(sk_bytes)),
-        td_pk_x_le_hex: format!("0x{}", hex::encode(fr_to_le32(&td_key.pk_x))),
-        td_pk_y_le_hex: format!("0x{}", hex::encode(fr_to_le32(&td_key.pk_y))),
-        td_nonce_le_hex: format!("0x{}", hex::encode(nonce_bytes)),
-        td_derived_owner_le_hex: format!("0x{}", hex::encode(fr_to_le32(&owner_fr))),
+        td_pk_x_be_hex: format!("0x{}", hex::encode(fr_to_be32(&td_key.pk_x))),
+        td_pk_y_be_hex: format!("0x{}", hex::encode(fr_to_be32(&td_key.pk_y))),
+        td_nonce_hex: format!("0x{}", hex::encode(nonce_bytes)),
+        td_derived_owner_be_hex: format!("0x{}", hex::encode(fr_to_be32(&owner_fr))),
     })
 }
 
@@ -422,10 +428,10 @@ pub fn prepare_td_keypair() -> Result<TdOwnershipMaterial, L2ClientError> {
 pub struct TdOwnershipProof {
     /// Which TD this proof attests.
     pub tribute_draft_id: String,
-    /// `td_derived_owner` (32-byte LE hex).
-    pub td_derived_owner_le_hex: String,
-    /// `td_hash` per §3.3.3 (32-byte LE hex).
-    pub td_hash_le_hex: String,
+    /// `td_derived_owner` (32-byte BE hex).
+    pub td_derived_owner_be_hex: String,
+    /// `td_hash` per §3.3.3 (32-byte BE hex).
+    pub td_hash_be_hex: String,
     /// Raw proof bytes (UltraHonkKeccak).
     pub proof_bytes_hex: String,
 }
@@ -529,7 +535,7 @@ mod tests {
             &su_nonce,
         )
         .unwrap();
-        let nonce_fr = Fr::from_le_bytes_mod_order(&su_nonce);
+        let nonce_fr = Fr::from_be_bytes_mod_order(&su_nonce);
         let sra_sk_raw: [u8; 32] = sra_side.secret.to_bytes().into();
         // Same reduction `prepare_su_ownership_material` applies on
         // the wallet side: bb 5.x's `schnorr_compute_public_key`
@@ -545,10 +551,10 @@ mod tests {
             nonce_fr,
         )
         .unwrap();
-        let sra_owner_hex = format!("0x{}", hex::encode(fr_to_le32(&sra_owner)));
+        let sra_owner_hex = format!("0x{}", hex::encode(fr_to_be32(&sra_owner)));
 
         assert_eq!(
-            witness.derived_owner_le_hex, sra_owner_hex,
+            witness.derived_owner_be_hex, sra_owner_hex,
             "wallet-side derivedOwner must match the SRA's computed one"
         );
     }
@@ -567,6 +573,6 @@ mod tests {
         let a = prepare_td_keypair().unwrap();
         let b = prepare_td_keypair().unwrap();
         assert_ne!(a.td_sk_hex, b.td_sk_hex);
-        assert_ne!(a.td_derived_owner_le_hex, b.td_derived_owner_le_hex);
+        assert_ne!(a.td_derived_owner_be_hex, b.td_derived_owner_be_hex);
     }
 }

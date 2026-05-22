@@ -240,14 +240,11 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
         // Read the on-chain SU back and verify the stored
         // `derivedOwner` equals what the wallet's witness asserts.
+        // Both are BE — no byte-swap.
         let on_chain = su_view.getData(r.su_id).call().await?;
-        let wallet_owner_le_hex = witness.derived_owner_le_hex.trim_start_matches("0x");
-        let wallet_owner_le = hex::decode(wallet_owner_le_hex)?;
-        let mut wallet_owner_be = [0u8; 32];
-        for (i, b) in wallet_owner_le.iter().take(32).enumerate() {
-            wallet_owner_be[31 - i] = *b;
-        }
-        if on_chain.derivedOwner.as_slice() != wallet_owner_be {
+        let wallet_owner_be_hex = witness.derived_owner_be_hex.trim_start_matches("0x");
+        let wallet_owner_be = hex::decode(wallet_owner_be_hex)?;
+        if on_chain.derivedOwner.as_slice() != wallet_owner_be.as_slice() {
             return Err(eyre::eyre!(
                 "S001: on-chain derivedOwner {:?} != wallet-derived {:?} for SU {:#x}",
                 on_chain.derivedOwner,
@@ -259,7 +256,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         // Recompute the SU entity hash off-chain; matches the
         // chain's `0x0212` precompile reconstruction.
         let su_id_fr = Fr::from_be_bytes_mod_order(&r.su_id.to_be_bytes::<32>());
-        let owner_fr = Fr::from_le_bytes_mod_order(&wallet_owner_le);
+        let owner_fr = Fr::from_be_bytes_mod_order(&wallet_owner_be);
         let sr_fps: Vec<Fr> = r
             .sr_ids
             .iter()
@@ -289,7 +286,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         su_inputs.push(SuAggregationInput {
             su_id: format!("0x{:064x}", r.su_id),
             grumpkin_sk: sk_arr,
-            nonce: Fr::from_le_bytes_mod_order(&nonce_arr),
+            nonce: Fr::from_be_bytes_mod_order(&nonce_arr),
             derived_owner: owner_fr,
             nft_hash,
         });
@@ -300,14 +297,13 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     //    submits the TributeDraft.
     // -----------------------------------------------------------------
     let td_material = prepare_td_keypair()?;
-    let td_owner_le_hex = td_material.td_derived_owner_le_hex.trim_start_matches("0x");
-    let td_owner_le = hex::decode(td_owner_le_hex)?;
-    let td_owner_fr = Fr::from_le_bytes_mod_order(&td_owner_le);
+    let td_owner_be_hex = td_material.td_derived_owner_be_hex.trim_start_matches("0x");
+    let td_owner_be = hex::decode(td_owner_be_hex)?;
+    let td_owner_fr = Fr::from_be_bytes_mod_order(&td_owner_be);
 
-    // TD id derivation: use the `derivedOwner` LE bytes directly as
-    // the on-chain `uint256` slot. The protocol's `compute_tribute_draft_id`
-    // is `Poseidon2(owner, wwd)` — out of scope for S001 (we only
-    // need a unique id the wallet controls). Pick a random one.
+    // TD id derivation: the protocol's `compute_tribute_draft_id` is
+    // `Poseidon2(owner, wwd)` — out of scope for S001 (we only need a
+    // unique id the wallet controls). Pick a random one.
     let td_id = random_id();
 
     // The flat-aggregation prover wraps `noir_rs` which spins up its
@@ -329,23 +325,17 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
     // -----------------------------------------------------------------
     // 6. Read the TD back, assert the stored `derivedOwner` matches
-    //    the wallet's computation. The TD slot stores the calldata
-    //    bytes verbatim; `submit_tribute_draft` ships LE-hex so the
-    //    on-chain slot is the LE encoding (asymmetric with the SU
-    //    path, which stores BE — the SU value is consumed by the
-    //    `0x0212` precompile and the aggregation proof public-input
-    //    prefix, both of which read BE).
+    //    the wallet's computation. Unified BE wire format across SU
+    //    and TD now, so the on-chain slot is BE and matches the
+    //    wallet's bytes verbatim.
     // -----------------------------------------------------------------
     let td_view = ITributeDraftView::new(TRIBUTE_DRAFT_ADDR, &read_provider);
     let td_on_chain = td_view.getData(td_id).call().await?;
-    let mut td_owner_le = [0u8; 32];
-    let td_owner_le_vec = hex::decode(td_owner_le_hex)?;
-    td_owner_le[..td_owner_le_vec.len()].copy_from_slice(&td_owner_le_vec);
-    if td_on_chain.derivedOwner.as_slice() != td_owner_le {
+    if td_on_chain.derivedOwner.as_slice() != td_owner_be.as_slice() {
         return Err(eyre::eyre!(
             "S001: TD on-chain derivedOwner {:?} != wallet-derived {:?}",
             td_on_chain.derivedOwner,
-            td_owner_le
+            td_owner_be
         ));
     }
 

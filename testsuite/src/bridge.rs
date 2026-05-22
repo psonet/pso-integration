@@ -34,10 +34,6 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use tokio::sync::{mpsc, oneshot};
 
-use ark_bn254::Fr;
-use ark_ff::PrimeField;
-
-use pso_integrations_shared::witness::fr_to_be32;
 use pso_l2_client::sra::MintSpendingUnitArgs;
 use pso_sra_integration::generate_nft_ownership_with_nonce;
 
@@ -210,22 +206,19 @@ async fn handle_mint(sra: &SraClient, args: SuMintArgs) -> Result<SuMintReceipt,
     .map_err(|e| BridgeError::Crypto(format!("generate_nft_ownership: {e}")))?;
 
     // `generate_nft_ownership_with_nonce` returns the ownership Fr
-    // as base58-encoded **little-endian** bytes (matching how the
-    // SRA crate emits the value to its Kotlin caller). The on-chain
-    // path needs BE — the `0x0212` SU-hash precompile parses BE and
-    // the aggregation proof's public-input prefix copies BE verbatim.
-    // Decode, re-interpret the LE bytes as Fr, and re-encode BE.
-    let ownership_le_bytes = bs58::decode(&ownership.ownership)
+    // as base58-encoded BE bytes (the unified PSO wire format —
+    // matches the `0x0212` SU-hash precompile and the aggregation
+    // proof's public-input prefix). Decode, ship straight to the
+    // contract.
+    let derived_owner_vec = bs58::decode(&ownership.ownership)
         .into_vec()
         .map_err(|e| BridgeError::Crypto(format!("decode ownership bs58: {e}")))?;
-    let ownership_le_arr: [u8; 32] = ownership_le_bytes.as_slice().try_into().map_err(|_| {
+    let derived_owner_bytes: [u8; 32] = derived_owner_vec.as_slice().try_into().map_err(|_| {
         BridgeError::Crypto(format!(
             "expected 32-byte ownership, got {}",
-            ownership_le_bytes.len()
+            derived_owner_vec.len()
         ))
     })?;
-    let owner_fr = Fr::from_le_bytes_mod_order(&ownership_le_arr);
-    let derived_owner_bytes = fr_to_be32(&owner_fr);
 
     // ----- (3) On-chain mint via the agents pool -----
     let mint_args = MintSpendingUnitArgs {
@@ -285,14 +278,19 @@ mod tests {
     //! surfaces — re-unify before touching anything else.
     use super::*;
 
-    use pso_integrations_shared::witness::{derive_grumpkin_public_key, reduce_to_grumpkin_sk};
+    use ark_bn254::Fr;
+    use ark_ff::PrimeField;
+
+    use pso_integrations_shared::witness::{
+        derive_grumpkin_public_key, fr_to_be32, reduce_to_grumpkin_sk,
+    };
     use pso_l2_client::shared_key::{derive_shared_key, derive_shared_key_sra_side};
 
     /// Compute derivedOwner starting from a Grumpkin keypair (pk_x,
     /// pk_y) and the per-SU nonce. Used as the final-step convergence
     /// point for every code path below.
     fn poseidon_owner_be(pk_x: Fr, pk_y: Fr, su_nonce: &[u8; 32]) -> [u8; 32] {
-        let nonce_fr = Fr::from_le_bytes_mod_order(su_nonce);
+        let nonce_fr = Fr::from_be_bytes_mod_order(su_nonce);
         let owner_fr = pso_protocol::ownership::compute_ownership_grumpkin(pk_x, pk_y, nonce_fr)
             .expect("ownership compute");
         fr_to_be32(&owner_fr)
@@ -338,12 +336,12 @@ mod tests {
             su_nonce.to_vec(),
         )
         .expect("sra uniffi");
-        let le = bs58::decode(&res.ownership)
+        // SRA crate returns base58 of BE bytes (post-unification) — no
+        // re-interpretation needed.
+        let be = bs58::decode(&res.ownership)
             .into_vec()
             .expect("bs58 decode");
-        let le_arr: [u8; 32] = le.as_slice().try_into().expect("32-byte ownership");
-        let owner_fr = Fr::from_le_bytes_mod_order(&le_arr);
-        fr_to_be32(&owner_fr)
+        be.as_slice().try_into().expect("32-byte ownership")
     }
 
     /// Path 4 — mobile UniFFI surface (what the React Native wallet
@@ -361,12 +359,12 @@ mod tests {
             su_nonce.to_vec(),
         )
         .expect("mobile uniffi");
-        // pk is pk_x_le || pk_y_le, each 32 bytes.
+        // pk is pk_x_be || pk_y_be, each 32 bytes (PSO wire format).
         assert_eq!(kp.pk.len(), 64, "mobile pk layout");
-        let pk_x_le: [u8; 32] = kp.pk[0..32].try_into().expect("pk_x slice");
-        let pk_y_le: [u8; 32] = kp.pk[32..64].try_into().expect("pk_y slice");
-        let pk_x = Fr::from_le_bytes_mod_order(&pk_x_le);
-        let pk_y = Fr::from_le_bytes_mod_order(&pk_y_le);
+        let pk_x_be: [u8; 32] = kp.pk[0..32].try_into().expect("pk_x slice");
+        let pk_y_be: [u8; 32] = kp.pk[32..64].try_into().expect("pk_y slice");
+        let pk_x = Fr::from_be_bytes_mod_order(&pk_x_be);
+        let pk_y = Fr::from_be_bytes_mod_order(&pk_y_be);
         poseidon_owner_be(pk_x, pk_y, su_nonce)
     }
 

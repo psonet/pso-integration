@@ -49,7 +49,7 @@ pub fn run(consent_key: &[u8; 32], args: Args) -> Result<()> {
     crate::write_json(&args.output, &witness)?;
     println!(
         "{{\"su_id\":\"{}\",\"derived_owner\":\"{}\"}}",
-        witness.su_id, witness.derived_owner_le_hex
+        witness.su_id, witness.derived_owner_be_hex
     );
     Ok(())
 }

@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use pso_integrations_shared::witness::fr_to_le32;
+use pso_integrations_shared::witness::fr_to_be32;
 use rand::rngs::OsRng;
 
 use pso_nft::{generate_test_merkle_path, Generated, GeneratedNFTData, SpendingUnit, TributeDraft};
@@ -84,8 +84,9 @@ fn build_generated_output<T: serde::Serialize>(
     // Hex-encode Grumpkin secret key bytes (32 bytes).
     let secret_key_hex = hex::encode(data.owner_keys.key.sk_bytes);
 
-    // Hex-encode nonce (little-endian field element bytes).
-    let nonce_bytes = fr_to_le32(&data.nonce);
+    // Hex-encode nonce (big-endian field element bytes — unified PSO
+    // wire format).
+    let nonce_bytes = fr_to_be32(&data.nonce);
     let nonce_hex = hex::encode(nonce_bytes);
 
     // Generate a test Merkle path.

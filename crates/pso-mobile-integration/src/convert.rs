@@ -7,7 +7,7 @@ use ark_bn254::Fr;
 use ark_ff::PrimeField;
 use chrono::NaiveDate;
 use iso_currency::Currency;
-use pso_integrations_shared::witness::{derive_grumpkin_public_key, fr_to_le32, GrumpkinKey};
+use pso_integrations_shared::witness::{derive_grumpkin_public_key, fr_to_be32, GrumpkinKey};
 use pso_poseidon::PoseidonHasher;
 
 use pso_protocol::merkle::{MerklePathElement, MerklePathElementIndex};
@@ -31,19 +31,25 @@ pub fn parse_secret_key(bytes: &[u8]) -> Result<GrumpkinKey, MobileError> {
 
 // -- Field element (Fr) --
 
-/// Parse a BN254 Fr from 32 little-endian bytes.
+/// Parse a BN254 Fr from 32 big-endian bytes.
+///
+/// BE is the canonical wire format across every public PSO surface
+/// (UniFFI inputs, on-chain calldata, aggregation-proof PI prefix,
+/// barretenberg-rs Grumpkin signatures). The internal Noir witness
+/// vector still uses LE — that's a circuit-contract detail walled
+/// off by the `witness::*` helpers in `pso-integrations-shared`.
 pub fn bytes_to_fr(bytes: &[u8]) -> Result<Fr, MobileError> {
     let arr: &[u8; 32] = bytes
         .try_into()
         .map_err(|_| MobileError::InvalidFieldElement {
             detail: format!("expected 32 bytes, got {}", bytes.len()),
         })?;
-    Ok(Fr::from_le_bytes_mod_order(arr))
+    Ok(Fr::from_be_bytes_mod_order(arr))
 }
 
-/// Convert an Fr to 32 little-endian bytes.
+/// Convert an Fr to 32 big-endian bytes.
 pub fn fr_to_bytes(fr: &Fr) -> Vec<u8> {
-    fr_to_le32(fr).to_vec()
+    fr_to_be32(fr).to_vec()
 }
 
 /// Parse a `Vec<Vec<u8>>` into `Vec<Fr>`.
@@ -91,6 +97,14 @@ pub fn parse_currency(code: u16) -> Result<Currency, MobileError> {
 // -- Merkle path --
 
 /// Convert `MerklePathElementInput` slice to `Vec<MerklePathElement>`.
+///
+/// Note: `node_hash` bytes are passed verbatim into `pso-protocol`'s
+/// `compute_merkle_root`, which interprets them as **LE-encoded Fr**
+/// (`Fr::from_le_bytes_mod_order`). That's the one PSO surface the
+/// BE unification doesn't cover — `pso-protocol 0.2.1` is pinned and
+/// publishes the LE convention. Treat the `node_hash` field as
+/// LE-encoded on the wire. Flipping it would require a `pso-protocol`
+/// minor bump.
 pub fn parse_merkle_path(
     elements: &[MerklePathElementInput],
 ) -> Result<Vec<MerklePathElement>, MobileError> {
@@ -218,11 +232,11 @@ mod tests {
         let fr = Fr::rand(&mut OsRng);
         let elements = vec![
             MerklePathElementInput {
-                node_hash: fr_to_le32(&fr).to_vec(),
+                node_hash: fr_to_be32(&fr).to_vec(),
                 index: 1,
             },
             MerklePathElementInput {
-                node_hash: fr_to_le32(&fr).to_vec(),
+                node_hash: fr_to_be32(&fr).to_vec(),
                 index: 2,
             },
         ];
@@ -236,7 +250,7 @@ mod tests {
     fn test_parse_merkle_path_invalid_index() {
         let fr = Fr::rand(&mut OsRng);
         let elements = vec![MerklePathElementInput {
-            node_hash: fr_to_le32(&fr).to_vec(),
+            node_hash: fr_to_be32(&fr).to_vec(),
             index: 3,
         }];
         assert!(parse_merkle_path(&elements).is_err());
