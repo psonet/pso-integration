@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.8 - 2026-05-22
+#### Bug Fixes
+- (**ci**) build libbb-external.a from source for Android - (93a1ece) - Anton Velichko
+
+- - -
+
 ## v0.3.7 - 2026-05-21
 #### Bug Fixes
 - (**release**) broaden verify-release identity regex to accept refs/heads/main - (018d25d) - Anton Velichko
