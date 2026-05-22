@@ -55,8 +55,12 @@ pub fn generate_nft_ownership(
     sra_sk: Vec<u8>,
     consent_pk: Vec<u8>,
 ) -> Result<GeneratedOwnership, OwnershipError> {
-    let nonce = ark_bn254::Fr::rand(&mut rand::rngs::OsRng);
-    generate_ownership_inner(sra_sk, consent_pk, nonce)
+    // Random Fr → 32 LE bytes. The Fr is by construction < q_BN254, so
+    // these bytes round-trip back to the same Fr (no salt-vs-Poseidon
+    // divergence below).
+    let nonce_fr = ark_bn254::Fr::rand(&mut rand::rngs::OsRng);
+    let nonce_bytes = pso_integrations_shared::witness::fr_to_le32(&nonce_fr);
+    generate_ownership_inner(sra_sk, consent_pk, nonce_bytes)
 }
 
 /// Deterministic variant that accepts a fixed nonce for integration testing.
@@ -66,41 +70,46 @@ pub fn generate_nft_ownership_with_nonce(
     consent_pk: Vec<u8>,
     nonce: Vec<u8>,
 ) -> Result<GeneratedOwnership, OwnershipError> {
-    use ark_bn254::Fr;
-    use ark_ff::PrimeField;
-
     let nonce_bytes: [u8; 32] = nonce
         .try_into()
         .map_err(|_| OwnershipError::CryptoError("nonce must be exactly 32 bytes".to_string()))?;
-    let nonce_fr: Fr = Fr::from_le_bytes_mod_order(&nonce_bytes);
-    generate_ownership_inner(sra_sk, consent_pk, nonce_fr)
+    generate_ownership_inner(sra_sk, consent_pk, nonce_bytes)
 }
 
 fn generate_ownership_inner(
     sra_sk: Vec<u8>,
     consent_pk: Vec<u8>,
-    nonce_fr: ark_bn254::Fr,
+    nonce_bytes: [u8; 32],
 ) -> Result<GeneratedOwnership, OwnershipError> {
+    use ark_bn254::Fr;
+    use ark_ff::PrimeField;
     use pso_integrations_shared::witness::{
         derive_grumpkin_public_key, fr_to_le32, reduce_to_grumpkin_sk,
     };
 
-    let nonce_bytes = fr_to_le32(&nonce_fr);
-
-    // App. A: secp256k1 ECDH + HKDF lands a 32-byte secret. Off-chain
-    // ECDH stays on secp256k1 for wallet interop, but the resulting
-    // 32-byte scalar is then reinterpreted as a Grumpkin scalar for
-    // the in-circuit signing path. Reduce mod `q_Grumpkin` before
-    // handing to barretenberg — bb 5.x's `schnorr_compute_public_key`
-    // aborts the process on inputs >= q. Most valid secp256k1 keys
-    // (the input distribution here) are above q_Grumpkin, so without
-    // this reduction every call has ~80% probability of aborting.
+    // Two distinct uses of the nonce:
+    //
+    // 1. As the **raw 32-byte** HKDF salt fed into App. A's KDF. This
+    //    MUST match what the wallet uses verbatim; round-tripping
+    //    through Fr first would reduce mod q_BN254 (lossy when the
+    //    input >= q_BN254 — ~63% of uniform 32-byte values) and
+    //    silently split the SRA-side and wallet-side derivations.
+    // 2. As a **Fr field element** in the Poseidon ownership commit
+    //    `Poseidon(pk_x, pk_y, nonce_fr)`. The on-chain consumer
+    //    interprets the same bytes via `Fr::from_le_bytes_mod_order`.
+    //
+    // The earlier implementation fed the Fr-reduced bytes into HKDF,
+    // which broke the symmetry property the App. A spec relies on.
     let nft_sk = pso_integrations_shared::derive_nft_keypair(&sra_sk, &consent_pk, &nonce_bytes)?;
     let nft_sk_raw: [u8; 32] = nft_sk.to_bytes().into();
+
+    // bb 5.x's `schnorr_compute_public_key` aborts on inputs >= q_Grumpkin
+    // (most valid secp256k1 keys land in that range), so reduce here.
     let nft_sk_bytes = reduce_to_grumpkin_sk(&nft_sk_raw);
     let grumpkin_key = derive_grumpkin_public_key(&nft_sk_bytes)
         .map_err(|e| OwnershipError::CryptoError(format!("derive grumpkin pk: {e}")))?;
 
+    let nonce_fr = Fr::from_le_bytes_mod_order(&nonce_bytes);
     let ownership_fr = pso_protocol::ownership::compute_ownership_grumpkin(
         grumpkin_key.pk_x,
         grumpkin_key.pk_y,
@@ -109,7 +118,10 @@ fn generate_ownership_inner(
     .map_err(|_| OwnershipError::CryptoError("ownership hash computation failed".to_string()))?;
 
     Ok(GeneratedOwnership {
-        nonce: bs58::encode(fr_to_le32(&nonce_fr)).into_string(),
+        // Echo the input bytes verbatim — not the Fr round-trip — so
+        // the caller's `nonce` field matches what they (and the
+        // wallet) use as the HKDF salt.
+        nonce: bs58::encode(nonce_bytes).into_string(),
         ownership: bs58::encode(fr_to_le32(&ownership_fr)).into_string(),
     })
 }
@@ -134,17 +146,21 @@ mod tests {
         let result =
             generate_nft_ownership_with_nonce(sra_sk, test_consent_pk(), vec![42u8; 32]).unwrap();
 
-        // Expected outputs were regenerated after `generate_ownership_inner`
-        // started reducing the HKDF/secp256k1 key mod `q_Grumpkin` before
-        // the barretenberg call (bb 5.x aborts on out-of-range inputs;
-        // most valid secp256k1 keys are above q_Grumpkin). Any downstream
-        // cross-language consumer (the Kotlin integration test referenced
-        // by the prior fixture string) needs to apply the same reduction
-        // to match these values.
+        // Fixtures regenerated after the App. A KDF was unified on the
+        // spec-correct HKDF-SHA256(salt=nonce, ikm=ECDH-x) path. The
+        // prior raw-HMAC-over-full-SEC1-point implementation in
+        // `pso-integrations-shared` produced a different `nft_sk` than
+        // the wallet/bridge derivation in `pso-l2-client::shared_key`,
+        // silently splitting on-chain commitments across two
+        // surfaces. Cross-language consumers MUST regenerate their
+        // own fixtures and republish — the prior value
+        // (`4JHqQcrjkRMy6pBNFKHBVoVCMEquq3rbXVBo3eX7h68d`) was the
+        // diverged variant and never matched anything minted by the
+        // bridge.
         assert_eq!(result.nonce, "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh");
         assert_eq!(
             result.ownership,
-            "4JHqQcrjkRMy6pBNFKHBVoVCMEquq3rbXVBo3eX7h68d"
+            "6Joic5TBR6H9uDoc2BsGZbu4cBNucXHeDQ7BnV8thTh1"
         );
     }
 
@@ -155,12 +171,12 @@ mod tests {
                 .unwrap();
 
         // Same inputs produce the same result regardless of key format.
-        // See `test_deterministic_ownership_with_der_key` for why these
-        // fixtures changed (mod-reduction added before bb FFI).
+        // See `test_deterministic_ownership_with_der_key` for the
+        // context behind this fixture value.
         assert_eq!(result.nonce, "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh");
         assert_eq!(
             result.ownership,
-            "4JHqQcrjkRMy6pBNFKHBVoVCMEquq3rbXVBo3eX7h68d"
+            "6Joic5TBR6H9uDoc2BsGZbu4cBNucXHeDQ7BnV8thTh1"
         );
     }
 }

@@ -14,7 +14,7 @@
 //! - `su_aggregation_tier_sizes()` — enumerate all available tier sizes.
 
 use ark_bn254::Fr;
-use ark_ff::UniformRand;
+use ark_ff::PrimeField;
 use rand::rngs::OsRng;
 
 use pso_integrations_shared::witness::{
@@ -86,14 +86,32 @@ pub fn compute_tribute_ownership(
     secret_key: Vec<u8>,
     worldwide_day: u32,
 ) -> Result<TributeOwnership, MobileError> {
+    use rand::RngCore;
+
     let sk = parse_secret_key(&secret_key)?;
     let date = parse_worldwide_day(worldwide_day)?;
     let wwd = worldwide_day_count(&date);
     let wwd_fr = Fr::from(wwd);
 
-    let nonce = Fr::rand(&mut OsRng);
+    // Generate the nonce as raw bytes (the canonical wire form), then
+    // derive its `Fr` view only for the Poseidon commitment below.
+    //
+    // Mirrors the SRA bridge's `OsRng.fill_bytes(&mut su_nonce)` and
+    // the unified App. A guard in `pso-sra-integration`: bytes are the
+    // source of truth, Fr is derived lazily where needed. Doing the
+    // inverse (sampling `Fr::rand` and emitting `fr_to_bytes`) would
+    // technically work today — every Fr-encoded byte string is
+    // < q_BN254 and round-trips losslessly — but it locks the API
+    // shape into "nonces must be canonical Fr bytes", which is the
+    // exact assumption that produced the silent SRA-side / wallet-side
+    // split fixed in PR #6 sibling commits. Keep bytes-first here so a
+    // future change to the SRA flow that emits non-canonical nonces
+    // doesn't desync the wallet path.
+    let mut nonce_bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    let nonce_fr = Fr::from_le_bytes_mod_order(&nonce_bytes);
 
-    let ownership = pso_protocol::ownership::compute_ownership_grumpkin(sk.pk_x, sk.pk_y, nonce)
+    let ownership = pso_protocol::ownership::compute_ownership_grumpkin(sk.pk_x, sk.pk_y, nonce_fr)
         .map_err(|e| MobileError::Internal {
             detail: e.to_string(),
         })?;
@@ -101,7 +119,7 @@ pub fn compute_tribute_ownership(
     let tribute_draft_id = compute_tribute_draft_id(&ownership, &wwd_fr)?;
 
     Ok(TributeOwnership {
-        nonce: fr_to_bytes(&nonce),
+        nonce: nonce_bytes.to_vec(),
         ownership: fr_to_bytes(&ownership),
         tribute_draft_id: fr_to_bytes(&tribute_draft_id),
     })
@@ -499,6 +517,7 @@ pub fn prove_su_ownership_aggregation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ark_ff::UniformRand;
 
     fn random_secret_key() -> GrumpkinKey {
         pso_integrations_shared::witness::random_grumpkin_key().expect("random Grumpkin key")
