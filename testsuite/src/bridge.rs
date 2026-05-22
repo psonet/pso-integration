@@ -338,7 +338,9 @@ mod tests {
             su_nonce.to_vec(),
         )
         .expect("sra uniffi");
-        let le = bs58::decode(&res.ownership).into_vec().expect("bs58 decode");
+        let le = bs58::decode(&res.ownership)
+            .into_vec()
+            .expect("bs58 decode");
         let le_arr: [u8; 32] = le.as_slice().try_into().expect("32-byte ownership");
         let owner_fr = Fr::from_le_bytes_mod_order(&le_arr);
         fr_to_be32(&owner_fr)
