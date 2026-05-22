@@ -399,6 +399,13 @@ jobs:
       # barretenberg-rs ships prebuilt FFI for the 64-bit Android
       # ABIs only — 32-bit (armeabi-v7a / x86) hard-fail in the
       # build script before invoking the NDK toolchain.
+      #
+      # Upstream's prebuilt is unusable on real Android devices: it's
+      # built with Zig's libc++ (`std::__1::` symbols) while the NDK
+      # ships libc++_shared.so exporting `std::__ndk1::`. Loading the
+      # resulting .so fails with thousands of undefined symbols. We
+      # build libbb-external.a from source against the NDK toolchain
+      # below and feed it to barretenberg-rs via BB_LIB_DIR.
       fail-fast: false
       matrix:
         include:
@@ -408,6 +415,9 @@ jobs:
           - target: x86_64-linux-android
             label: android-x86_64
             abi: x86_64
+    env:
+      NDK_VERSION: r27c
+      ANDROID_PLATFORM: "24"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -428,26 +438,99 @@ jobs:
       - uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
-          ndk-version: r27c
+          ndk-version: ${{ env.NDK_VERSION }}
           add-to-path: false
 
       - name: Install C++ toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake clang pkg-config
+            cmake ninja-build clang pkg-config
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
+
+      # Resolve barretenberg-rs version from Cargo.lock so the source
+      # build stays in lockstep with the Rust crate. The crate version
+      # equals the upstream aztec-packages git tag.
+      - name: Resolve barretenberg version
+        id: bb-version
+        run: |
+          set -euo pipefail
+          ver=$(awk '
+            /^name = "barretenberg-rs"$/ { f=1; next }
+            f && /^version = / { gsub(/[" ]/, "", $3); print $3; exit }
+          ' Cargo.lock)
+          if [ -z "$ver" ]; then
+            echo "Failed to resolve barretenberg-rs version from Cargo.lock" >&2
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "Resolved barretenberg-rs version: $ver"
+
+      # libbb-external.a is deterministic per (bb version, ABI, NDK).
+      # Cache shaves ~10–15 min off the job when the version hasn't moved.
+      - name: Cache libbb-external.a
+        id: bb-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/bb-build/${{ matrix.abi }}/lib/libbb-external.a
+          key: bb-external-${{ steps.bb-version.outputs.version }}-${{ matrix.abi }}-ndk${{ env.NDK_VERSION }}-platform${{ env.ANDROID_PLATFORM }}
+
+      - name: Sparse-checkout aztec-packages barretenberg/cpp
+        if: steps.bb-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          ver="${{ steps.bb-version.outputs.version }}"
+          dst="$RUNNER_TEMP/aztec-packages"
+          git clone --depth 1 --filter=blob:none --sparse \
+            --branch "v${ver}" \
+            https://github.com/AztecProtocol/aztec-packages.git "$dst"
+          git -C "$dst" sparse-checkout set barretenberg/cpp
+
+      - name: Build libbb-external.a against Android NDK (${{ matrix.abi }})
+        if: steps.bb-cache.outputs.cache-hit != 'true'
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          # Match upstream's cross-base preset (CMakePresets.json:471-472):
+          # no debug info, hidden default visibility. Without these the
+          # static archive balloons ~13x (818M vs 63M) and link time in
+          # the cargo-ndk step grows noticeably.
+          CFLAGS: "-g0 -fvisibility=hidden"
+          CXXFLAGS: "-g0 -fvisibility=hidden"
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/aztec-packages/barretenberg/cpp"
+          build="$RUNNER_TEMP/bb-build/${{ matrix.abi }}"
+          mkdir -p "$build"
+          # Bypass upstream's `arm64-android` / `x86_64-android` presets
+          # (Zig-based, see CMakePresets.json:592-624). Drive CMake
+          # directly with the NDK toolchain file so the produced .a
+          # references `std::__ndk1::` and links cleanly against
+          # libc++_shared.so on device.
+          cmake -S "$src" -B "$build" \
+            -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=${{ matrix.abi }} \
+            -DANDROID_PLATFORM=android-${{ env.ANDROID_PLATFORM }} \
+            -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBB_LITE=ON \
+            -DENABLE_PIC=ON
+          cmake --build "$build" --target bb-external --parallel
+          test -f "$build/lib/libbb-external.a"
 
       - name: cargo ndk build -p pso-mobile-integration
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          # Points barretenberg-rs build.rs at the locally-built static
+          # lib (see build.rs:22-32). Skips its download path entirely.
+          BB_LIB_DIR: ${{ runner.temp }}/bb-build/${{ matrix.abi }}/lib
         run: |
           cargo ndk \
             --target ${{ matrix.abi }} \
-            --platform 24 \
+            --platform ${{ env.ANDROID_PLATFORM }} \
             --output-dir ./jniLibs \
             build --release -p pso-mobile-integration
 
