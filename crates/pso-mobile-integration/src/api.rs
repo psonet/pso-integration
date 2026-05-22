@@ -19,7 +19,7 @@ use rand::rngs::OsRng;
 
 use pso_integrations_shared::witness::{
     build_full_proof_witness, build_ownership_witness, derive_grumpkin_public_key,
-    FullProofWitnessCtx, GrumpkinKey, OwnershipWitnessCtx,
+    reduce_to_grumpkin_sk, FullProofWitnessCtx, GrumpkinKey, OwnershipWitnessCtx,
 };
 use pso_protocol::witness::HashableNFT;
 use pso_zk_circuit_noir::ZKCircuit;
@@ -48,7 +48,13 @@ pub fn derive_nft_keypair(
     nft_nonce: Vec<u8>,  // 32-byte nonce
 ) -> Result<NftKeypair, MobileError> {
     let nft_sk = pso_integrations_shared::derive_nft_keypair(&consent_sk, &sra_pk, &nft_nonce)?;
-    let sk_bytes: [u8; 32] = nft_sk.to_bytes().into();
+    let nft_sk_raw: [u8; 32] = nft_sk.to_bytes().into();
+    // App. A ECDH lands a uniform 32-byte scalar in [0, 2^256), but
+    // bb 5.x's `schnorr_compute_public_key` aborts the process on
+    // inputs >= q_Grumpkin (~63% of uniform inputs trip it). Mirror
+    // the SRA path in `pso_sra_integration::generate_ownership_inner`
+    // and reduce mod q_Grumpkin before the FFI call.
+    let sk_bytes = reduce_to_grumpkin_sk(&nft_sk_raw);
     let grumpkin = derive_grumpkin_public_key(&sk_bytes).map_err(|e| MobileError::Internal {
         detail: format!("derive grumpkin pk: {e}"),
     })?;

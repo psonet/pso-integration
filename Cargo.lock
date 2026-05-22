@@ -4078,12 +4078,13 @@ dependencies = [
 
 [[package]]
 name = "pso-e2e-testsuite"
-version = "0.3.4"
+version = "0.3.8"
 dependencies = [
  "alloy",
  "ark-bn254",
  "ark-ff 0.5.0",
  "async-trait",
+ "bs58",
  "chrono",
  "clap",
  "eyre",
@@ -4095,6 +4096,7 @@ dependencies = [
  "pso-mobile-integration",
  "pso-nft",
  "pso-protocol",
+ "pso-sra-integration",
  "pso-vdf",
  "rand 0.8.6",
  "serde",
@@ -4107,7 +4109,7 @@ dependencies = [
 
 [[package]]
 name = "pso-integrations-shared"
-version = "0.3.4"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "ark-bn254",
@@ -4123,7 +4125,7 @@ dependencies = [
 
 [[package]]
 name = "pso-l2-client"
-version = "0.3.4"
+version = "0.3.8"
 dependencies = [
  "alloy",
  "ark-bn254",
@@ -4148,7 +4150,7 @@ dependencies = [
 
 [[package]]
 name = "pso-mobile-integration"
-version = "0.3.4"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "ark-bn254",
@@ -4173,7 +4175,7 @@ dependencies = [
 
 [[package]]
 name = "pso-nft"
-version = "0.3.4"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "ark-bn254",
@@ -4215,7 +4217,7 @@ dependencies = [
 
 [[package]]
 name = "pso-sra-cli"
-version = "0.3.4"
+version = "0.3.8"
 dependencies = [
  "alloy",
  "clap",
@@ -4231,7 +4233,7 @@ dependencies = [
 
 [[package]]
 name = "pso-sra-integration"
-version = "0.3.4"
+version = "0.3.8"
 dependencies = [
  "ark-bn254",
  "ark-ff 0.5.0",
@@ -4259,7 +4261,7 @@ dependencies = [
 
 [[package]]
 name = "pso-wallet-cli"
-version = "0.3.4"
+version = "0.3.8"
 dependencies = [
  "alloy",
  "ark-bn254",
@@ -4287,8 +4289,8 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-circuit-noir"
-version = "0.2.3"
-source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?tag=v0.2.3#91e060a066d22009bd8189d827c50f2068a8e39a"
+version = "0.2.5"
+source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?tag=v0.2.5#ec67f2c3ed3e35086083ebb8442d54fcb1f08fca"
 dependencies = [
  "acvm",
  "acvm_blackbox_solver",
@@ -4311,7 +4313,7 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-cli"
-version = "0.3.4"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "ark-bn254",

@@ -34,11 +34,12 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use tokio::sync::{mpsc, oneshot};
 
-use pso_integrations_shared::witness::{
-    derive_grumpkin_public_key, fr_to_be32, reduce_to_grumpkin_sk,
-};
-use pso_l2_client::shared_key::derive_shared_key_sra_side;
+use ark_bn254::Fr;
+use ark_ff::PrimeField;
+
+use pso_integrations_shared::witness::fr_to_be32;
 use pso_l2_client::sra::MintSpendingUnitArgs;
+use pso_sra_integration::generate_nft_ownership_with_nonce;
 
 use crate::clients::sra::SraClient;
 
@@ -185,29 +186,45 @@ async fn handle_mint(sra: &SraClient, args: SuMintArgs) -> Result<SuMintReceipt,
     let mut su_nonce = [0u8; 32];
     OsRng.fill_bytes(&mut su_nonce);
 
-    // ----- (2) App. A shared key + derivedOwner commitment -----
-    let shared = derive_shared_key_sra_side(&sk_cu, &args.consent_pk, &su_nonce)
-        .map_err(|e| BridgeError::Crypto(e.to_string()))?;
-    let raw_shared: [u8; 32] = shared.secret.to_bytes().into();
-    let sk_bytes = reduce_to_grumpkin_sk(&raw_shared);
-    // `derive_grumpkin_public_key` calls the barretenberg-rs FFI.
+    // ----- (2) derivedOwner via the SRA crate's public API -----
+    //
+    // The same `generate_nft_ownership_with_nonce` UniFFI-exported
+    // function Kotlin/JVM SRA clients call. Routing the bridge
+    // through it means the e2e suite exercises the public surface
+    // real clients hit — any change to the App. A reduction, the
+    // ECDH shape, or the Poseidon commitment is caught here without
+    // the bridge needing its own parallel implementation.
+    //
     // bb 5.x throws an uncatchable C++ exception that aborts the
     // process if invoked from the wrong tokio worker thread; push
-    // it onto a blocking thread so the panic boundary is in a sync
-    // frame the runtime can isolate.
-    let grumpkin = tokio::task::spawn_blocking(move || derive_grumpkin_public_key(&sk_bytes))
-        .await
-        .map_err(|e| BridgeError::Crypto(format!("grumpkin join: {e}")))?
-        .map_err(|e| BridgeError::Crypto(format!("grumpkin pk: {e}")))?;
-    let nonce_fr = ark_ff::PrimeField::from_le_bytes_mod_order(&su_nonce);
-    let owner_fr =
-        pso_protocol::ownership::compute_ownership_grumpkin(grumpkin.pk_x, grumpkin.pk_y, nonce_fr)
-            .map_err(|e| BridgeError::Crypto(format!("ownership: {e}")))?;
-    // `derivedOwner` is consumed (a) by the `0x0212` SU-hash
-    // precompile (which parses BE) and (b) copied verbatim into the
-    // aggregation proof's public-input prefix (also BE per
-    // barretenberg's emission). Persist BE so both readers see the
-    // same Fr.
+    // the FFI work onto a blocking thread so the panic boundary is
+    // in a sync frame the runtime can isolate.
+    let consent_pk_bytes = args.consent_pk.to_sec1_bytes().to_vec();
+    let sk_cu_vec = sk_cu_bytes.to_vec();
+    let su_nonce_vec = su_nonce.to_vec();
+    let ownership = tokio::task::spawn_blocking(move || {
+        generate_nft_ownership_with_nonce(sk_cu_vec, consent_pk_bytes, su_nonce_vec)
+    })
+    .await
+    .map_err(|e| BridgeError::Crypto(format!("ownership join: {e}")))?
+    .map_err(|e| BridgeError::Crypto(format!("generate_nft_ownership: {e}")))?;
+
+    // `generate_nft_ownership_with_nonce` returns the ownership Fr
+    // as base58-encoded **little-endian** bytes (matching how the
+    // SRA crate emits the value to its Kotlin caller). The on-chain
+    // path needs BE — the `0x0212` SU-hash precompile parses BE and
+    // the aggregation proof's public-input prefix copies BE verbatim.
+    // Decode, re-interpret the LE bytes as Fr, and re-encode BE.
+    let ownership_le_bytes = bs58::decode(&ownership.ownership)
+        .into_vec()
+        .map_err(|e| BridgeError::Crypto(format!("decode ownership bs58: {e}")))?;
+    let ownership_le_arr: [u8; 32] = ownership_le_bytes.as_slice().try_into().map_err(|_| {
+        BridgeError::Crypto(format!(
+            "expected 32-byte ownership, got {}",
+            ownership_le_bytes.len()
+        ))
+    })?;
+    let owner_fr = Fr::from_le_bytes_mod_order(&ownership_le_arr);
     let derived_owner_bytes = fr_to_be32(&owner_fr);
 
     // ----- (3) On-chain mint via the agents pool -----
