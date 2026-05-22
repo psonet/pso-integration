@@ -28,9 +28,7 @@ resolver = "2"
 #   override here.
 pso-protocol         = "0.3"
 pso-zk-canonical     = "0.3"
-# Tracks the BE-unification feature branch until psonet/pso-zk-circuits#4
-# merges and tags v0.3.0. Flip back to `tag = "v0.3.0"` after that.
-pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", branch = "unify-be-encoding" }
+pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.3.0" }
 
 # Crates internal to this workspace
 pso-nft                  = { path = "domain/pso-nft" }
@@ -111,11 +109,3 @@ lto = true
 codegen-units = 1
 panic = 'abort'
 strip = true
-
-# Temporary override for `pso-zk-canonical` 0.3.0 — pending the
-# psonet/pso-zk-circuits#4 merge + crates.io publish. Once that lands
-# this `[patch]` block + the `branch = "unify-be-encoding"` pin on
-# `pso-zk-circuit-noir` above can both come out (the dep above flips
-# back to `tag = "v0.3.0"`).
-[patch.crates-io]
-pso-zk-canonical = { path = "../pso-zk-circuits/crates/pso-zk-canonical" }
