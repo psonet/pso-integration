@@ -1,10 +1,10 @@
 //! S011 — SU referencing a never-registered SR reverts with
-//! `SpendingRecordsNotOwnedBySender`.
+//! `InvalidSpendingRecords` (bad-owner SR arm).
 //!
-//! The on-chain check is `srSubmittedBy(h) == _msgSender()`. For a
-//! never-registered SR the `submittedBy` slot is `address(0)`, which
-//! cannot equal the SRA signer; the revert fires with the same
-//! variant as S009's "wrong-owner" case.
+//! The on-chain check is `!exists(h) || ownerOf(h) != _msgSender()`.
+//! For a never-registered SR `exists(h) == false` short-circuits the
+//! check; the revert fires with the same arm as S009's wrong-owner
+//! case (first field of `InvalidSpendingRecords`).
 
 use alloy::primitives::FixedBytes;
 use async_trait::async_trait;
@@ -23,7 +23,7 @@ impl Scenario for S011 {
         "S011"
     }
     fn description(&self) -> &'static str {
-        "SU.submit with never-registered SR ids reverts with SpendingRecordsNotOwnedBySender"
+        "SU.submit with never-registered SR ids reverts with InvalidSpendingRecords (bad-owner SR)"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -51,9 +51,12 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
     let typed = into_pso_error(err);
     match &typed {
-        PsoContractError::SpendingRecordsNotOwnedBySender(_, _) => Ok(()),
+        // Nonexistent SR fails the `exists()` guard → bad-owner SR arm
+        // (first field). The other three arms should be empty, but we
+        // don't assert that — the contract may evolve.
+        PsoContractError::InvalidSpendingRecords(bad_srs, _, _, _) if !bad_srs.is_empty() => Ok(()),
         other => Err(eyre::eyre!(
-            "S011: expected SpendingRecordsNotOwnedBySender, got {other}"
+            "S011: expected InvalidSpendingRecords with bad-owner SR, got {other}"
         )),
     }
 }

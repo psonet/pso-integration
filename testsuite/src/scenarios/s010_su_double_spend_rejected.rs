@@ -3,7 +3,7 @@
 //!
 //! `SpendingUnit.submit` tracks `usedSpendingRecordIds[sr]` and
 //! reverts on the second mint with
-//! `SpendingRecordsAlreadyExist(srHashes, amendmentSrHashes)`.
+//! `InvalidSpendingRecords(_, _, duplicateSRs, _)`.
 
 use std::time::Duration;
 
@@ -24,7 +24,7 @@ impl Scenario for S010 {
         "S010"
     }
     fn description(&self) -> &'static str {
-        "second SU sharing an SR fingerprint reverts with SpendingRecordsAlreadyExist"
+        "second SU sharing an SR fingerprint reverts with InvalidSpendingRecords (duplicate SR)"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -71,7 +71,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
     // Second SU mint with the same SR — the contract's
     // `usedSpendingRecordIds` map collides; expect
-    // `SpendingRecordsAlreadyExist`.
+    // `InvalidSpendingRecords` with the SR id in the duplicate-SR arm.
     let su2_id = random_id();
     let err = env
         .sra_zero
@@ -91,19 +91,19 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
     let typed = into_pso_error(err);
     match &typed {
-        PsoContractError::SpendingRecordsAlreadyExist(srs, _ars) => {
-            // The contract returns the colliding hashes; assert
-            // our sr_id is in there.
-            let observed: Vec<U256> = srs.clone();
+        // SR was owned and previously consumed → duplicate SR arm
+        // (third field).
+        PsoContractError::InvalidSpendingRecords(_, _, dup_srs, _) => {
+            let observed: Vec<U256> = dup_srs.clone();
             if !observed.contains(&sr_id) {
                 return Err(eyre::eyre!(
-                    "S010: SR id missing from error payload; got {typed}"
+                    "S010: SR id missing from duplicate SR slot; got {typed}"
                 ));
             }
             Ok(())
         }
         other => Err(eyre::eyre!(
-            "S010: expected SpendingRecordsAlreadyExist, got {other}"
+            "S010: expected InvalidSpendingRecords with duplicate SR, got {other}"
         )),
     }
 }

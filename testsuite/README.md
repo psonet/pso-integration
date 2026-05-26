@@ -70,9 +70,9 @@ guard it exercises.
 | S006  | SRA-signed actor-pool submission: assert the inner-call outcome (no SR landed).          |
 | S007  | Registering the same SR id twice reverts with `AlreadyExists`.                           |
 | S008  | `SR.submit(id=0, ...)` reverts with `InvalidTokenId`.                                    |
-| S009  | `SU.submit` referencing another SRA's SR reverts with `SpendingRecordsNotOwnedBySender`. |
-| S010  | Second SU sharing an SR fingerprint reverts with `SpendingRecordsAlreadyExist`.          |
-| S011  | `SU.submit` with never-registered SR ids reverts with `SpendingRecordsNotOwnedBySender`. |
+| S009  | `SU.submit` referencing another SRA's SR reverts with `InvalidSpendingRecords` (bad-owner SR). |
+| S010  | Second SU sharing an SR fingerprint reverts with `InvalidSpendingRecords` (duplicate SR). |
+| S011  | `SU.submit` with never-registered SR ids reverts with `InvalidSpendingRecords` (bad-owner SR). |
 | S012  | `TributeDraft.submit` with empty `suIds` reverts with `EmptyArray`.                      |
 | S013  | Actor RPC rejects envelope with zeroed magic prefix.                                     |
 | S014  | Actor RPC rejects envelope replaying a previously-seen nullifier.                        |
@@ -81,7 +81,7 @@ guard it exercises.
 | S017  | Actor RPC rejects envelope with bit-flipped VDF output bytes.                            |
 | S018  | `TributeDraft.submit` with empty proof reverts `MalformedAggregationProof`.              |
 | S019  | `TributeDraft.submit` with mismatched public inputs reverts `InvalidAggregationProof`.   |
-| S020  | `SU.submit` referencing another SRA's AR reverts with `SpendingRecordsNotOwnedBySender`. |
+| S020  | `SU.submit` referencing another SRA's AR reverts with `InvalidSpendingRecords` (bad-owner AR). |
 | S021  | `TributeDraft.submit` with non-existent `suId` reverts `NotFound`.                       |
 | S022  | `TributeDraft.submit` with SUs on different worldwide_days reverts `NotSameWorldwideDay`.|
 | S023  | `TributeDraft.submit` with SUs in different currencies reverts `NotSettlementCurrencyCurrency`. |
