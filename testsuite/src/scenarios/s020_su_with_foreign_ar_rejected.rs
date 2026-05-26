@@ -6,7 +6,7 @@
 //! every fingerprint in EITHER array to be owned by `msg.sender`;
 //! the contract's `_validateRecordOwnershipAndUniqueness` walks
 //! both arrays and bundles offenders into a single
-//! `SpendingRecordsNotOwnedBySender(srHashes, amendmentSrHashes)`
+//! `InvalidSpendingRecords(badOwnerSRs, badOwnerARs, duplicateSRs, duplicateARs)`
 //! payload.
 //!
 //! Approach:
@@ -16,9 +16,9 @@
 //!    [`TestEnv::register_random_sra`].
 //! 3. SRA#2 attempts to mint an SU referencing SRA#1's AR in
 //!    `amendment_sr_ids`. Expect
-//!    `SpendingRecordsNotOwnedBySender(_, [ar_id])` — the AR id
-//!    must appear in the amendmentSrHashes slot of the payload,
-//!    NOT in srHashes.
+//!    `InvalidSpendingRecords(_, [ar_id], _, _)` — the AR id must
+//!    appear in the bad-owner AR slot of the payload, NOT in the
+//!    SR slot.
 
 use std::time::Duration;
 
@@ -39,7 +39,7 @@ impl Scenario for S020 {
         "S020"
     }
     fn description(&self) -> &'static str {
-        "SU.submit referencing another SRA's AR reverts with SpendingRecordsNotOwnedBySender"
+        "SU.submit referencing another SRA's AR reverts with InvalidSpendingRecords (bad-owner AR)"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -81,15 +81,19 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         })
         .await
         .err()
-        .ok_or_else(|| eyre::eyre!("S020: expected SpendingRecordsNotOwnedBySender revert"))?;
+        .ok_or_else(|| {
+            eyre::eyre!("S020: expected InvalidSpendingRecords (bad-owner AR) revert")
+        })?;
 
     let typed = into_pso_error(err);
     match &typed {
-        PsoContractError::SpendingRecordsNotOwnedBySender(srs, ars) => {
-            if !ars.contains(&ar_id) {
+        // Foreign AR exists but is owned by a different SRA → lands
+        // in the bad-owner AR arm (second field).
+        PsoContractError::InvalidSpendingRecords(bad_srs, bad_ars, _, _) => {
+            if !bad_ars.contains(&ar_id) {
                 return Err(eyre::eyre!(
-                    "S020: AR id missing from amendment slot of error payload; \
-                     got srs={srs:?}, ars={ars:?}"
+                    "S020: AR id missing from bad-owner AR slot of error payload; \
+                     got bad_srs={bad_srs:?}, bad_ars={bad_ars:?}"
                 ));
             }
             tracing::info!(
@@ -99,7 +103,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             Ok(())
         }
         other => Err(eyre::eyre!(
-            "S020: expected SpendingRecordsNotOwnedBySender, got {other}"
+            "S020: expected InvalidSpendingRecords with bad-owner AR, got {other}"
         )),
     }
 }
