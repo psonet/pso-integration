@@ -89,17 +89,31 @@ sol! {
     #[allow(missing_docs)]
     error AggregationTierUnavailable(uint256 suCount);
 
-    /// `SpendingUnit.SpendingRecordsNotOwnedBySender(uint256[],
-    /// uint256[])` — `submit` called with SR / AR ids whose
-    /// `submittedBy` is not `_msgSender()`.
+    /// `SpendingUnit.InvalidSpendingRecords(uint256[], uint256[],
+    /// uint256[], uint256[])` — consolidated revert for SR / AR
+    /// fingerprint validation. Fields are
+    /// `(badOwnerSRs, badOwnerARs, duplicateSRs, duplicateARs)`:
+    /// the first two list fingerprints whose `submittedBy` is not
+    /// `_msgSender()` (or that don't exist); the last two list
+    /// fingerprints already consumed by a prior SU mint or repeated
+    /// within the same batch.
     #[allow(missing_docs)]
-    error SpendingRecordsNotOwnedBySender(uint256[] srHashes, uint256[] amendmentSrHashes);
+    error InvalidSpendingRecords(
+        uint256[] badOwnerSRs,
+        uint256[] badOwnerARs,
+        uint256[] duplicateSRs,
+        uint256[] duplicateARs,
+    );
 
-    /// `SpendingUnit.SpendingRecordsAlreadyExist(uint256[],
-    /// uint256[])` — one or more SR ids already consumed by a
-    /// previous SU mint (`usedSpendingRecordIds` collision).
+    /// `SpendingUnit.NoSpendingRecords()` — `submit` called with both
+    /// SR and AR arrays empty.
     #[allow(missing_docs)]
-    error SpendingRecordsAlreadyExist(uint256[] srHashes, uint256[] amendmentSrHashes);
+    error NoSpendingRecords();
+
+    /// `SpendingUnit.TooManySpendingRecords()` — either array exceeds
+    /// `MAX_BATCH_SIZE`.
+    #[allow(missing_docs)]
+    error TooManySpendingRecords();
 
     /// `SpendingUnit.InvalidAmount()` — settlement_amount_atto >= 1e18
     /// or base + atto sum overflows the bounded range.
@@ -162,11 +176,17 @@ pub enum PsoContractError {
     /// `TributeDraft.AggregationTierUnavailable(uint256)`. Truncated
     /// to `u32` because every valid tier fits there.
     AggregationTierUnavailable(u32),
-    /// `SpendingUnit.SpendingRecordsNotOwnedBySender(...)`. Both arms
-    /// of the contract's array are surfaced verbatim.
-    SpendingRecordsNotOwnedBySender(Vec<U256>, Vec<U256>),
-    /// `SpendingUnit.SpendingRecordsAlreadyExist(...)`.
-    SpendingRecordsAlreadyExist(Vec<U256>, Vec<U256>),
+    /// `SpendingUnit.InvalidSpendingRecords(...)` — consolidated SR/AR
+    /// validation revert. Fields, in order, are:
+    /// `(bad_owner_srs, bad_owner_ars, duplicate_srs, duplicate_ars)`.
+    /// A fingerprint never lands in both the bad-owner and duplicate
+    /// arms — bad-owner takes priority on the contract side.
+    InvalidSpendingRecords(Vec<U256>, Vec<U256>, Vec<U256>, Vec<U256>),
+    /// `SpendingUnit.NoSpendingRecords` — empty SR and AR arrays.
+    NoSpendingRecords,
+    /// `SpendingUnit.TooManySpendingRecords` — batch exceeds
+    /// `MAX_BATCH_SIZE`.
+    TooManySpendingRecords,
     /// `SpendingUnit.InvalidAmount`.
     InvalidAmount,
     /// `SpendingUnit.SpendingRecordAlreadyExists` (single-shot variant).
@@ -227,12 +247,14 @@ impl std::fmt::Display for PsoContractError {
             PsoContractError::AggregationTierUnavailable(n) => {
                 write!(f, "AggregationTierUnavailable({n})")
             }
-            PsoContractError::SpendingRecordsNotOwnedBySender(s, a) => {
-                write!(f, "SpendingRecordsNotOwnedBySender(sr={s:?}, ar={a:?})")
+            PsoContractError::InvalidSpendingRecords(bad_sr, bad_ar, dup_sr, dup_ar) => {
+                write!(
+                    f,
+                    "InvalidSpendingRecords(bad_sr={bad_sr:?}, bad_ar={bad_ar:?}, dup_sr={dup_sr:?}, dup_ar={dup_ar:?})"
+                )
             }
-            PsoContractError::SpendingRecordsAlreadyExist(s, a) => {
-                write!(f, "SpendingRecordsAlreadyExist(sr={s:?}, ar={a:?})")
-            }
+            PsoContractError::NoSpendingRecords => write!(f, "NoSpendingRecords"),
+            PsoContractError::TooManySpendingRecords => write!(f, "TooManySpendingRecords"),
             PsoContractError::InvalidAmount => write!(f, "InvalidAmount"),
             PsoContractError::SpendingRecordAlreadyExists => {
                 write!(f, "SpendingRecordAlreadyExists")
@@ -362,6 +384,12 @@ pub fn decode_from_bytes(data: &[u8]) -> PsoContractError {
     if selector == InvalidAmount::SELECTOR {
         return PsoContractError::InvalidAmount;
     }
+    if selector == NoSpendingRecords::SELECTOR {
+        return PsoContractError::NoSpendingRecords;
+    }
+    if selector == TooManySpendingRecords::SELECTOR {
+        return PsoContractError::TooManySpendingRecords;
+    }
     if selector == SpendingRecordAlreadyExists::SELECTOR {
         return PsoContractError::SpendingRecordAlreadyExists;
     }
@@ -392,22 +420,20 @@ pub fn decode_from_bytes(data: &[u8]) -> PsoContractError {
             );
         }
     }
-    if selector == SpendingRecordsNotOwnedBySender::SELECTOR {
-        if let Ok(SpendingRecordsNotOwnedBySender {
-            srHashes,
-            amendmentSrHashes,
-        }) = SpendingRecordsNotOwnedBySender::abi_decode_raw(body)
+    if selector == InvalidSpendingRecords::SELECTOR {
+        if let Ok(InvalidSpendingRecords {
+            badOwnerSRs,
+            badOwnerARs,
+            duplicateSRs,
+            duplicateARs,
+        }) = InvalidSpendingRecords::abi_decode_raw(body)
         {
-            return PsoContractError::SpendingRecordsNotOwnedBySender(srHashes, amendmentSrHashes);
-        }
-    }
-    if selector == SpendingRecordsAlreadyExist::SELECTOR {
-        if let Ok(SpendingRecordsAlreadyExist {
-            srHashes,
-            amendmentSrHashes,
-        }) = SpendingRecordsAlreadyExist::abi_decode_raw(body)
-        {
-            return PsoContractError::SpendingRecordsAlreadyExist(srHashes, amendmentSrHashes);
+            return PsoContractError::InvalidSpendingRecords(
+                badOwnerSRs,
+                badOwnerARs,
+                duplicateSRs,
+                duplicateARs,
+            );
         }
     }
     if selector == InvalidMetadata::SELECTOR {

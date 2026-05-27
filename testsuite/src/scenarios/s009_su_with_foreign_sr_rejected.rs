@@ -5,7 +5,7 @@
 //! second SRA via [`TestEnv::register_random_sra`]. SRA#2 then tries
 //! to mint an SU referencing SRA#1's SR. The on-chain
 //! `_validateSenderOwnership` step compares `srSubmittedBy == sender`
-//! and reverts with `SpendingRecordsNotOwnedBySender(...)`.
+//! and reverts with `InvalidSpendingRecords (bad-owner SR)(...)`.
 
 use std::time::Duration;
 
@@ -26,7 +26,7 @@ impl Scenario for S009 {
         "S009"
     }
     fn description(&self) -> &'static str {
-        "SU.submit referencing another SRA's SR reverts with SpendingRecordsNotOwnedBySender"
+        "SU.submit referencing another SRA's SR reverts with InvalidSpendingRecords (bad-owner SR)"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -68,20 +68,24 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         })
         .await
         .err()
-        .ok_or_else(|| eyre::eyre!("S009: expected SpendingRecordsNotOwnedBySender revert"))?;
+        .ok_or_else(|| {
+            eyre::eyre!("S009: expected InvalidSpendingRecords (bad-owner SR) revert")
+        })?;
 
     let typed = into_pso_error(err);
     match &typed {
-        PsoContractError::SpendingRecordsNotOwnedBySender(sr, _) => {
-            if !sr.contains(&sr_id) {
+        // Foreign SR exists but is owned by a different SRA → lands in
+        // the bad-owner SR arm (first field).
+        PsoContractError::InvalidSpendingRecords(bad_srs, _, _, _) => {
+            if !bad_srs.contains(&sr_id) {
                 return Err(eyre::eyre!(
-                    "S009: SR id missing from error payload; got {typed}"
+                    "S009: SR id missing from bad-owner SR slot; got {typed}"
                 ));
             }
             Ok(())
         }
         other => Err(eyre::eyre!(
-            "S009: expected SpendingRecordsNotOwnedBySender, got {other}"
+            "S009: expected InvalidSpendingRecords with bad-owner SR, got {other}"
         )),
     }
 }

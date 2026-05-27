@@ -111,7 +111,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // -----------------------------------------------------------------
     // 2. SRA registers two SRs + one AR per SU. Each SU consumes a
     //    distinct fingerprint set; sharing across SUs would trip the
-    //    `SpendingRecordsAlreadyExist` guard on the second mint.
+    //    `InvalidSpendingRecords` duplicate-SR guard on the second mint.
     // -----------------------------------------------------------------
     const N_SUS: usize = 2;
     let mut sr_ids_per_su: Vec<Vec<U256>> = Vec::with_capacity(N_SUS);
