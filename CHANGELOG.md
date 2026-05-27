@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.10 - 2026-05-27
+#### Bug Fixes
+- (**fmt**) apply rustfmt after settlement-prefix rename - (ac0d02d) - Anton Velichko
+#### Refactoring
+- drop redundant settlement prefix from SU/TD fields - (a5f9361) - Anton Velichko
+
+- - -
+
 ## v0.3.9 - 2026-05-27
 #### Bug Fixes
 - (**integrations**) unify App. A KDF on spec-correct HKDF/ECDH-x - (5f4f407) - Anton Velichko
