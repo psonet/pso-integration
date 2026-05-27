@@ -44,11 +44,11 @@ pub struct SpendingUnitInput {
     /// Provided by the server that generated the SU.
     pub nonce: Vec<u8>,
     /// ISO 4217 currency numeric code (e.g., 978 for EUR).
-    pub settlement_currency: u16,
-    /// Settlement amount integer part.
-    pub settlement_amount_base: u64,
-    /// Settlement amount fractional part (atto).
-    pub settlement_amount_atto: u64,
+    pub currency: u16,
+    /// Amount integer part.
+    pub amount_base: u64,
+    /// Amount fractional part (atto).
+    pub amount_atto: u64,
     /// Worldwide day as "YYYYMMDD" string (e.g., "20260305").
     pub worldwide_day: u32,
     /// Spending record fingerprints, each 32 bytes little-endian.
@@ -65,11 +65,11 @@ pub struct SpendingUnitInput {
 #[derive(uniffi::Record)]
 pub struct TributeInput {
     /// ISO 4217 currency numeric code.
-    pub settlement_currency: u16,
-    /// Settlement amount integer part.
-    pub settlement_amount_base: u64,
-    /// Settlement amount fractional part (atto).
-    pub settlement_amount_atto: u64,
+    pub currency: u16,
+    /// Amount integer part.
+    pub amount_base: u64,
+    /// Amount fractional part (atto).
+    pub amount_atto: u64,
     /// Worldwide day as "YYYYMMDD" string.
     pub worldwide_day: u32,
     /// Spending unit IDs included in this tribute, each 32 bytes little-endian.

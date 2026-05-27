@@ -124,15 +124,15 @@ fn build_generated_output<T: serde::Serialize>(
                 value: ownership.to_string(),
             });
         }
-        if let Some(currency) = obj.get("settlement_currency").and_then(|v| v.as_str()) {
+        if let Some(currency) = obj.get("currency").and_then(|v| v.as_str()) {
             rows.push(KeyValueRow {
-                field: "Settlement Currency".to_string(),
+                field: "Currency".to_string(),
                 value: currency.to_string(),
             });
         }
-        if let Some(base) = obj.get("settlement_base").and_then(|v| v.as_str()) {
+        if let Some(base) = obj.get("amount_base").and_then(|v| v.as_str()) {
             rows.push(KeyValueRow {
-                field: "Settlement Base".to_string(),
+                field: "Amount Base".to_string(),
                 value: base.to_string(),
             });
         }

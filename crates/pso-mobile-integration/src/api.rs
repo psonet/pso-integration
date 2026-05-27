@@ -295,7 +295,7 @@ fn build_spending_unit(
 ) -> Result<pso_nft::SpendingUnit, MobileError> {
     let id = bytes_to_fr(&input.id)?;
     let date = parse_worldwide_day(input.worldwide_day)?;
-    let currency = parse_currency(input.settlement_currency)?;
+    let currency = parse_currency(input.currency)?;
     let sr_fps = bytes_vec_to_fr_vec(&input.spending_records_fingerprints)?;
     let ar_fps = bytes_vec_to_fr_vec(&input.amendment_records_fingerprints)?;
 
@@ -307,9 +307,9 @@ fn build_spending_unit(
     Ok(pso_nft::SpendingUnit {
         id,
         owner: ownership,
-        settlement_currency: currency,
-        settlement_amount_base: input.settlement_amount_base,
-        settlement_amount_atto: input.settlement_amount_atto,
+        currency: currency,
+        amount_base: input.amount_base,
+        amount_atto: input.amount_atto,
         worldwide_day: date,
         spending_records_fingerprints: sr_fps,
         amendment_records_fingerprints: ar_fps,
@@ -323,7 +323,7 @@ fn build_tribute_draft(
     input: &TributeInput,
 ) -> Result<pso_nft::TributeDraft, MobileError> {
     let date = parse_worldwide_day(input.worldwide_day)?;
-    let currency = parse_currency(input.settlement_currency)?;
+    let currency = parse_currency(input.currency)?;
     let su_ids = bytes_vec_to_fr_vec(&input.su_ids)?;
     let wwd = worldwide_day_count(&date);
     let wwd_fr = Fr::from(wwd);
@@ -338,9 +338,9 @@ fn build_tribute_draft(
     Ok(pso_nft::TributeDraft {
         id,
         owner: ownership,
-        settlement_currency: currency,
-        settlement_amount_base: input.settlement_amount_base,
-        settlement_amount_atto: input.settlement_amount_atto,
+        currency: currency,
+        amount_base: input.amount_base,
+        amount_atto: input.amount_atto,
         worldwide_day: date,
         su_ids,
     })
@@ -562,9 +562,9 @@ mod tests {
 
         let nonce_fr = bytes_to_fr(&ownership_result.nonce).unwrap();
         let tribute_input = TributeInput {
-            settlement_currency: 978,
-            settlement_amount_base: 100,
-            settlement_amount_atto: 0,
+            currency: 978,
+            amount_base: 100,
+            amount_atto: 0,
             worldwide_day: 20260305,
             su_ids: vec![],
         };
@@ -584,9 +584,9 @@ mod tests {
         let input = SpendingUnitInput {
             id: fr_to_bytes(&id),
             nonce: fr_to_bytes(&nonce),
-            settlement_currency: 978,
-            settlement_amount_base: 50,
-            settlement_amount_atto: 0,
+            currency: 978,
+            amount_base: 50,
+            amount_atto: 0,
             worldwide_day: 20260305,
             spending_records_fingerprints: vec![],
             amendment_records_fingerprints: vec![],
@@ -594,7 +594,7 @@ mod tests {
 
         let su = build_spending_unit(&sk, nonce, &input).unwrap();
         assert_eq!(su.id, id);
-        assert_eq!(su.settlement_amount_base, 50);
+        assert_eq!(su.amount_base, 50);
     }
 
     #[test]

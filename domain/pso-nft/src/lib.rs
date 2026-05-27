@@ -134,14 +134,14 @@ pub struct TributeDraft {
     /// Ownership hash: `Poseidon5(pk_x_lo, pk_x_hi, pk_y_lo, pk_y_hi, nonce)`
     #[serde(rename = "ownership", with = "serde_helpers::fr_base58")]
     pub owner: Fr,
-    /// ISO 4217 settlement currency
-    pub settlement_currency: Currency,
-    /// Settlement amount integer part
-    #[serde(rename = "settlement_base", with = "serde_helpers::u64_string")]
-    pub settlement_amount_base: u64,
-    /// Settlement amount fractional part
-    #[serde(rename = "settlement_atto", with = "serde_helpers::u64_string")]
-    pub settlement_amount_atto: u64,
+    /// ISO 4217 currency
+    pub currency: Currency,
+    /// Amount integer part
+    #[serde(with = "serde_helpers::u64_string")]
+    pub amount_base: u64,
+    /// Amount fractional part
+    #[serde(with = "serde_helpers::u64_string")]
+    pub amount_atto: u64,
     /// Date for worldwide day computation
     #[serde(with = "serde_helpers::naive_date_yyyymmdd")]
     pub worldwide_day: NaiveDate,
@@ -164,9 +164,9 @@ impl OwnerGenerated for TributeDraft {
     ) -> anyhow::Result<GeneratedNFTData<Self>> {
         let days_shift = rng.gen_range(1..7);
         let worldwide_day = Utc::now().date_naive() - TimeDelta::days(days_shift as i64);
-        let settlement_currency = Currency::EUR;
-        let settlement_amount_base: u64 = rng.gen_range(250..2000);
-        let settlement_amount_atto: u64 = 0;
+        let currency = Currency::EUR;
+        let amount_base: u64 = rng.gen_range(250..2000);
+        let amount_atto: u64 = 0;
 
         let number_of_su_ids: usize = rng.gen_range(2..10);
         let su_ids: Vec<Fr> = (0..number_of_su_ids).map(|_| Fr::rand(&mut *rng)).collect();
@@ -180,9 +180,9 @@ impl OwnerGenerated for TributeDraft {
         let nft = TributeDraft {
             id,
             owner: ownership,
-            settlement_currency,
-            settlement_amount_base,
-            settlement_amount_atto,
+            currency,
+            amount_base,
+            amount_atto,
             worldwide_day,
             su_ids,
         };
@@ -205,9 +205,9 @@ impl HashableNFT for TributeDraft {
     fn hash(&self) -> Result<Fr, pso_protocol::ProtocolError> {
         compute_tribute_draft_hash(
             &self.id,
-            self.settlement_currency.numeric(),
-            self.settlement_amount_base,
-            self.settlement_amount_atto,
+            self.currency.numeric(),
+            self.amount_base,
+            self.amount_atto,
             &self.su_ids,
         )
     }
@@ -227,14 +227,14 @@ pub struct SpendingUnit {
     /// Ownership hash: `Poseidon5(pk_x_lo, pk_x_hi, pk_y_lo, pk_y_hi, nonce)`
     #[serde(rename = "ownership", with = "serde_helpers::fr_base58")]
     pub owner: Fr,
-    /// ISO 4217 settlement currency
-    pub settlement_currency: Currency,
-    /// Settlement amount integer part
-    #[serde(rename = "settlement_base", with = "serde_helpers::u64_string")]
-    pub settlement_amount_base: u64,
-    /// Settlement amount fractional part
-    #[serde(rename = "settlement_atto", with = "serde_helpers::u64_string")]
-    pub settlement_amount_atto: u64,
+    /// ISO 4217 currency
+    pub currency: Currency,
+    /// Amount integer part
+    #[serde(with = "serde_helpers::u64_string")]
+    pub amount_base: u64,
+    /// Amount fractional part
+    #[serde(with = "serde_helpers::u64_string")]
+    pub amount_atto: u64,
     /// Date for worldwide day computation
     #[serde(with = "serde_helpers::naive_date_yyyymmdd")]
     pub worldwide_day: NaiveDate,
@@ -260,9 +260,9 @@ impl OwnerGenerated for SpendingUnit {
     ) -> anyhow::Result<GeneratedNFTData<Self>> {
         let days_shift = rng.gen_range(1..7);
         let worldwide_day = Utc::now().date_naive() - TimeDelta::days(days_shift as i64);
-        let settlement_currency = Currency::EUR;
-        let settlement_amount_base: u64 = rng.gen_range(10..500);
-        let settlement_amount_atto: u64 = 0;
+        let currency = Currency::EUR;
+        let amount_base: u64 = rng.gen_range(10..500);
+        let amount_atto: u64 = 0;
 
         let num_sr: usize = rng.gen_range(1..5);
         let spending_records_fingerprints: Vec<Fr> =
@@ -280,9 +280,9 @@ impl OwnerGenerated for SpendingUnit {
         let nft = SpendingUnit {
             id,
             owner: ownership,
-            settlement_currency,
-            settlement_amount_base,
-            settlement_amount_atto,
+            currency,
+            amount_base,
+            amount_atto,
             worldwide_day,
             spending_records_fingerprints,
             amendment_records_fingerprints,
@@ -310,9 +310,9 @@ impl HashableNFT for SpendingUnit {
             &self.id,
             &self.owner,
             &Fr::from(wwd),
-            self.settlement_currency.numeric(),
-            self.settlement_amount_base,
-            self.settlement_amount_atto,
+            self.currency.numeric(),
+            self.amount_base,
+            self.amount_atto,
             &self.spending_records_fingerprints,
             &self.amendment_records_fingerprints,
         )
@@ -645,16 +645,16 @@ mod tests {
         assert_eq!(data.nft.id, deserialized.id);
         assert_eq!(data.nft.owner, deserialized.owner);
         assert_eq!(
-            data.nft.settlement_currency,
-            deserialized.settlement_currency
+            data.nft.currency,
+            deserialized.currency
         );
         assert_eq!(
-            data.nft.settlement_amount_base,
-            deserialized.settlement_amount_base
+            data.nft.amount_base,
+            deserialized.amount_base
         );
         assert_eq!(
-            data.nft.settlement_amount_atto,
-            deserialized.settlement_amount_atto
+            data.nft.amount_atto,
+            deserialized.amount_atto
         );
         assert_eq!(data.nft.worldwide_day, deserialized.worldwide_day);
         assert_eq!(data.nft.su_ids, deserialized.su_ids);
@@ -671,16 +671,16 @@ mod tests {
         assert_eq!(data.nft.id, deserialized.id);
         assert_eq!(data.nft.owner, deserialized.owner);
         assert_eq!(
-            data.nft.settlement_currency,
-            deserialized.settlement_currency
+            data.nft.currency,
+            deserialized.currency
         );
         assert_eq!(
-            data.nft.settlement_amount_base,
-            deserialized.settlement_amount_base
+            data.nft.amount_base,
+            deserialized.amount_base
         );
         assert_eq!(
-            data.nft.settlement_amount_atto,
-            deserialized.settlement_amount_atto
+            data.nft.amount_atto,
+            deserialized.amount_atto
         );
         assert_eq!(data.nft.worldwide_day, deserialized.worldwide_day);
         assert_eq!(
@@ -707,17 +707,14 @@ mod tests {
             obj.contains_key("ownership"),
             "missing 'ownership' field (renamed from 'owner')"
         );
+        assert!(obj.contains_key("currency"), "missing 'currency' field");
         assert!(
-            obj.contains_key("settlement_currency"),
-            "missing 'settlement_currency' field"
+            obj.contains_key("amount_base"),
+            "missing 'amount_base' field"
         );
         assert!(
-            obj.contains_key("settlement_base"),
-            "missing 'settlement_base' field (renamed)"
-        );
-        assert!(
-            obj.contains_key("settlement_atto"),
-            "missing 'settlement_atto' field (renamed)"
+            obj.contains_key("amount_atto"),
+            "missing 'amount_atto' field"
         );
         assert!(
             obj.contains_key("worldwide_day"),
@@ -725,18 +722,10 @@ mod tests {
         );
         assert!(obj.contains_key("su_ids"), "missing 'su_ids' field");
 
-        // Check field should NOT exist under old names
+        // Check field should NOT exist under old name
         assert!(
             !obj.contains_key("owner"),
             "'owner' should be renamed to 'ownership'"
-        );
-        assert!(
-            !obj.contains_key("settlement_amount_base"),
-            "should be 'settlement_base'"
-        );
-        assert!(
-            !obj.contains_key("settlement_amount_atto"),
-            "should be 'settlement_atto'"
         );
 
         // Check types
@@ -746,16 +735,16 @@ mod tests {
             "ownership should be base58 string"
         );
         assert!(
-            obj["settlement_currency"].is_string(),
+            obj["currency"].is_string(),
             "currency should be ISO3 string"
         );
         assert!(
-            obj["settlement_base"].is_string(),
-            "settlement_base should be string"
+            obj["amount_base"].is_string(),
+            "amount_base should be string"
         );
         assert!(
-            obj["settlement_atto"].is_string(),
-            "settlement_atto should be string"
+            obj["amount_atto"].is_string(),
+            "amount_atto should be string"
         );
         assert!(
             obj["worldwide_day"].is_number(),

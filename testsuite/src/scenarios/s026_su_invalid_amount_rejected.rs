@@ -1,4 +1,4 @@
-//! S026 — `SpendingUnit.submit` rejects `settlement_amount_atto >= 1e18`
+//! S026 — `SpendingUnit.submit` rejects `amount_atto >= 1e18`
 //! with `InvalidAmount()`.
 //!
 //! The contract normalises amounts so the `atto` (fractional) slot
@@ -33,7 +33,7 @@ impl Scenario for S026 {
         "S026"
     }
     fn description(&self) -> &'static str {
-        "SU.submit with settlement_amount_atto >= 1e18 reverts InvalidAmount"
+        "SU.submit with amount_atto >= 1e18 reverts InvalidAmount"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -63,11 +63,11 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: random_id(),
             derived_owner: FixedBytes::from([0u8; 32]),
-            settlement_currency: shape.currency,
+            currency: shape.currency,
             worldwide_day: shape.worldwide_day,
-            settlement_amount_base: shape.settlement_amount_base,
+            amount_base: shape.amount_base,
             // Atto field at the exact threshold — the guard is `>=`.
-            settlement_amount_atto: ONE_BASE_UNIT_IN_ATTO,
+            amount_atto: ONE_BASE_UNIT_IN_ATTO,
             sr_ids: vec![sr_id],
             amendment_sr_ids: vec![],
         })

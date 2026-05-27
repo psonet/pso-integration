@@ -89,13 +89,13 @@ pub struct MintSpendingUnitArgs {
     /// Wallet-supplied Poseidon5 ownership commitment for this SU.
     pub derived_owner: FixedBytes<32>,
     /// ISO 4217 numeric currency code.
-    pub settlement_currency: u16,
+    pub currency: u16,
     /// Worldwide-day count (days since 2021-01-01) — `uint32` slot.
     pub worldwide_day: u32,
-    /// Settlement amount integer part.
-    pub settlement_amount_base: u64,
-    /// Settlement amount fractional part (atto).
-    pub settlement_amount_atto: u128,
+    /// Amount integer part.
+    pub amount_base: u64,
+    /// Amount fractional part (atto).
+    pub amount_atto: u128,
     /// Spending record IDs included in this SU.
     pub sr_ids: Vec<U256>,
     /// Amendment-record IDs.
@@ -115,10 +115,10 @@ pub async fn mint_spending_unit(
         .submit(
             args.su_id,
             args.derived_owner,
-            args.settlement_currency,
+            args.currency,
             args.worldwide_day,
-            args.settlement_amount_base,
-            args.settlement_amount_atto,
+            args.amount_base,
+            args.amount_atto,
             args.sr_ids,
             args.amendment_sr_ids,
         )

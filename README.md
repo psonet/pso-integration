@@ -260,7 +260,7 @@ they exercise:
 | Pool routing | S002 – S006     | Each pool admits only the txs it should: TD never on agents pool, SR/AR/SU never on actor pool without SRA registration. |
 | SBT guards   | S007, S008      | Duplicate SR id → `AlreadyExists`; SR id 0 → `InvalidTokenId`.                 |
 | SU validity  | S009 – S011, S020 | Foreign-SRA SR/AR + never-registered SR + double-spend → `SpendingRecordsNotOwnedBySender` / `SpendingRecordsAlreadyExist`. |
-| TD invariants| S012, S021 – S023 | Empty `suIds`, `NotFound`, `NotSameWorldwideDay`, `NotSettlementCurrencyCurrency`. |
+| TD invariants| S012, S021 – S023 | Empty `suIds`, `NotFound`, `NotSameWorldwideDay`, `NotSameCurrency`. |
 | Envelope tampering | S013 – S017, S031 | Magic prefix, nullifier replay, stale `submitted_block`, bit-flipped VDF proof, bit-flipped VDF output, wrong VDF iteration count `T`. |
 | Aggregation negatives | S018, S019 | `MalformedAggregationProof` (length) + `InvalidAggregationProof` (public-input mismatch). |
 | Contract guards | S025 – S030 | `InvalidMetadata`, `InvalidAmount`, `NotAdmin`, `ZeroAddress`, `InvalidMask`, `SRANotActive`. |

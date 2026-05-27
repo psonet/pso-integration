@@ -53,10 +53,10 @@ pub struct SuMintArgs {
     pub currency: u16,
     /// Worldwide-day count (days since 2021-01-01).
     pub worldwide_day: u32,
-    /// Settlement amount integer part.
-    pub settlement_amount_base: u64,
-    /// Settlement amount fractional part (atto).
-    pub settlement_amount_atto: u128,
+    /// Amount integer part.
+    pub amount_base: u64,
+    /// Amount fractional part (atto).
+    pub amount_atto: u128,
     /// SR ids consumed by this SU.
     pub sr_ids: Vec<U256>,
     /// AR ids (amendments) consumed.
@@ -224,10 +224,10 @@ async fn handle_mint(sra: &SraClient, args: SuMintArgs) -> Result<SuMintReceipt,
     let mint_args = MintSpendingUnitArgs {
         su_id: args.su_id,
         derived_owner: FixedBytes::from(derived_owner_bytes),
-        settlement_currency: args.currency,
+        currency: args.currency,
         worldwide_day: args.worldwide_day,
-        settlement_amount_base: args.settlement_amount_base,
-        settlement_amount_atto: args.settlement_amount_atto,
+        amount_base: args.amount_base,
+        amount_atto: args.amount_atto,
         sr_ids: args.sr_ids,
         amendment_sr_ids: args.amendment_sr_ids,
     };

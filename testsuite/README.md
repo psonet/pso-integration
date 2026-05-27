@@ -84,9 +84,9 @@ guard it exercises.
 | S020  | `SU.submit` referencing another SRA's AR reverts with `InvalidSpendingRecords` (bad-owner AR). |
 | S021  | `TributeDraft.submit` with non-existent `suId` reverts `NotFound`.                       |
 | S022  | `TributeDraft.submit` with SUs on different worldwide_days reverts `NotSameWorldwideDay`.|
-| S023  | `TributeDraft.submit` with SUs in different currencies reverts `NotSettlementCurrencyCurrency`. |
+| S023  | `TributeDraft.submit` with SUs in different currencies reverts `NotSameCurrency`. |
 | S025  | `SR.submit` with mismatched key/value lengths reverts `InvalidMetadata`.                 |
-| S026  | `SU.submit` with `settlement_amount_atto >= 1e18` reverts `InvalidAmount`.               |
+| S026  | `SU.submit` with `amount_atto >= 1e18` reverts `InvalidAmount`.               |
 | S027  | `SRARegistry.register` from a non-admin reverts `NotAdmin`.                              |
 | S028  | `SRARegistry.register(address(0), ...)` reverts `ZeroAddress`.                           |
 | S029  | `SRARegistry.register(addr, 0, ...)` reverts `InvalidMask`.                              |

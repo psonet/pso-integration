@@ -34,10 +34,10 @@ mod tests {
     #[test]
     fn test_key_value_row_fields() {
         let row = KeyValueRow {
-            field: "Settlement Currency".to_string(),
+            field: "Currency".to_string(),
             value: "EUR".to_string(),
         };
-        assert_eq!(row.field, "Settlement Currency");
+        assert_eq!(row.field, "Currency");
         assert_eq!(row.value, "EUR");
     }
 }

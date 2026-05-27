@@ -1,9 +1,9 @@
 //! S023 — `TributeDraft.submit` rejects two SUs that don't share
-//! the same `settlementCurrency`.
+//! the same `currency`.
 //!
-//! `_collectSuTotals` pins `acc.currency = first.settlementCurrency`
+//! `_collectSuTotals` pins `acc.currency = first.currency`
 //! from suIds[0] and asserts every subsequent SU matches. A
-//! mismatch reverts with `NotSettlementCurrencyCurrency()`.
+//! mismatch reverts with `NotSameCurrency()`.
 //!
 //! Approach: mint two SUs with the same worldwide_day but
 //! currencies EUR (978) and USD (840). TD bundles both;
@@ -33,7 +33,7 @@ impl Scenario for S023 {
         "S023"
     }
     fn description(&self) -> &'static str {
-        "TD.submit with SUs in different currencies reverts NotSettlementCurrencyCurrency"
+        "TD.submit with SUs in different currencies reverts NotSameCurrency"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -44,8 +44,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let shape = random_su_args();
     let day = shape.worldwide_day;
 
-    let su_a = mint_su_with(env, EUR, day, shape.settlement_amount_base).await?;
-    let su_b = mint_su_with(env, USD, day, shape.settlement_amount_base).await?;
+    let su_a = mint_su_with(env, EUR, day, shape.amount_base).await?;
+    let su_b = mint_su_with(env, USD, day, shape.amount_base).await?;
     tracing::info!(scenario = "S023", %su_a, %su_b, "minted two SUs in EUR + USD");
 
     let provider = env.sra_zero.inner().write_provider()?;
@@ -64,14 +64,14 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .await
         .err()
         .ok_or_else(|| {
-            eyre::eyre!("S023: expected NotSettlementCurrencyCurrency revert, got success")
+            eyre::eyre!("S023: expected NotSameCurrency revert, got success")
         })?;
 
     let typed = into_pso_error(pso_l2_client::L2ClientError::Contract(format!("{err}")));
     match &typed {
-        PsoContractError::NotSettlementCurrencyCurrency => Ok(()),
+        PsoContractError::NotSameCurrency => Ok(()),
         other => Err(eyre::eyre!(
-            "S023: expected NotSettlementCurrencyCurrency, got {other}"
+            "S023: expected NotSameCurrency, got {other}"
         )),
     }
 }
@@ -106,8 +106,8 @@ async fn mint_su_with(
             consent_pk: consent_sk.public_key(),
             currency,
             worldwide_day,
-            settlement_amount_base: base,
-            settlement_amount_atto: 0,
+            amount_base: base,
+            amount_atto: 0,
             sr_ids: vec![sr_id],
             amendment_sr_ids: vec![],
         })

@@ -49,19 +49,19 @@ pub fn random_secret_key() -> [u8; 32] {
 
 /// Shape the scenarios use when constructing a `MintSpendingUnitArgs`.
 /// All fields are post-validation: `worldwide_day` fits a `u32`,
-/// `settlement_currency` is ISO-4217 numeric, etc.
+/// `currency` is ISO-4217 numeric, etc.
 #[derive(Debug, Clone)]
 pub struct SuTemplate {
     /// ISO 4217 numeric currency code.
     pub currency: u16,
     /// Worldwide-day count (days since 2021-01-01).
     pub worldwide_day: u32,
-    /// Settlement amount integer part.
-    pub settlement_amount_base: u64,
-    /// Settlement amount fractional part (atto). Always 0 in
+    /// Amount integer part.
+    pub amount_base: u64,
+    /// Amount fractional part (atto). Always 0 in
     /// scenario inputs — the on-chain side handles u128 but
     /// nothing in the suite needs sub-base precision.
-    pub settlement_amount_atto: u128,
+    pub amount_atto: u128,
     /// How many SR ids the SU should consume.
     pub sr_count: usize,
     /// How many AR ids the SU should consume.
@@ -83,8 +83,8 @@ pub fn random_su_args() -> SuTemplate {
     SuTemplate {
         currency: Currency::EUR.numeric(),
         worldwide_day: worldwide_day(&wwd_date),
-        settlement_amount_base: rng.gen_range(10..500),
-        settlement_amount_atto: 0,
+        amount_base: rng.gen_range(10..500),
+        amount_atto: 0,
         sr_count: rng.gen_range(1..5),
         ar_count: rng.gen_range(0..3),
     }
@@ -101,8 +101,8 @@ pub fn random_td_args() -> SuTemplate {
     SuTemplate {
         currency: Currency::EUR.numeric(),
         worldwide_day: worldwide_day(&wwd_date),
-        settlement_amount_base: rng.gen_range(250..2000),
-        settlement_amount_atto: 0,
+        amount_base: rng.gen_range(250..2000),
+        amount_atto: 0,
         sr_count: 0,
         ar_count: 0,
     }

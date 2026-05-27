@@ -36,10 +36,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let call = ISpendingUnit::submitCall {
         suId: su_id,
         derivedOwner: FixedBytes::from([0u8; 32]),
-        settlementCurrency: shape.currency,
+        currency: shape.currency,
         worldwideDay: shape.worldwide_day,
-        settlementAmountBase: shape.settlement_amount_base,
-        settlementAmountAtto: shape.settlement_amount_atto,
+        amountBase: shape.amount_base,
+        amountAtto: shape.amount_atto,
         srIds: vec![random_id()],
         amendmentSrIds: vec![],
     };

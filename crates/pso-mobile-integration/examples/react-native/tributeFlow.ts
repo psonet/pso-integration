@@ -38,9 +38,9 @@ declare const PsoMobileIntegration: import("./types").PsoMobileIntegrationInterf
 interface SraSpendingUnitResponse {
   id: string; // hex-encoded 32 bytes
   nonce: string; // hex-encoded 32 bytes
-  settlementCurrency: number;
-  settlementAmountBase: number;
-  settlementAmountAtto: number;
+  currency: number;
+  amountBase: number;
+  amountAtto: number;
   worldwideDay: number;
   spendingRecordsFingerprints: string[];
   amendmentRecordsFingerprints: string[];
@@ -67,9 +67,9 @@ function mapSraResponse(resp: SraSpendingUnitResponse): SpendingUnitInput {
   return {
     id: hexToBytes(resp.id),
     nonce: hexToBytes(resp.nonce),
-    settlementCurrency: resp.settlementCurrency,
-    settlementAmountBase: resp.settlementAmountBase,
-    settlementAmountAtto: resp.settlementAmountAtto,
+    currency: resp.currency,
+    amountBase: resp.amountBase,
+    amountAtto: resp.amountAtto,
     worldwideDay: resp.worldwideDay,
     spendingRecordsFingerprints: resp.spendingRecordsFingerprints.map(hexToBytes),
     amendmentRecordsFingerprints: resp.amendmentRecordsFingerprints.map(hexToBytes),
@@ -202,9 +202,9 @@ export async function runFullTributeFlow(
   secretKey: Uint8Array,
   sraSpendingUnits: SraSpendingUnitResponse[],
   worldwideDay: number,
-  settlementCurrency: number,
-  settlementAmountBase: number,
-  settlementAmountAtto: number,
+  currency: number,
+  amountBase: number,
+  amountAtto: number,
 ): Promise<{ tributeDraftId: Uint8Array; fullProof: ProofResult }> {
   // Step 1: Map SRA responses to native inputs
   const spendingUnits = sraSpendingUnits.map(mapSraResponse);
@@ -228,9 +228,9 @@ export async function runFullTributeFlow(
 
   // Step 6: Generate full proof
   const tributeInput: TributeInput = {
-    settlementCurrency,
-    settlementAmountBase,
-    settlementAmountAtto,
+    currency,
+    amountBase,
+    amountAtto,
     worldwideDay,
     suIds: spendingUnits.map((su) => su.id),
   };
