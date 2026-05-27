@@ -1,6 +1,8 @@
 # SU-Ownership Aggregation: Spec-Correct Redesign
 
-**Status:** open. Captures the architectural correction after review
+**Status:** closed (2026-05-26). Implementation landed across pso-integration / pso-zk-circuits / pso-protocol / pso-chain during the 0.3.x major-bump cycle that also drove the T-0020 signing rollout. See vault task T-0016 for the closure log. The aggregation tier set chosen was **flat** (`pso-flat-aggregation-circuit-n{1,2,4,8,16,32,64}`) — N copies of the ownership constraint set inline — not the recursive `std::verify_proof` shape this doc proposed; the open design question on tier sizing landed on the simpler choice. Phase 2 (post-mint TD ownership proof for L1 redemption) is deferred until L1 redemption tooling lands; it reuses the same circuit so no further circuit work is needed.
+
+**Original status:** open. Captures the architectural correction after review
 against `Privacy-Preserving L2 Architecture.pdf` (rev as of session
 2026-05). Implementation lands in stages across three repos.
 
