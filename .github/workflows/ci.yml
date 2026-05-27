@@ -25,18 +25,19 @@ name: ci
 #   - push: branches: [main]      Full pipeline. check + unit + image +
 #                                 tag (cog auto-bump) and, if cog made
 #                                 a tag, the release-* jobs.
-#   - pull_request (paths)        check + unit and, when the diff
-#                                 touches the build paths, the
-#                                 mobile/sra build jobs too — so the
-#                                 release pipeline gets exercised
-#                                 pre-merge. Previously the build
-#                                 jobs were release-gated only, which
-#                                 burned 3 ghost tags (v0.3.2 / v0.3.3
-#                                 / v0.3.4) on build-time issues that
-#                                 could've been caught on a PR. The
-#                                 paths filter scopes this so most PRs
-#                                 still skip the heavy mobile cross
-#                                 builds.
+#   - pull_request                check + unit only — cargo fmt
+#                                 --check, cargo check --workspace,
+#                                 and the test suite, on EVERY PR to
+#                                 main. No version bump and no
+#                                 artifact/image assembly run
+#                                 pre-merge; those are main-push /
+#                                 tag-only paths. Note `cargo check
+#                                 --workspace --tests` still compiles
+#                                 the mobile/sra crates on the host
+#                                 target, so non-cross build breakage
+#                                 is caught here — only the cross /
+#                                 packaging (iOS/Android/JAR) steps
+#                                 are deferred to the release path.
 #   - push: tags: ["v*"]          Manual tag push. Skip
 #                                 check/unit/image/tag — re-run the
 #                                 release pipeline against the tag.
@@ -52,10 +53,6 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
-    paths:
-      - 'crates/pso-sra-integration/**'
-      - 'crates/pso-mobile-integration/**'
-      - '.github/workflows/ci.yml'
   workflow_dispatch:
     inputs:
       tag:
@@ -237,20 +234,17 @@ jobs:
   release-binaries:
     name: Build ${{ matrix.label }} binary
     needs: [resolve, tag]
-    # Three entry paths:
+    # Two entry paths:
     #   - the `tag` job (main push) bumped and emitted outputs.tag
     #   - the `resolve` job set release_tag (manual tag push /
     #     workflow_dispatch). `tag` was skipped in this case.
-    #   - `pull_request` event whose diff matched the workflow's
-    #     `on: pull_request.paths` filter — runs the build pre-merge
-    #     so we don't burn another ghost tag on a build-time issue.
     # `always()` lets us combine the conditions even when `tag`
-    # was skipped.
+    # was skipped. PRs deliberately do NOT run this — pre-merge CI
+    # is fmt + check + test only (see the `on:` header).
     if: |
       always() &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '' ||
-       github.event_name == 'pull_request')
+       needs.resolve.outputs.release_tag != '')
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -332,8 +326,7 @@ jobs:
     if: |
       always() &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '' ||
-       github.event_name == 'pull_request')
+       needs.resolve.outputs.release_tag != '')
     runs-on: macos-latest
     continue-on-error: true
     strategy:
@@ -391,8 +384,7 @@ jobs:
     if: |
       always() &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '' ||
-       github.event_name == 'pull_request')
+       needs.resolve.outputs.release_tag != '')
     runs-on: ubuntu-latest
     continue-on-error: true
     strategy:
@@ -556,8 +548,7 @@ jobs:
     if: |
       always() &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '' ||
-       github.event_name == 'pull_request')
+       needs.resolve.outputs.release_tag != '')
     runs-on: ${{ matrix.runner }}
     strategy:
       # Linux + macOS only — Windows dropped per T-0019 brief
@@ -630,8 +621,7 @@ jobs:
     if: |
       always() &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '' ||
-       github.event_name == 'pull_request')
+       needs.resolve.outputs.release_tag != '')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -679,8 +669,7 @@ jobs:
       always() &&
       needs.build-sra-native-darwin.result == 'success' &&
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
-       needs.resolve.outputs.release_tag != '' ||
-       github.event_name == 'pull_request')
+       needs.resolve.outputs.release_tag != '')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
