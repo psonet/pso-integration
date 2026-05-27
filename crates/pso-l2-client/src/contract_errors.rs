@@ -79,10 +79,10 @@ sol! {
     #[allow(missing_docs)]
     error NotSameWorldwideDay();
 
-    /// `TributeDraft.NotSettlementCurrencyCurrency()` — SUs in a
-    /// single TD use different settlement currencies.
+    /// `TributeDraft.NotSameCurrency()` — SUs in a
+    /// single TD use different currencies.
     #[allow(missing_docs)]
-    error NotSettlementCurrencyCurrency();
+    error NotSameCurrency();
 
     /// `TributeDraft.AggregationTierUnavailable(uint256)` — no
     /// flat-aggregation tier covers `n_su` (must be 1..=64).
@@ -115,7 +115,7 @@ sol! {
     #[allow(missing_docs)]
     error TooManySpendingRecords();
 
-    /// `SpendingUnit.InvalidAmount()` — settlement_amount_atto >= 1e18
+    /// `SpendingUnit.InvalidAmount()` — amount_atto >= 1e18
     /// or base + atto sum overflows the bounded range.
     #[allow(missing_docs)]
     error InvalidAmount();
@@ -171,8 +171,8 @@ pub enum PsoContractError {
     InvalidAggregationProof,
     /// `TributeDraft.NotSameWorldwideDay`.
     NotSameWorldwideDay,
-    /// `TributeDraft.NotSettlementCurrencyCurrency`.
-    NotSettlementCurrencyCurrency,
+    /// `TributeDraft.NotSameCurrency`.
+    NotSameCurrency,
     /// `TributeDraft.AggregationTierUnavailable(uint256)`. Truncated
     /// to `u32` because every valid tier fits there.
     AggregationTierUnavailable(u32),
@@ -241,8 +241,8 @@ impl std::fmt::Display for PsoContractError {
             PsoContractError::MalformedAggregationProof => write!(f, "MalformedAggregationProof"),
             PsoContractError::InvalidAggregationProof => write!(f, "InvalidAggregationProof"),
             PsoContractError::NotSameWorldwideDay => write!(f, "NotSameWorldwideDay"),
-            PsoContractError::NotSettlementCurrencyCurrency => {
-                write!(f, "NotSettlementCurrencyCurrency")
+            PsoContractError::NotSameCurrency => {
+                write!(f, "NotSameCurrency")
             }
             PsoContractError::AggregationTierUnavailable(n) => {
                 write!(f, "AggregationTierUnavailable({n})")
@@ -378,8 +378,8 @@ pub fn decode_from_bytes(data: &[u8]) -> PsoContractError {
     if selector == NotSameWorldwideDay::SELECTOR {
         return PsoContractError::NotSameWorldwideDay;
     }
-    if selector == NotSettlementCurrencyCurrency::SELECTOR {
-        return PsoContractError::NotSettlementCurrencyCurrency;
+    if selector == NotSameCurrency::SELECTOR {
+        return PsoContractError::NotSameCurrency;
     }
     if selector == InvalidAmount::SELECTOR {
         return PsoContractError::InvalidAmount;

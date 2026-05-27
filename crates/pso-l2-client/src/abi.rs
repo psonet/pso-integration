@@ -69,20 +69,20 @@ alloy::sol! {
             address indexed submitter,
             uint256 indexed id,
             bytes32 derivedOwner,
-            uint16 settlementCurrency,
+            uint16 currency,
             uint32 worldwideDay,
-            uint64 settlementAmountBase,
-            uint128 settlementAmountAtto,
+            uint64 amountBase,
+            uint128 amountAtto,
             uint256[] srIds,
             uint256[] amendmentSrIds
         );
         function submit(
             uint256 suId,
             bytes32 derivedOwner,
-            uint16 settlementCurrency,
+            uint16 currency,
             uint32 worldwideDay,
-            uint64 settlementAmountBase,
-            uint128 settlementAmountAtto,
+            uint64 amountBase,
+            uint128 amountAtto,
             uint256[] memory srIds,
             uint256[] memory amendmentSrIds
         ) external;
@@ -96,9 +96,9 @@ alloy::sol! {
             bytes32 derivedOwner,
             uint256 indexed tributeDraftId,
             uint32 worldwideDay,
-            uint64 settlementAmountBase,
-            uint128 settlementAmountAtto,
-            uint16 settlementCurrency,
+            uint64 amountBase,
+            uint128 amountAtto,
+            uint16 currency,
             uint256[] suIds
         );
         function submit(

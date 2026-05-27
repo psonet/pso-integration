@@ -57,10 +57,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: su1_id,
             derived_owner: FixedBytes::from([0u8; 32]),
-            settlement_currency: shape.currency,
+            currency: shape.currency,
             worldwide_day: shape.worldwide_day,
-            settlement_amount_base: shape.settlement_amount_base,
-            settlement_amount_atto: 0,
+            amount_base: shape.amount_base,
+            amount_atto: 0,
             sr_ids: vec![sr_id],
             amendment_sr_ids: vec![],
         })
@@ -78,10 +78,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: su2_id,
             derived_owner: FixedBytes::from([0u8; 32]),
-            settlement_currency: shape.currency,
+            currency: shape.currency,
             worldwide_day: shape.worldwide_day,
-            settlement_amount_base: shape.settlement_amount_base,
-            settlement_amount_atto: 0,
+            amount_base: shape.amount_base,
+            amount_atto: 0,
             sr_ids: vec![sr_id],
             amendment_sr_ids: vec![],
         })

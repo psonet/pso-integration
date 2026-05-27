@@ -24,11 +24,11 @@ export interface SpendingUnitInput {
   /** Nonce for this SU's ownership (32 bytes). Server-provided. */
   nonce: Uint8Array;
   /** ISO 4217 currency numeric code (e.g., 978 for EUR). */
-  settlementCurrency: number;
-  /** Settlement amount integer part. */
-  settlementAmountBase: number;
-  /** Settlement amount fractional part (atto). */
-  settlementAmountAtto: number;
+  currency: number;
+  /** Amount integer part. */
+  amountBase: number;
+  /** Amount fractional part (atto). */
+  amountAtto: number;
   /** Worldwide day as YYYYMMDD number (e.g., 20260305). */
   worldwideDay: number;
   /** Spending record fingerprints, each 32 bytes. */
@@ -40,11 +40,11 @@ export interface SpendingUnitInput {
 /** Input data for a TributeDraft (client-constructed). */
 export interface TributeInput {
   /** ISO 4217 currency numeric code. */
-  settlementCurrency: number;
-  /** Settlement amount integer part. */
-  settlementAmountBase: number;
-  /** Settlement amount fractional part (atto). */
-  settlementAmountAtto: number;
+  currency: number;
+  /** Amount integer part. */
+  amountBase: number;
+  /** Amount fractional part (atto). */
+  amountAtto: number;
   /** Worldwide day as YYYYMMDD number. */
   worldwideDay: number;
   /** Spending unit IDs included in this tribute, each 32 bytes. */

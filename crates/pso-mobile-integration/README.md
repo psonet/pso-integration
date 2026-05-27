@@ -30,7 +30,7 @@ SRA server, an on-chain smart contract, and a destination blockchain:
 
 1. **SRA generates SpendingUnits** — the server creates SU NFTs and
    sends back to the client all data needed to reconstruct ownership
-   (nonce, key derivation material, settlement data).
+   (nonce, key derivation material, currency and amount data).
 
 2. **Client proves SU ownership** — for each SpendingUnit, the client
    calls `prove_spending_unit_ownership` to generate a ZK proof that

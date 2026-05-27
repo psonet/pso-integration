@@ -109,8 +109,8 @@ async fn mint_one_su(env: &TestEnv) -> eyre::Result<U256> {
         consent_pk,
         currency: shape.currency,
         worldwide_day: shape.worldwide_day,
-        settlement_amount_base: shape.settlement_amount_base,
-        settlement_amount_atto: shape.settlement_amount_atto,
+        amount_base: shape.amount_base,
+        amount_atto: shape.amount_atto,
         sr_ids: vec![sr_id],
         amendment_sr_ids: vec![],
     };

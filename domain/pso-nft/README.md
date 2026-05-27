@@ -6,15 +6,15 @@ Domain-specific NFT types with `OwnableNFT` and `HashableNFT` trait implementati
 
 ### TributeDraft
 
-Represents a tribute draft with settlement data and spending unit references.
+Represents a tribute draft with currency and amount data and spending unit references.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `Fr` | Entity ID: `Poseidon2(owner, worldwide_day_count)` |
 | `owner` | `Fr` | Ownership hash: `Poseidon5(pk_x_lo, pk_x_hi, pk_y_lo, pk_y_hi, nonce)` |
-| `settlement_currency` | `Currency` | ISO 4217 currency |
-| `settlement_amount_base` | `u64` | Settlement amount integer part |
-| `settlement_amount_atto` | `u64` | Settlement amount fractional part |
+| `currency` | `Currency` | ISO 4217 currency |
+| `amount_base` | `u64` | Amount integer part |
+| `amount_atto` | `u64` | Amount fractional part |
 | `worldwide_day` | `NaiveDate` | Date for worldwide day computation |
 | `su_ids` | `Vec<Fr>` | Spending unit IDs included in this tribute draft |
 
@@ -26,9 +26,9 @@ Represents a spending unit with record fingerprints.
 |-------|------|-------------|
 | `id` | `Fr` | Random unique identifier |
 | `owner` | `Fr` | Ownership hash: `Poseidon5(pk_x_lo, pk_x_hi, pk_y_lo, pk_y_hi, nonce)` |
-| `settlement_currency` | `Currency` | ISO 4217 currency |
-| `settlement_amount_base` | `u64` | Settlement amount integer part |
-| `settlement_amount_atto` | `u64` | Settlement amount fractional part |
+| `currency` | `Currency` | ISO 4217 currency |
+| `amount_base` | `u64` | Amount integer part |
+| `amount_atto` | `u64` | Amount fractional part |
 | `worldwide_day` | `NaiveDate` | Date for worldwide day computation |
 | `spending_records_fingerprints` | `Vec<Fr>` | Fingerprints of spending records |
 | `amendment_records_fingerprints` | `Vec<Fr>` | Fingerprints of amendment records |
@@ -49,8 +49,8 @@ Where `worldwide_day_count` is the number of days since 2021-01-01.
 
 ```text
 result = Poseidon2(id, currency_numeric)
-result = Poseidon2(result, settlement_amount_base)
-result = Poseidon2(result, settlement_amount_atto)
+result = Poseidon2(result, amount_base)
+result = Poseidon2(result, amount_atto)
 for each su_id in su_ids:
     result = Poseidon2(result, su_id)
 ```
@@ -63,8 +63,8 @@ Where `currency_numeric` is the ISO 4217 numeric code (e.g., EUR = 978).
 result = Poseidon2(id, owner)
 result = Poseidon2(result, worldwide_day_count)
 result = Poseidon2(result, currency_numeric)
-result = Poseidon2(result, settlement_amount_base)
-result = Poseidon2(result, settlement_amount_atto)
+result = Poseidon2(result, amount_base)
+result = Poseidon2(result, amount_atto)
 for each sr in spending_records_fingerprints:
     result = Poseidon2(result, sr)
 for each ar in amendment_records_fingerprints:
@@ -91,9 +91,9 @@ Both NFT types implement custom `Serialize` / `Deserialize` with specific field 
 |-------------|-----------|--------|
 | `id: Fr` | `id` | Base58 of little-endian bytes |
 | `owner: Fr` | `ownership` | Base58 of little-endian bytes |
-| `settlement_currency` | `settlement_currency` | ISO 4217 3-letter code (e.g., `"EUR"`) |
-| `settlement_amount_base` | `settlement_base` | String (e.g., `"1234"`) |
-| `settlement_amount_atto` | `settlement_atto` | String (e.g., `"0"`) |
+| `currency` | `currency` | ISO 4217 3-letter code (e.g., `"EUR"`) |
+| `amount_base` | `amount_base` | String (e.g., `"1234"`) |
+| `amount_atto` | `amount_atto` | String (e.g., `"0"`) |
 | `worldwide_day` | `worldwide_day` | YYYYMMDD numeric (e.g., `20260305`) |
 | `su_ids: Vec<Fr>` | `su_ids` | Array of Base58 strings |
 | `spending_records_fingerprints` | `spending_records_fingerprints` | Array of Base58 strings |
@@ -105,9 +105,9 @@ Both NFT types implement custom `Serialize` / `Deserialize` with specific field 
 {
   "id": "<base58>",
   "ownership": "<base58>",
-  "settlement_currency": "EUR",
-  "settlement_base": "1234",
-  "settlement_atto": "0",
+  "currency": "EUR",
+  "amount_base": "1234",
+  "amount_atto": "0",
   "worldwide_day": 20260305,
   "su_ids": ["<base58>", "..."]
 }
@@ -119,9 +119,9 @@ Both NFT types implement custom `Serialize` / `Deserialize` with specific field 
 {
   "id": "<base58>",
   "ownership": "<base58>",
-  "settlement_currency": "EUR",
-  "settlement_base": "100",
-  "settlement_atto": "0",
+  "currency": "EUR",
+  "amount_base": "100",
+  "amount_atto": "0",
   "worldwide_day": 20260305,
   "spending_records_fingerprints": ["<base58>", "..."],
   "amendment_records_fingerprints": ["<base58>", "..."]
@@ -130,7 +130,7 @@ Both NFT types implement custom `Serialize` / `Deserialize` with specific field 
 
 ## Contents
 
-- **`TributeDraft`** -- tribute draft NFT with settlement data and spending unit IDs
+- **`TributeDraft`** -- tribute draft NFT with currency and amount data and spending unit IDs
 - **`SpendingUnit`** -- spending unit NFT with record fingerprints
 - **`Owner`** -- wrapper around secp256k1 key pair
 - **`GeneratedNFTData<T>`** -- bundles an NFT with auxiliary test data (owner keys, nonce)

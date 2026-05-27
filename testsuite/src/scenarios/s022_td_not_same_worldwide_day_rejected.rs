@@ -42,8 +42,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let day_a = shape.worldwide_day;
     let day_b = day_a.saturating_add(1);
 
-    let su_a = mint_su_with(env, shape.currency, day_a, shape.settlement_amount_base).await?;
-    let su_b = mint_su_with(env, shape.currency, day_b, shape.settlement_amount_base).await?;
+    let su_a = mint_su_with(env, shape.currency, day_a, shape.amount_base).await?;
+    let su_b = mint_su_with(env, shape.currency, day_b, shape.amount_base).await?;
     tracing::info!(scenario = "S022", %su_a, %su_b, day_a, day_b, "minted two SUs on different days");
 
     let provider = env.sra_zero.inner().write_provider()?;
@@ -102,8 +102,8 @@ async fn mint_su_with(
             consent_pk: consent_sk.public_key(),
             currency,
             worldwide_day,
-            settlement_amount_base: base,
-            settlement_amount_atto: 0,
+            amount_base: base,
+            amount_atto: 0,
             sr_ids: vec![sr_id],
             amendment_sr_ids: vec![],
         })

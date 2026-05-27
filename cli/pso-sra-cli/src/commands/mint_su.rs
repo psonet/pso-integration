@@ -18,10 +18,10 @@ pub struct Args {
     /// Worldwide-day count (days since 2021-01-01).
     #[arg(long)]
     pub worldwide_day: u32,
-    /// Settlement amount integer part.
+    /// Amount integer part.
     #[arg(long)]
     pub amount_base: u64,
-    /// Settlement amount fractional part (atto, uint128).
+    /// Amount fractional part (atto, uint128).
     #[arg(long, default_value_t = 0)]
     pub amount_atto: u128,
     /// Comma-separated SR ids backing this SU (hex `0x...`).
@@ -36,10 +36,10 @@ pub async fn run(client: &L2Client, args: Args) -> Result<()> {
     let mint_args = pso_l2_client::sra::MintSpendingUnitArgs {
         su_id: super::parse_uint256(&args.su_id)?,
         derived_owner: super::parse_b32(&args.derived_owner)?,
-        settlement_currency: args.currency,
+        currency: args.currency,
         worldwide_day: args.worldwide_day,
-        settlement_amount_base: args.amount_base,
-        settlement_amount_atto: args.amount_atto,
+        amount_base: args.amount_base,
+        amount_atto: args.amount_atto,
         sr_ids: super::parse_uint256_list(&args.sr_ids)?,
         amendment_sr_ids: super::parse_uint256_list(&args.amendment_sr_ids)?,
     };

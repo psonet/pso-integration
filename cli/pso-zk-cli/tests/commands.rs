@@ -74,7 +74,7 @@ fn test_generated_output_nft_field_deserializes_as_tribute_draft() {
     let tribute: TributeDraft =
         serde_json::from_value(output.nft).expect("nft field must deserialize as TributeDraft");
 
-    // Basic sanity: the settlement_currency should be a known currency string.
+    // Basic sanity: the currency should be a known currency string.
     // The TributeDraft fields id and owner are BN254 field elements so just
     // check they round-trip through the JSON format (non-empty base58 strings).
     let json_value = serde_json::to_value(&tribute).expect("re-serialize");

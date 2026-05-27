@@ -65,9 +65,9 @@ alloy::sol! {
         address submittedBy;
         uint256 submittedAt;
         uint32  worldwideDay;
-        uint64  settlementAmountBase;
-        uint128 settlementAmountAtto;
-        uint16  settlementCurrency;
+        uint64  amountBase;
+        uint128 amountAtto;
+        uint16  currency;
         uint256[] srHashes;
         uint256[] amendmentSrHashes;
     }
@@ -82,10 +82,10 @@ alloy::sol! {
     struct TributeDraftEntity {
         uint256 tdId;
         bytes32 derivedOwner;
-        uint16  settlementCurrency;
+        uint16  currency;
         uint32  worldwideDay;
-        uint64  settlementAmountBase;
-        uint128 settlementAmountAtto;
+        uint64  amountBase;
+        uint128 amountAtto;
         uint256[] suHashes;
         uint256 createdAt;
     }
@@ -186,8 +186,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         su_nonce: [u8; 32],
         currency: u16,
         worldwide_day: u32,
-        settlement_amount_base: u64,
-        settlement_amount_atto: u128,
+        amount_base: u64,
+        amount_atto: u128,
         sr_ids: Vec<U256>,
         amendment_sr_ids: Vec<U256>,
     }
@@ -195,7 +195,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
     // Pin currency + worldwide_day across the two SUs — TD.submit
     // enforces uniformity (`NotSameWorldwideDay` /
-    // `NotSettlementCurrencyCurrency` otherwise).
+    // `NotSameCurrency` otherwise).
     let shared_shape = random_su_args();
     for i in 0..N_SUS {
         let su_id = random_id();
@@ -204,8 +204,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             consent_pk: consent_pk.clone(),
             currency: shared_shape.currency,
             worldwide_day: shared_shape.worldwide_day,
-            settlement_amount_base: 100 + (i as u64 * 10),
-            settlement_amount_atto: 0,
+            amount_base: 100 + (i as u64 * 10),
+            amount_atto: 0,
             sr_ids: sr_ids_per_su[i].clone(),
             amendment_sr_ids: ar_ids_per_su[i].clone(),
         };
@@ -216,8 +216,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             su_nonce: r.su_nonce,
             currency: args.currency,
             worldwide_day: args.worldwide_day,
-            settlement_amount_base: args.settlement_amount_base,
-            settlement_amount_atto: args.settlement_amount_atto,
+            amount_base: args.amount_base,
+            amount_atto: args.amount_atto,
             sr_ids: args.sr_ids,
             amendment_sr_ids: args.amendment_sr_ids,
         });
@@ -272,8 +272,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             &owner_fr,
             u64::from(r.worldwide_day),
             r.currency,
-            r.settlement_amount_base,
-            r.settlement_amount_atto as u64,
+            r.amount_base,
+            r.amount_atto as u64,
             &sr_fps,
             &ar_fps,
         )
