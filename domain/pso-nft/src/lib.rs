@@ -644,18 +644,9 @@ mod tests {
 
         assert_eq!(data.nft.id, deserialized.id);
         assert_eq!(data.nft.owner, deserialized.owner);
-        assert_eq!(
-            data.nft.currency,
-            deserialized.currency
-        );
-        assert_eq!(
-            data.nft.amount_base,
-            deserialized.amount_base
-        );
-        assert_eq!(
-            data.nft.amount_atto,
-            deserialized.amount_atto
-        );
+        assert_eq!(data.nft.currency, deserialized.currency);
+        assert_eq!(data.nft.amount_base, deserialized.amount_base);
+        assert_eq!(data.nft.amount_atto, deserialized.amount_atto);
         assert_eq!(data.nft.worldwide_day, deserialized.worldwide_day);
         assert_eq!(data.nft.su_ids, deserialized.su_ids);
     }
@@ -670,18 +661,9 @@ mod tests {
 
         assert_eq!(data.nft.id, deserialized.id);
         assert_eq!(data.nft.owner, deserialized.owner);
-        assert_eq!(
-            data.nft.currency,
-            deserialized.currency
-        );
-        assert_eq!(
-            data.nft.amount_base,
-            deserialized.amount_base
-        );
-        assert_eq!(
-            data.nft.amount_atto,
-            deserialized.amount_atto
-        );
+        assert_eq!(data.nft.currency, deserialized.currency);
+        assert_eq!(data.nft.amount_base, deserialized.amount_base);
+        assert_eq!(data.nft.amount_atto, deserialized.amount_atto);
         assert_eq!(data.nft.worldwide_day, deserialized.worldwide_day);
         assert_eq!(
             data.nft.spending_records_fingerprints,

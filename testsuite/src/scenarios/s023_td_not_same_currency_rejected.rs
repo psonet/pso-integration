@@ -63,16 +63,12 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .send()
         .await
         .err()
-        .ok_or_else(|| {
-            eyre::eyre!("S023: expected NotSameCurrency revert, got success")
-        })?;
+        .ok_or_else(|| eyre::eyre!("S023: expected NotSameCurrency revert, got success"))?;
 
     let typed = into_pso_error(pso_l2_client::L2ClientError::Contract(format!("{err}")));
     match &typed {
         PsoContractError::NotSameCurrency => Ok(()),
-        other => Err(eyre::eyre!(
-            "S023: expected NotSameCurrency, got {other}"
-        )),
+        other => Err(eyre::eyre!("S023: expected NotSameCurrency, got {other}")),
     }
 }
 
