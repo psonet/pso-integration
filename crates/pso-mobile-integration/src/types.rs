@@ -26,6 +26,28 @@ pub struct NftKeypair {
     pub pk: Vec<u8>,
 }
 
+/// A freshly generated Grumpkin keypair for the tribute flow.
+///
+/// Returned by [`generate_tribute_key`](crate::api::generate_tribute_key).
+/// The client stores `secret_key` and passes it back into
+/// [`compute_tribute_ownership`](crate::api::compute_tribute_ownership)
+/// and the `prove_tribute_*` functions; `public_key` is exposed so the
+/// client can display or cross-check the Grumpkin point (the proof
+/// functions re-derive it internally, so it never has to be sent back).
+#[derive(uniffi::Record)]
+pub struct TributeKeypair {
+    /// 32-byte Grumpkin secret key, big-endian. Guaranteed to be a
+    /// non-zero scalar `< q_Grumpkin`, so it always passes the
+    /// `compute_tribute_ownership` / `prove_tribute_*` range gate and
+    /// never trips the barretenberg out-of-range abort.
+    pub secret_key: Vec<u8>,
+    /// 64-byte Grumpkin public key, layout `pk_x_be || pk_y_be` — the
+    /// same encoding [`derive_nft_keypair`](crate::api::derive_nft_keypair)
+    /// and [`schnorr_verify_grumpkin`](crate::schnorr_verify_grumpkin)
+    /// use.
+    pub public_key: Vec<u8>,
+}
+
 /// Result of generating a ZK proof.
 #[derive(Debug, uniffi::Record)]
 pub struct ProofResult {
@@ -178,6 +200,9 @@ pub struct VdfConstants {
 pub enum MobileError {
     #[error("Invalid secret key: {detail}")]
     InvalidSecretKey { detail: String },
+
+    #[error("Secret key out of range: {detail}")]
+    SecretKeyOutOfRange { detail: String },
 
     #[error("Invalid public key: {detail}")]
     InvalidPublicKey { detail: String },
