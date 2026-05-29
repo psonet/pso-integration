@@ -26,12 +26,13 @@ use pso_zk_circuit_noir::ZKCircuit;
 
 use crate::circuits;
 use crate::convert::{
-    bytes_to_fr, bytes_vec_to_fr_vec, compute_tribute_draft_id, fr_to_bytes, noir_proof_to_result,
-    parse_currency, parse_merkle_path, parse_secret_key, parse_worldwide_day, worldwide_day_count,
+    bytes_to_fr, bytes_vec_to_fr_vec, check_grumpkin_sk, compute_tribute_draft_id, fr_to_bytes,
+    noir_proof_to_result, parse_currency, parse_merkle_path, parse_secret_key, parse_worldwide_day,
+    worldwide_day_count,
 };
 use crate::types::{
     AggregationTierInfo, MerklePathElementInput, MobileError, NftKeypair, ProofResult,
-    SpendingUnitInput, SuAggregationSlot, TributeInput, TributeOwnership,
+    SpendingUnitInput, SuAggregationSlot, TributeInput, TributeKeypair, TributeOwnership,
 };
 
 // -- 0. Derive NFT keypair (Grumpkin) --
@@ -71,6 +72,38 @@ pub fn derive_nft_keypair(
     Ok(NftKeypair {
         sk: sk_bytes.to_vec(),
         pk,
+    })
+}
+
+// -- Generate a fresh Grumpkin tribute key --
+
+/// Generate a fresh random Grumpkin keypair for the tribute flow.
+///
+/// The secret key is sampled from OS randomness and reduced into the
+/// Grumpkin scalar field (a non-zero scalar `< q_Grumpkin`), so it is
+/// always a valid input to [`compute_tribute_ownership`] /
+/// `prove_tribute_*` and never trips the barretenberg out-of-range
+/// abort guarded by `convert::grumpkin_sk_in_range`.
+///
+/// Clients that need a per-TributeDraft signing key should call this
+/// instead of rolling 32 random bytes themselves — uniformly random
+/// 32-byte values land `>= q_Grumpkin` ~63% of the time.
+#[uniffi::export]
+pub fn generate_tribute_key() -> Result<TributeKeypair, MobileError> {
+    let key = pso_integrations_shared::witness::random_grumpkin_key().map_err(|e| {
+        MobileError::Internal {
+            detail: format!("generate grumpkin key: {e}"),
+        }
+    })?;
+    // pk is `pk_x_be || pk_y_be` (64 bytes), matching the layout
+    // `derive_nft_keypair` returns and `schnorr_verify_grumpkin`
+    // expects on the wire.
+    let mut public_key = Vec::with_capacity(64);
+    public_key.extend_from_slice(&pso_integrations_shared::witness::fr_to_be32(&key.pk_x));
+    public_key.extend_from_slice(&pso_integrations_shared::witness::fr_to_be32(&key.pk_y));
+    Ok(TributeKeypair {
+        secret_key: key.sk_bytes.to_vec(),
+        public_key,
     })
 }
 
@@ -452,13 +485,10 @@ pub fn prove_su_ownership_aggregation(
     // Decode each slot's Grumpkin sk + per-SU material.
     let mut slots: Vec<FlatAggregationSlot> = Vec::with_capacity(su_slots.len());
     for s in &su_slots {
-        let sk_arr: [u8; 32] =
-            s.grumpkin_sk
-                .as_slice()
-                .try_into()
-                .map_err(|_| MobileError::InvalidSecretKey {
-                    detail: format!("grumpkin_sk must be 32 bytes, got {}", s.grumpkin_sk.len()),
-                })?;
+        // Gate the per-slot key through the range check before it
+        // reaches barretenberg — an out-of-range `grumpkin_sk` would
+        // otherwise abort the whole process inside the FFI.
+        let sk_arr = check_grumpkin_sk(&s.grumpkin_sk)?;
         let key =
             derive_grumpkin_public_key(&sk_arr).map_err(|e| MobileError::InvalidSecretKey {
                 detail: format!("derive grumpkin pk: {e}"),
@@ -540,6 +570,46 @@ mod tests {
         assert_eq!(result.nonce.len(), 32);
         assert_eq!(result.ownership.len(), 32);
         assert_eq!(result.tribute_draft_id.len(), 32);
+    }
+
+    #[test]
+    fn test_generate_tribute_key_shape_and_validity() {
+        let kp = generate_tribute_key().unwrap();
+        assert_eq!(kp.secret_key.len(), 32, "sk is 32 bytes");
+        assert_eq!(kp.public_key.len(), 64, "pk is pk_x_be||pk_y_be");
+
+        // The generated key is in range and usable end-to-end: it must
+        // pass the gate and drive a successful ownership computation.
+        let sk_arr: [u8; 32] = kp.secret_key.as_slice().try_into().unwrap();
+        assert!(crate::convert::grumpkin_sk_in_range(&sk_arr));
+        compute_tribute_ownership(kp.secret_key.clone(), 20260305)
+            .expect("generated key must drive compute_tribute_ownership");
+
+        // The derived public key matches an independent derivation.
+        let key = derive_grumpkin_public_key(&sk_arr).unwrap();
+        let mut expected = Vec::with_capacity(64);
+        expected.extend_from_slice(&pso_integrations_shared::witness::fr_to_be32(&key.pk_x));
+        expected.extend_from_slice(&pso_integrations_shared::witness::fr_to_be32(&key.pk_y));
+        assert_eq!(kp.public_key, expected);
+    }
+
+    #[test]
+    fn test_generate_tribute_key_is_random() {
+        let a = generate_tribute_key().unwrap();
+        let b = generate_tribute_key().unwrap();
+        assert_ne!(a.secret_key, b.secret_key);
+    }
+
+    #[test]
+    fn test_compute_tribute_ownership_rejects_out_of_range_key() {
+        // An all-0xFF key is well above q_Grumpkin. Without the gate
+        // this aborts the whole process inside barretenberg; with it we
+        // get a recoverable error.
+        let result = compute_tribute_ownership(vec![0xffu8; 32], 20260305);
+        assert!(matches!(
+            result,
+            Err(MobileError::SecretKeyOutOfRange { .. })
+        ));
     }
 
     #[test]

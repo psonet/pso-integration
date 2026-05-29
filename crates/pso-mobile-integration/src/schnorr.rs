@@ -52,6 +52,7 @@ use barretenberg_rs::{backends::FfiBackend, generated_types::GrumpkinPoint, Barr
 
 use pso_zk_circuit_noir::schnorr_grumpkin::schnorr_sign_be;
 
+use crate::convert::check_grumpkin_sk;
 use crate::types::MobileError;
 
 /// Sign a 32-byte big-endian message digest with Grumpkin Schnorr.
@@ -64,13 +65,10 @@ pub fn schnorr_sign_grumpkin(
     secret_key: Vec<u8>,
     message: Vec<u8>,
 ) -> Result<Vec<u8>, MobileError> {
-    let sk: [u8; 32] =
-        secret_key
-            .as_slice()
-            .try_into()
-            .map_err(|_| MobileError::InvalidSecretKey {
-                detail: format!("secret_key must be 32 bytes, got {}", secret_key.len()),
-            })?;
+    // Gate the key through the range check first: bb's
+    // `schnorr_construct_signature` aborts the process on any sk
+    // `>= q_Grumpkin`, same as the public-key path.
+    let sk = check_grumpkin_sk(&secret_key)?;
     let msg: [u8; 32] = message
         .as_slice()
         .try_into()

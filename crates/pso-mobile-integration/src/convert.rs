@@ -3,8 +3,8 @@
 //! Each function translates one mobile-friendly type (`Vec<u8>`, `String`, `u16`)
 //! to the corresponding internal representation (`Fr`, `NaiveDate`, `Currency`, etc.).
 
-use ark_bn254::Fr;
-use ark_ff::PrimeField;
+use ark_bn254::{Fq, Fr};
+use ark_ff::{BigInteger, PrimeField};
 use chrono::NaiveDate;
 use iso_currency::Currency;
 use pso_integrations_shared::witness::{derive_grumpkin_public_key, fr_to_be32, GrumpkinKey};
@@ -16,14 +16,69 @@ use crate::types::{MerklePathElementInput, MobileError, ProofResult};
 
 // -- Grumpkin secret key --
 
-/// Parse a Grumpkin secret key from raw 32-byte representation and
-/// derive the matching public key via the barretenberg-rs FFI.
-pub fn parse_secret_key(bytes: &[u8]) -> Result<GrumpkinKey, MobileError> {
+/// Gate: is `sk_bytes` (big-endian) a usable Grumpkin secret key?
+///
+/// A valid key is a non-zero scalar strictly less than the Grumpkin
+/// scalar field order `q_Grumpkin` (which equals BN254's base field
+/// `Fq` modulus — Grumpkin's scalar field is BN254's base field by
+/// construction).
+///
+/// This MUST be checked before any 32-byte secret key reaches
+/// barretenberg-rs (`schnorr_compute_public_key` /
+/// `schnorr_construct_signature`): bb 5.x aborts the entire process
+/// with an uncatchable C++ exception on any input `>= q_Grumpkin`, so
+/// an unchecked out-of-range key from a client crashes the app instead
+/// of surfacing a recoverable error. Roughly 63% of uniformly random
+/// 32-byte values land `>= q_Grumpkin`, so this is a live hazard, not a
+/// theoretical one. Clients that want a guaranteed-valid key should use
+/// [`generate_tribute_key`](crate::api::generate_tribute_key) rather
+/// than rolling their own 32 random bytes.
+pub fn grumpkin_sk_in_range(sk_bytes: &[u8; 32]) -> bool {
+    // The zero scalar has no valid public key; reject it explicitly.
+    if sk_bytes.iter().all(|&b| b == 0) {
+        return false;
+    }
+    // `from_be_bytes_mod_order` reduces mod `q_Grumpkin`. If the input
+    // was already `< q`, re-encoding the reduced value to 32 big-endian
+    // bytes reproduces the input exactly; if it was `>= q`, the
+    // reduction changed it and the canonical form differs. So an
+    // unchanged round-trip is precisely "the input was in range".
+    let reduced = Fq::from_be_bytes_mod_order(sk_bytes);
+    let be = reduced.into_bigint().to_bytes_be();
+    let mut canonical = [0u8; 32];
+    let off = 32 - be.len().min(32);
+    canonical[off..].copy_from_slice(&be[be.len().saturating_sub(32)..]);
+    &canonical == sk_bytes
+}
+
+/// Validate a 32-byte Grumpkin secret key, erroring (instead of letting
+/// barretenberg abort the process) when it is out of range. Returns the
+/// fixed-size array on success so callers can hand it straight to the
+/// FFI.
+pub fn check_grumpkin_sk(bytes: &[u8]) -> Result<[u8; 32], MobileError> {
     let sk_arr: [u8; 32] = bytes
         .try_into()
         .map_err(|_| MobileError::InvalidSecretKey {
             detail: format!("expected 32-byte Grumpkin secret key, got {}", bytes.len()),
         })?;
+    if !grumpkin_sk_in_range(&sk_arr) {
+        return Err(MobileError::SecretKeyOutOfRange {
+            detail: "secret key must be a non-zero scalar < q_Grumpkin (BN254 Fq modulus); \
+                     reduce it or use generate_tribute_key"
+                .to_string(),
+        });
+    }
+    Ok(sk_arr)
+}
+
+/// Parse a Grumpkin secret key from raw 32-byte representation and
+/// derive the matching public key via the barretenberg-rs FFI.
+///
+/// The bytes are gated through [`check_grumpkin_sk`] first, so an
+/// out-of-range key yields a recoverable [`MobileError::SecretKeyOutOfRange`]
+/// rather than aborting the process inside barretenberg.
+pub fn parse_secret_key(bytes: &[u8]) -> Result<GrumpkinKey, MobileError> {
+    let sk_arr = check_grumpkin_sk(bytes)?;
     derive_grumpkin_public_key(&sk_arr).map_err(|e| MobileError::InvalidSecretKey {
         detail: e.to_string(),
     })
@@ -267,5 +322,65 @@ mod tests {
         let id1 = compute_tribute_draft_id(&owner, &wwd).unwrap();
         let id2 = compute_tribute_draft_id(&owner, &wwd).unwrap();
         assert_eq!(id1, id2);
+    }
+
+    /// 32-byte big-endian encoding of `q_Grumpkin` (= BN254 `Fq`
+    /// modulus). Anything `>= this` is out of range.
+    fn q_grumpkin_be() -> [u8; 32] {
+        let be = Fq::MODULUS.to_bytes_be();
+        let mut out = [0u8; 32];
+        let off = 32 - be.len().min(32);
+        out[off..].copy_from_slice(&be[be.len().saturating_sub(32)..]);
+        out
+    }
+
+    #[test]
+    fn test_grumpkin_sk_in_range_rejects_zero() {
+        assert!(!grumpkin_sk_in_range(&[0u8; 32]));
+    }
+
+    #[test]
+    fn test_grumpkin_sk_in_range_accepts_one() {
+        let mut one = [0u8; 32];
+        one[31] = 1;
+        assert!(grumpkin_sk_in_range(&one));
+    }
+
+    #[test]
+    fn test_grumpkin_sk_in_range_rejects_all_ff() {
+        // 2^256 - 1 is far above q_Grumpkin (~2^254).
+        assert!(!grumpkin_sk_in_range(&[0xffu8; 32]));
+    }
+
+    #[test]
+    fn test_grumpkin_sk_in_range_boundary() {
+        // q itself is out of range; q - 1 is the largest valid key.
+        let q = q_grumpkin_be();
+        assert!(!grumpkin_sk_in_range(&q));
+
+        let mut q_minus_one = q;
+        // q is odd (prime), so the LSB is 1 and q - 1 just clears it.
+        assert_eq!(q_minus_one[31] & 1, 1);
+        q_minus_one[31] -= 1;
+        assert!(grumpkin_sk_in_range(&q_minus_one));
+    }
+
+    #[test]
+    fn test_check_grumpkin_sk_wrong_length() {
+        let err = check_grumpkin_sk(&[0u8; 16]).unwrap_err();
+        assert!(matches!(err, MobileError::InvalidSecretKey { .. }));
+    }
+
+    #[test]
+    fn test_check_grumpkin_sk_out_of_range() {
+        let err = check_grumpkin_sk(&[0xffu8; 32]).unwrap_err();
+        assert!(matches!(err, MobileError::SecretKeyOutOfRange { .. }));
+    }
+
+    #[test]
+    fn test_check_grumpkin_sk_in_range_ok() {
+        let mut one = [0u8; 32];
+        one[31] = 1;
+        assert_eq!(check_grumpkin_sk(&one).unwrap(), one);
     }
 }
