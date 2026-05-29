@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.4.0 - 2026-05-29
+#### Features
+- (**mobile**) gate Grumpkin secret keys + add generate_tribute_key - (f9b13ba) - Anton Velichko
+
+- - -
+
 ## v0.3.10 - 2026-05-27
 #### Bug Fixes
 - (**fmt**) apply rustfmt after settlement-prefix rename - (ac0d02d) - Anton Velichko
