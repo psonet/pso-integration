@@ -143,18 +143,23 @@ Add the JAR to your project's classpath. The library depends on
 ### Gradle dependency
 
 ```kotlin
+repositories {
+    maven { url = uri("https://maven.pkg.github.com/psonet/pso-integration") }
+}
+
 dependencies {
-    implementation(files("libs/pso-sra-integration-0.1.0.jar"))
-    implementation("net.java.dev.jna:jna:5.18.1")
+    // Published to GitHub Packages by the release pipeline. JNA is a
+    // transitive runtime dependency, resolved automatically from the POM.
+    implementation("net.pso:integration.agent:0.3.11")
 }
 ```
 
 ### Usage
 
 ```kotlin
-import net.pso.zk.integration.sra.NativeLoader
-import net.pso.zk.integration.sra.generateNftOwnership
-import net.pso.zk.integration.sra.OwnershipException
+import net.pso.integration.agent.NativeLoader
+import net.pso.integration.agent.generateNftOwnership
+import net.pso.integration.agent.OwnershipException
 
 // Load native library once at application startup
 NativeLoader.load()
@@ -181,7 +186,7 @@ try {
 
 ```
 pso-sra-integration-0.1.0.jar
-├── net/pso/zk/integration/sra/
+├── net/pso/integration/agent/
 │   ├── NativeLoader.class          # Platform-aware library loader
 │   └── pso_sra_integration.class   # UniFFI-generated bindings
 └── native/
@@ -248,9 +253,9 @@ integrations/pso-sra-integration/
 │   ├── settings.gradle.kts
 │   ├── uniffi.toml         # UniFFI config (Kotlin package name)
 │   └── src/
-│       ├── main/kotlin/net/pso/zk/integration/sra/
+│       ├── main/kotlin/net/pso/integration/agent/
 │       │   └── NativeLoader.kt
-│       └── test/kotlin/net/pso/zk/integration/sra/
+│       └── test/kotlin/net/pso/integration/agent/
 │           └── SraIntegrationTest.kt
 └── Cargo.toml
 ```

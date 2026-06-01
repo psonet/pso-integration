@@ -1,2 +1,2 @@
 [bindings.kotlin]
-package_name = "net.pso.zk.integration.sra"
+package_name = "net.pso.integration.agent"
