@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.0 - 2026-06-01
+#### Features
+- (**ci**) version-suffix release artifacts, publish Kotlin lib to GitHub Packages Maven, add dev-tools mobile slices - (45f7b10) - Anton Velichko
+#### Tests
+- (**mobile**) gate network-dependent SRS e2e test out of the offline unit job - (7297b94) - Anton Velichko
+
+- - -
+
 ## v0.4.0 - 2026-05-29
 #### Features
 - (**mobile**) gate Grumpkin secret keys + add generate_tribute_key - (f9b13ba) - Anton Velichko
