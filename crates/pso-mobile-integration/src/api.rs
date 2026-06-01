@@ -707,7 +707,16 @@ mod tests {
         assert_eq!(sizes, vec![1, 2, 4, 8, 16, 32, 64]);
     }
 
+    // Ignored by default: the prove path downloads the BN254 SRS from
+    // `crs.aztec.network` at runtime, so this test is NOT network-free
+    // and must not run in the `unit` CI job (cargo test --workspace
+    // --lib --tests), which is meant to stay offline. It also takes the
+    // whole pipeline down whenever that upstream endpoint flakes (e.g.
+    // the 2026-06-01 TLS-cert expiry). Run it explicitly in a
+    // network-allowed context with `cargo test -p pso-mobile-integration
+    // -- --ignored`.
     #[test]
+    #[ignore = "downloads the Aztec SRS over the network; run with `cargo test -- --ignored`"]
     fn test_prove_su_ownership_aggregation_end_to_end_n1() {
         // Smallest tier — fastest test. Full prove+verify against the
         // canonical VK exposed through the FFI surface.
