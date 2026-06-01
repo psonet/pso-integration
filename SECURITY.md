@@ -6,7 +6,9 @@ Starting with the first release tagged after this file lands (expected: **v0.3.7
 
 ### Signed artifacts
 
-For each release ≥ the cutoff, the following files ship alongside the regular release assets:
+For each release ≥ the cutoff, the following files ship alongside the regular release assets.
+
+> **Version suffix.** Every released artifact carries a `-vX.Y.Z` suffix (the release tag, inserted before any file extension) — e.g. `pso-e2e-linux-x86_64-v0.3.11`, `pso-sra-integration-kotlin-v0.3.11.jar`. The tables below omit the suffix for brevity; substitute the release's tag when downloading.
 
 **End-to-end binaries:**
 
@@ -24,6 +26,8 @@ For each release ≥ the cutoff, the following files ship alongside the regular 
 | `pso-mobile-integration-android-arm64-v8a-libpso_mobile_integration.so` | Android arm64 shared lib. |
 | `pso-mobile-integration-android-x86_64-libpso_mobile_integration.so` | Android x86_64 shared lib. |
 
+Each mobile slice also ships a `--features dev-tools` variant with `-dev-tools` inserted after the label (e.g. `pso-mobile-integration-ios-arm64-dev-tools-libpso_mobile_integration.a`).
+
 **Bindgen binaries:**
 
 | File | What it is |
@@ -35,7 +39,7 @@ For each release ≥ the cutoff, the following files ship alongside the regular 
 
 | File | What it is |
 |---|---|
-| `pso-sra-integration-kotlin.jar` | UniFFI-generated Kotlin bindings + 3 bundled native libs (`META-INF/native/<os>-<arch>/`). |
+| `pso-sra-integration-kotlin.jar` | UniFFI-generated Kotlin bindings + 3 bundled native libs (`META-INF/native/<os>-<arch>/`). Also published to GitHub Packages Maven as `net.pso:integration.agent:X.Y.Z`. |
 
 **Common:**
 
@@ -83,8 +87,9 @@ You need [cosign](https://docs.sigstore.dev/cosign/installation/) and [`gh`](htt
 REPO=psonet/pso-integration
 TAG=v0.3.7  # or any release ≥ the cutoff
 
-# JAR verification (most common consumer path).
-ARTIFACT=pso-sra-integration-kotlin.jar
+# JAR verification (most common consumer path). Released filenames
+# carry the `-$TAG` version suffix before the extension.
+ARTIFACT="pso-sra-integration-kotlin-$TAG.jar"
 gh release download "$TAG" --repo "$REPO" \
   --pattern "$ARTIFACT" \
   --pattern "$ARTIFACT.sig" \

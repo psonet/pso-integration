@@ -305,8 +305,11 @@ unit  ─┴─> image (push:main) ─> tag (cocogitto) ─> release-binaries �
   successful main push.
 - `tag` runs `cog bump --auto`; if a `feat:`/`fix:`/breaking commit
   landed since the last tag, the four release jobs fire and produce
-  per-platform binaries (`pso-e2e-linux-x86_64`, `pso-e2e-linux-aarch64`)
-  plus a versioned `:vX.Y.Z` + `:latest` image and a GitHub release.
+  per-platform binaries (`pso-e2e-linux-x86_64-vX.Y.Z`,
+  `pso-e2e-linux-aarch64-vX.Y.Z` — every released artifact carries the
+  `-vX.Y.Z` version suffix) plus a versioned `:vX.Y.Z` + `:latest`
+  image, the `pso-sra-integration-kotlin` JAR published to GitHub
+  Packages Maven, and a GitHub release.
 - `chore:` / `ci:` / `docs:` etc. commits are no-ops for cog — the
   release jobs short-circuit cleanly via
   `if: needs.tag.outputs.tag != ''`.
@@ -335,7 +338,7 @@ Quick check (JAR):
 
 ```sh
 TAG=v0.3.7
-ARTIFACT=pso-sra-integration-kotlin.jar
+ARTIFACT="pso-sra-integration-kotlin-$TAG.jar"  # released filenames carry the -$TAG suffix
 gh release download "$TAG" --repo psonet/pso-integration \
   --pattern "$ARTIFACT" --pattern "$ARTIFACT.sig" --pattern "$ARTIFACT.pem"
 cosign verify-blob \

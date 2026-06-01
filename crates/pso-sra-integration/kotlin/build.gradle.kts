@@ -30,10 +30,15 @@
 plugins {
     kotlin("jvm") version "2.1.10"
     `java-library`
+    `maven-publish`
 }
 
-group = "net.pso.zk"
-version = "0.1.0"
+group = "net.pso"
+// CI passes the release version via `-PreleaseVersion=<x.y.z>` (the
+// Rust workspace / git-tag version, sans the `v` prefix) so the
+// published Maven coordinate tracks the rest of the release. Local
+// builds with no property fall back to a dev placeholder.
+version = (findProperty("releaseVersion") as String?) ?: "0.1.0-LOCAL"
 
 repositories {
     mavenCentral()
@@ -130,5 +135,43 @@ tasks.named("processResources") {
 
 tasks.named<Jar>("jar") {
     archiveBaseName.set("pso-sra-integration-kotlin")
+    // Empty so the local archive path stays stable
+    // (build/libs/pso-sra-integration-kotlin.jar) regardless of
+    // version — the CI staging step renames it with the `-v<x.y.z>`
+    // release suffix. maven-publish derives the *published* filename
+    // from the coordinate (artifactId + version), not this archive
+    // name, so an empty archiveVersion does not affect the Maven push.
     archiveVersion.set("")
+}
+
+// Publish the bindings JAR (Kotlin classes + bundled native libs) to
+// the repo's GitHub Packages Maven registry as
+// net.pso:integration.agent:<version>. CI provides the
+// GITHUB_* env vars; the workflow-level `packages: write` permission
+// authorises the push.
+publishing {
+    publications {
+        create<MavenPublication>("gpr") {
+            // Maven coordinate: net.pso:integration.agent:<version>.
+            // Independent of the local JAR archive name
+            // (pso-sra-integration-kotlin.jar) and the Rust crate name
+            // (pso_sra_integration) — maven-publish names the published
+            // file from the coordinate.
+            artifactId = "integration.agent"
+            from(components["java"])
+        }
+    }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri(
+                "https://maven.pkg.github.com/" +
+                    (System.getenv("GITHUB_REPOSITORY") ?: "psonet/pso-integration"),
+            )
+            credentials {
+                username = System.getenv("GITHUB_ACTOR")
+                password = System.getenv("GITHUB_TOKEN")
+            }
+        }
+    }
 }

@@ -295,7 +295,11 @@ jobs:
         uses: ./.github/actions/build-binaries
         with:
           target: ${{ matrix.target }}
-          output-name: pso-e2e-${{ matrix.label }}
+          # Version-suffixed: pso-e2e-<label>-v<x.y.z>. The suffix is
+          # the release tag verbatim (`needs.tag.outputs.tag` on the
+          # main-push path, `needs.resolve.outputs.release_tag` on a
+          # tag-push / dispatch).
+          output-name: pso-e2e-${{ matrix.label }}-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
           # Tag-ref runs MUST NOT save rust-cache entries —
           # they're scoped to a tag ref and unreachable from any
           # branch. Same for the sccache GHA backend.
@@ -304,7 +308,7 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pso-e2e-${{ matrix.label }}
+          name: pso-e2e-${{ matrix.label }}-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
           path: dist/*
           if-no-files-found: error
           retention-days: 7
@@ -359,22 +363,51 @@ jobs:
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
-      - name: cargo build --release -p pso-mobile-integration
+      # Two slices per target: the default-feature build and a
+      # `--features dev-tools` build. They share the same target dir,
+      # so each `cargo build` overwrites the previous .a — we stage
+      # the default archive out BEFORE kicking off the dev-tools build.
+      # Running both in one job (rather than a matrix axis) keeps the
+      # second build incremental and avoids doubling the 10x-cost
+      # macOS runners.
+      - name: cargo build --release -p pso-mobile-integration (default)
         run: cargo build --release -p pso-mobile-integration --target ${{ matrix.target }}
 
-      - name: Stage static lib
+      - name: Stage static lib (default)
+        env:
+          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
         run: |
           set -euo pipefail
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/libpso_mobile_integration.a" \
-             "dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration.a"
+             "dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration-${TAG}.a"
           ls -lh dist/
 
-      - name: Upload iOS static lib
+      - name: cargo build --release -p pso-mobile-integration (dev-tools)
+        run: cargo build --release -p pso-mobile-integration --features dev-tools --target ${{ matrix.target }}
+
+      - name: Stage static lib (dev-tools)
+        env:
+          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          cp "target/${{ matrix.target }}/release/libpso_mobile_integration.a" \
+             "dist/pso-mobile-integration-${{ matrix.label }}-dev-tools-libpso_mobile_integration-${TAG}.a"
+          ls -lh dist/
+
+      - name: Upload iOS static lib (default)
         uses: actions/upload-artifact@v4
         with:
           name: pso-mobile-integration-${{ matrix.label }}
-          path: dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration.a
+          path: dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}.a
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload iOS static lib (dev-tools)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pso-mobile-integration-${{ matrix.label }}-dev-tools
+          path: dist/pso-mobile-integration-${{ matrix.label }}-dev-tools-libpso_mobile_integration-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}.a
           if-no-files-found: error
           retention-days: 7
 
@@ -512,7 +545,12 @@ jobs:
           cmake --build "$build" --target bb-external --parallel
           test -f "$build/lib/libbb-external.a"
 
-      - name: cargo ndk build -p pso-mobile-integration
+      # Default + dev-tools slices, same rationale as the iOS job:
+      # cargo ndk writes both builds to the same jniLibs/<abi> path,
+      # so stage the default .so out before the dev-tools build
+      # overwrites it. libbb-external.a is a shared dependency built
+      # once above, so the second cargo ndk build is incremental.
+      - name: cargo ndk build -p pso-mobile-integration (default)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -526,19 +564,50 @@ jobs:
             --output-dir ./jniLibs \
             build --release -p pso-mobile-integration
 
-      - name: Stage shared lib
+      - name: Stage shared lib (default)
+        env:
+          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
         run: |
           set -euo pipefail
           mkdir -p dist
           cp "jniLibs/${{ matrix.abi }}/libpso_mobile_integration.so" \
-             "dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration.so"
+             "dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration-${TAG}.so"
           ls -lh dist/
 
-      - name: Upload Android shared lib
+      - name: cargo ndk build -p pso-mobile-integration (dev-tools)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          BB_LIB_DIR: ${{ runner.temp }}/bb-build/${{ matrix.abi }}/lib
+        run: |
+          cargo ndk \
+            --target ${{ matrix.abi }} \
+            --platform ${{ env.ANDROID_PLATFORM }} \
+            --output-dir ./jniLibs \
+            build --release -p pso-mobile-integration --features dev-tools
+
+      - name: Stage shared lib (dev-tools)
+        env:
+          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          cp "jniLibs/${{ matrix.abi }}/libpso_mobile_integration.so" \
+             "dist/pso-mobile-integration-${{ matrix.label }}-dev-tools-libpso_mobile_integration-${TAG}.so"
+          ls -lh dist/
+
+      - name: Upload Android shared lib (default)
         uses: actions/upload-artifact@v4
         with:
           name: pso-mobile-integration-${{ matrix.label }}
-          path: dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration.so
+          path: dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}.so
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Android shared lib (dev-tools)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pso-mobile-integration-${{ matrix.label }}-dev-tools
+          path: dist/pso-mobile-integration-${{ matrix.label }}-dev-tools-libpso_mobile_integration-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}.so
           if-no-files-found: error
           retention-days: 7
 
@@ -592,19 +661,21 @@ jobs:
         run: cargo build --release --bin uniffi-bindgen-mobile -p pso-mobile-integration
 
       - name: Stage bindgen binary
+        env:
+          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
         run: |
           set -euo pipefail
           mkdir -p dist
           cp "target/release/uniffi-bindgen-mobile" \
-             "dist/uniffi-bindgen-mobile-${{ matrix.label }}"
-          chmod 0755 "dist/uniffi-bindgen-mobile-${{ matrix.label }}"
+             "dist/uniffi-bindgen-mobile-${{ matrix.label }}-${TAG}"
+          chmod 0755 "dist/uniffi-bindgen-mobile-${{ matrix.label }}-${TAG}"
           ls -lh dist/
 
       - name: Upload bindgen binary
         uses: actions/upload-artifact@v4
         with:
-          name: uniffi-bindgen-mobile-${{ matrix.label }}
-          path: dist/uniffi-bindgen-mobile-${{ matrix.label }}
+          name: uniffi-bindgen-mobile-${{ matrix.label }}-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+          path: dist/uniffi-bindgen-mobile-${{ matrix.label }}-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
           if-no-files-found: error
           retention-days: 7
 
@@ -773,25 +844,38 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Gradle build (generate bindings + assemble JAR)
+      # Build + publish the Kotlin bindings to GitHub Packages Maven
+      # (net.pso:integration.agent:<x.y.z>). The Maven
+      # coordinate uses the plain SemVer (`${TAG#v}`, no `v`); the
+      # release-attached JAR keeps the `-v<x.y.z>` filename suffix.
+      # GITHUB_TOKEN here is the job's GITHUB_TOKEN — the workflow-level
+      # `packages: write` permission covers the push.
+      - name: Gradle build + publish to GitHub Packages
         working-directory: crates/pso-sra-integration/kotlin
-        run: gradle --no-daemon build
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+        run: gradle --no-daemon build publish -PreleaseVersion="${TAG#v}"
 
       - name: Stage JAR for upload
+        env:
+          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
         run: |
           set -euo pipefail
           mkdir -p dist
           # Gradle archives `pso-sra-integration-kotlin.jar` under
           # build/libs/ (archiveBaseName + empty archiveVersion).
           cp crates/pso-sra-integration/kotlin/build/libs/pso-sra-integration-kotlin.jar \
-             dist/pso-sra-integration-kotlin.jar
-          unzip -l dist/pso-sra-integration-kotlin.jar
+             "dist/pso-sra-integration-kotlin-${TAG}.jar"
+          unzip -l "dist/pso-sra-integration-kotlin-${TAG}.jar"
 
       - name: Upload Kotlin JAR
         uses: actions/upload-artifact@v4
         with:
-          name: pso-sra-integration-kotlin
-          path: dist/pso-sra-integration-kotlin.jar
+          name: pso-sra-integration-kotlin-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+          path: dist/pso-sra-integration-kotlin-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}.jar
           if-no-files-found: error
           retention-days: 7
 
@@ -823,14 +907,17 @@ jobs:
       - name: Download linux-x86_64 binary
         uses: actions/download-artifact@v4
         with:
-          name: pso-e2e-linux-x86_64
+          name: pso-e2e-linux-x86_64-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
           path: artifact/
 
       - name: Stage binary for docker context
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp artifact/pso-e2e-linux-x86_64 dist/pso-e2e
+          # The artifact holds the version-suffixed binary
+          # (pso-e2e-linux-x86_64-v<x.y.z>); glob to the canonical
+          # dist/pso-e2e the Dockerfile expects.
+          cp artifact/pso-e2e-linux-x86_64-* dist/pso-e2e
           chmod 0755 dist/pso-e2e
           ls -la dist/
 
@@ -911,7 +998,7 @@ jobs:
       - name: Download SRA Kotlin JAR
         uses: actions/download-artifact@v4
         with:
-          name: pso-sra-integration-kotlin
+          name: pso-sra-integration-kotlin-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
           path: artifacts/sra-kotlin/
 
       - name: Stage release artifacts + SHA256SUMS
@@ -943,10 +1030,10 @@ jobs:
             done
           done
 
-          # SRA Kotlin JAR — single file, downloaded by exact name so
-          # it lands directly under artifacts/sra-kotlin/.
-          cp artifacts/sra-kotlin/pso-sra-integration-kotlin.jar \
-             release/pso-sra-integration-kotlin.jar
+          # SRA Kotlin JAR — single version-suffixed file, downloaded
+          # by exact name so it lands directly under artifacts/sra-kotlin/.
+          cp artifacts/sra-kotlin/pso-sra-integration-kotlin-*.jar \
+             release/
 
           ls -lh release/
           cd release
@@ -990,7 +1077,7 @@ jobs:
             release/pso-e2e-*
             release/pso-mobile-integration-*
             release/uniffi-bindgen-mobile-*
-            release/pso-sra-integration-kotlin.jar
+            release/pso-sra-integration-kotlin-*.jar
             release/SHA256SUMS
 
       - name: Compose release body
@@ -1013,23 +1100,41 @@ jobs:
             echo
             echo "## Artifacts"
             echo
+            echo "All artifacts below carry the \`${TAG}\` version suffix (before any extension)."
+            echo
             echo "### Mobile (pso-mobile-integration)"
             echo
-            echo "- \`pso-mobile-integration-ios-arm64-libpso_mobile_integration.a\` — iOS device static lib (\`aarch64-apple-ios\`)"
-            echo "- \`pso-mobile-integration-ios-sim-arm64-libpso_mobile_integration.a\` — iOS Apple-Silicon simulator static lib (\`aarch64-apple-ios-sim\`)"
-            echo "- \`pso-mobile-integration-android-arm64-v8a-libpso_mobile_integration.so\` — Android arm64-v8a shared lib (\`aarch64-linux-android\`)"
-            echo "- \`pso-mobile-integration-android-x86_64-libpso_mobile_integration.so\` — Android x86_64 shared lib (\`x86_64-linux-android\`)"
+            echo "Default-feature slices:"
+            echo
+            echo "- \`pso-mobile-integration-ios-arm64-libpso_mobile_integration-${TAG}.a\` — iOS device static lib (\`aarch64-apple-ios\`)"
+            echo "- \`pso-mobile-integration-ios-sim-arm64-libpso_mobile_integration-${TAG}.a\` — iOS Apple-Silicon simulator static lib (\`aarch64-apple-ios-sim\`)"
+            echo "- \`pso-mobile-integration-android-arm64-v8a-libpso_mobile_integration-${TAG}.so\` — Android arm64-v8a shared lib (\`aarch64-linux-android\`)"
+            echo "- \`pso-mobile-integration-android-x86_64-libpso_mobile_integration-${TAG}.so\` — Android x86_64 shared lib (\`x86_64-linux-android\`)"
+            echo
+            echo "\`dev-tools\`-feature slices (same targets, built with \`--features dev-tools\`):"
+            echo
+            echo "- \`pso-mobile-integration-ios-arm64-dev-tools-libpso_mobile_integration-${TAG}.a\`"
+            echo "- \`pso-mobile-integration-ios-sim-arm64-dev-tools-libpso_mobile_integration-${TAG}.a\`"
+            echo "- \`pso-mobile-integration-android-arm64-v8a-dev-tools-libpso_mobile_integration-${TAG}.so\`"
+            echo "- \`pso-mobile-integration-android-x86_64-dev-tools-libpso_mobile_integration-${TAG}.so\`"
             echo
             echo "Mobile slices are best-effort cross-builds. Missing slices indicate a barretenberg-rs cross-toolchain failure on that target — see workflow logs."
             echo
             echo "### Bindgen (uniffi-bindgen-mobile)"
             echo
-            echo "- \`uniffi-bindgen-mobile-linux-x86_64\` — \`x86_64-unknown-linux-gnu\`"
-            echo "- \`uniffi-bindgen-mobile-darwin-arm64\` — \`aarch64-apple-darwin\`"
+            echo "- \`uniffi-bindgen-mobile-linux-x86_64-${TAG}\` — \`x86_64-unknown-linux-gnu\`"
+            echo "- \`uniffi-bindgen-mobile-darwin-arm64-${TAG}\` — \`aarch64-apple-darwin\`"
             echo
             echo "### SRA Kotlin bindings (pso-sra-integration)"
             echo
-            echo "- \`pso-sra-integration-kotlin.jar\` — UniFFI-generated Kotlin bindings + 3 bundled native dynamic libs (\`darwin-arm64/libpso_sra_integration.dylib\`, \`linux-x86_64/libpso_sra_integration.so\`, \`linux-aarch64/libpso_sra_integration.so\`) under \`META-INF/native/<os>-<arch>/\`. Call \`NativeLoader.ensureLoaded()\` before any UniFFI function."
+            echo "- \`pso-sra-integration-kotlin-${TAG}.jar\` — UniFFI-generated Kotlin bindings + 3 bundled native dynamic libs (\`darwin-arm64/libpso_sra_integration.dylib\`, \`linux-x86_64/libpso_sra_integration.so\`, \`linux-aarch64/libpso_sra_integration.so\`) under \`META-INF/native/<os>-<arch>/\`. Call \`NativeLoader.ensureLoaded()\` before any UniFFI function."
+            echo
+            echo "Also published to GitHub Packages Maven as \`net.pso:integration.agent:${version}\`:"
+            echo
+            echo '```kotlin'
+            echo "repositories { maven { url = uri(\"https://maven.pkg.github.com/${GITHUB_REPOSITORY:-psonet/pso-integration}\") } }"
+            echo "dependencies { implementation(\"net.pso:integration.agent:${version}\") }"
+            echo '```'
             echo
             echo "SRA is server-side, JVM-only — no standalone \`libpso_sra_integration.*\` files are attached; the JAR is the only SRA artifact on this release."
             echo

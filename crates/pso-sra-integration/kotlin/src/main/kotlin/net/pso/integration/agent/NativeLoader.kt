@@ -1,4 +1,4 @@
-package net.pso.zk.integration.sra
+package net.pso.integration.agent
 
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
