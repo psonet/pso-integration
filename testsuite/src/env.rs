@@ -149,19 +149,24 @@ impl TestEnv {
     }
 
     /// Fresh [`ActorClient`] keyed by a random non-SRA wallet
-    /// key. Use this for scenarios whose test surface is "the
-    /// actor RPC bounces non-SRA senders" (S003-S005, S030).
+    /// key — the canonical "end-user wallet" identity. The users
+    /// lane is permissionless since psonet/pso-chain#13 (anti-spam
+    /// = VDF + nullifier + block age, no registry gate), so this
+    /// client's envelopes clear pool admission (S041); whether the
+    /// inner call is *allowed* is the EVM contracts' job
+    /// (`onlyActiveSRA` reverts — S003-S005, S030).
     pub fn new_actor(&self) -> eyre::Result<ActorClient> {
         let key = roll_random_key();
         ActorClient::new(&self.actor_rpc_url, self.chain_id, &key)
             .map_err(|e| eyre::eyre!("new_actor: {e}"))
     }
 
-    /// Fresh [`ActorClient`] keyed by `&env.sra_zero`'s secret —
-    /// i.e. an actor-pool client that clears the
-    /// "SRA not registered" gate inside `rpc/actor.rs::add_raw_tx`.
-    /// Use this for envelope-tampering / VDF-mismatch scenarios
-    /// that need to reach the *post-gate* validator checks.
+    /// Fresh [`ActorClient`] keyed by `&env.sra_zero`'s secret.
+    /// Historically required to clear the users-lane SRA gate
+    /// (removed in psonet/pso-chain#13); kept because the
+    /// envelope-tampering / VDF-mismatch scenarios (S013-S017,
+    /// S031-S032) were written against it and an SRA-keyed sender
+    /// remains valid on the users lane.
     ///
     /// Today the only registered SRA whose secret material the
     /// env physically holds is SRA-0 (Hardhat #1) — that's why

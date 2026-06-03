@@ -4078,7 +4078,7 @@ dependencies = [
 
 [[package]]
 name = "pso-e2e-testsuite"
-version = "0.3.8"
+version = "0.5.0"
 dependencies = [
  "alloy",
  "ark-bn254",
@@ -4109,7 +4109,7 @@ dependencies = [
 
 [[package]]
 name = "pso-integrations-shared"
-version = "0.3.8"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "ark-bn254",
@@ -4125,7 +4125,7 @@ dependencies = [
 
 [[package]]
 name = "pso-l2-client"
-version = "0.3.8"
+version = "0.5.0"
 dependencies = [
  "alloy",
  "ark-bn254",
@@ -4148,7 +4148,7 @@ dependencies = [
 
 [[package]]
 name = "pso-mobile-integration"
-version = "0.3.8"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "ark-bn254",
@@ -4173,7 +4173,7 @@ dependencies = [
 
 [[package]]
 name = "pso-nft"
-version = "0.3.8"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "ark-bn254",
@@ -4215,7 +4215,7 @@ dependencies = [
 
 [[package]]
 name = "pso-sra-cli"
-version = "0.3.8"
+version = "0.5.0"
 dependencies = [
  "alloy",
  "clap",
@@ -4231,7 +4231,7 @@ dependencies = [
 
 [[package]]
 name = "pso-sra-integration"
-version = "0.3.8"
+version = "0.5.0"
 dependencies = [
  "ark-bn254",
  "ark-ff 0.5.0",
@@ -4259,7 +4259,7 @@ dependencies = [
 
 [[package]]
 name = "pso-wallet-cli"
-version = "0.3.8"
+version = "0.5.0"
 dependencies = [
  "alloy",
  "ark-bn254",
@@ -4311,7 +4311,7 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-cli"
-version = "0.3.8"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "ark-bn254",
