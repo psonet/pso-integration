@@ -1,8 +1,9 @@
 # pso-e2e-testsuite
 
 End-to-end test harness for the PSO L2. Ships as a single binary
-(`pso-e2e`) that drives the full SRA + Wallet round-trip plus 30+
-negative-path invariants against a running pso-chain devnet.
+(`pso-e2e`) that drives the full SRA + Wallet round-trip plus 40+
+scenarios (negative-path invariants, envelope/VDF tampering, and the
+wallet-direct lifecycle) against a running pso-chain devnet.
 
 The binary is the CI artifact: pso-chain wraps it in a Docker image
 and runs it against a freshly-spun-up devnet container.
@@ -100,6 +101,10 @@ guard it exercises.
 | S038  | `SequencerEpoch` view round-trip: constants + `currentEpoch` + `leaderForEpoch` ↔ `rankedLeadersForEpoch[0]`. |
 | S039  | `SlashingVerifier.proveEquivocation` happy path: two same-height signatures emit `EquivocationProven` + `Slashed`. |
 | S040  | `SlashingVerifier.proveInvalidVDF` happy path: zero-bytes proof against non-zero input emits `InvalidVDFProven` + `Slashed`. |
+| S041  | Users-pool envelope from a never-registered wallet key clears pool admission (no SRA gate on the actor lane). |
+| S042  | Mobile-API wallet flow: uniffi VDF + self-assembled envelope tx executes end-to-end through the `PsoEnvelopeDispatcher` (`status == 1`). |
+| S043  | Envelope aged ~20 blocks (inside `PSO_PROOF_MAX_AGE`) is admitted and executes — positive counterpart to S015. |
+| S044  | Sequential wallet txs (nonce 0, 1) execute with per-nonce VDF recompute; nonce-0 VDF binding replayed at nonce 2 rejects `BadVdfInputBinding`. |
 
 S032 needs the chain spawned with `PSO_DEV_RPC=1` (gates
 `pso_dev_advanceEpoch`); the CI workflow sets it on the dev node.
