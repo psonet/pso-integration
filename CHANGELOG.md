@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.6.0 - 2026-06-04
+#### Features
+- (**e2e**) wallet-direct topology release — refresh release & image docs - (77b4d42) - Anton Velichko
+#### Tests
+- (**e2e**) real wallet/SRA topology — wallet-direct TD, mobile-API sim, lifecycle scenarios - (4508ecd) - Anton Velichko
+- (**e2e**) S041 — users envelope from unregistered wallet clears pool admission - (400750e) - Anton Velichko
+
+- - -
+
 ## v0.5.0 - 2026-06-01
 #### Features
 - (**ci**) version-suffix release artifacts, publish Kotlin lib to GitHub Packages Maven, add dev-tools mobile slices - (45f7b10) - Anton Velichko
