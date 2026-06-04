@@ -43,6 +43,10 @@ pub mod s037_revoke_unknown_rejected;
 pub mod s038_sequencer_epoch_view_roundtrip;
 pub mod s039_slashing_equivocation_happy_path;
 pub mod s040_slashing_invalid_vdf_happy_path;
+pub mod s041_users_envelope_unregistered_wallet_admitted;
+pub mod s042_mobile_api_wallet_flow;
+pub mod s043_envelope_aged_proof_accepted;
+pub mod s044_wallet_nonce_lifecycle;
 
 use crate::scenario::Scenario;
 
@@ -88,5 +92,9 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s038_sequencer_epoch_view_roundtrip::S038),
         Box::new(s039_slashing_equivocation_happy_path::S039),
         Box::new(s040_slashing_invalid_vdf_happy_path::S040),
+        Box::new(s041_users_envelope_unregistered_wallet_admitted::S041),
+        Box::new(s042_mobile_api_wallet_flow::S042),
+        Box::new(s043_envelope_aged_proof_accepted::S043),
+        Box::new(s044_wallet_nonce_lifecycle::S044),
     ]
 }

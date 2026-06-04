@@ -5,18 +5,20 @@
 //! `InvalidMask`). Here we walk the happy path twice:
 //!
 //! 1. Spawn a fresh SRA via [`TestEnv::new_sra`] — bootstrapped
-//!    with `mask = u32::MAX`.
+//!    with `mask = SRA_PERMISSION_MASK` (0xF, SU/SR/AR/heartbeat;
+//!    deliberately not ADMIN_MASK — see `env.rs`).
 //! 2. Read the record back via `admin.get_record`. Assert
-//!    `mask == u32::MAX`, `active == true`.
-//! 3. `admin.update_mask(addr, 0x0F)` — pick a tight mask so the
-//!    new bits are obvious.
-//! 4. Re-read and assert `mask == 0x0F`. `active` should still
+//!    `mask == SRA_PERMISSION_MASK`, `active == true`.
+//! 3. `admin.update_mask(addr, 0x03)` — shrink to SU+SR only so the
+//!    changed bits are obvious.
+//! 4. Re-read and assert `mask == 0x03`. `active` should still
 //!    be true (updateMask doesn't touch the active flag).
 
 use std::time::Duration;
 
 use async_trait::async_trait;
 
+use crate::env::SRA_PERMISSION_MASK;
 use crate::{Scenario, TestEnv};
 
 pub struct S035;
@@ -40,9 +42,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     tracing::info!(scenario = "S035", %addr, "spawned fresh SRA");
 
     let initial = env.admin.get_record(addr).await?;
-    if initial.permissionMask != u32::MAX {
+    if initial.permissionMask != SRA_PERMISSION_MASK {
         return Err(eyre::eyre!(
-            "S035: expected initial mask u32::MAX, got 0x{:08x}",
+            "S035: expected initial mask 0x{SRA_PERMISSION_MASK:08x}, got 0x{:08x}",
             initial.permissionMask
         ));
     }
@@ -50,7 +52,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         return Err(eyre::eyre!("S035: freshly-registered SRA is not active"));
     }
 
-    let new_mask: u32 = 0x0F;
+    let new_mask: u32 = 0x03;
     env.admin
         .update_mask(addr, new_mask)
         .await

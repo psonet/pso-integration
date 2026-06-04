@@ -9,8 +9,13 @@
 //!    confirms its `derivedOwner` matches the on-chain SU's value
 //!    (read back through `SpendingUnit.getData(suId)`).
 //! 5. Wallet rolls a per-TD Grumpkin keypair, produces a flat
-//!    aggregation proof over the SUs, and broadcasts
-//!    `TributeDraft.submit(...)` through the agents pool.
+//!    aggregation proof over the SUs, and submits
+//!    `TributeDraft.submit(...)` **itself** through the actor pool —
+//!    a fresh non-SRA key, PSO envelope with a real VDF, executed via
+//!    TributeDraft's `PsoEnvelopeDispatcher` fallback. This is the
+//!    real-topology wallet path; the previous SRA-relayed agents-pool
+//!    submission only worked through the `ADMIN_MASK` backdoor
+//!    (`TD.submit` is not in the agents-lane `(to, selector)` table).
 //! 6. Asserts the TD's stored `derivedOwner` matches the wallet's
 //!    computation.
 //!
@@ -19,14 +24,16 @@
 
 use std::time::Duration;
 
-use alloy::primitives::{FixedBytes, U256};
+use alloy::primitives::{Bytes, FixedBytes, U256};
+use alloy::sol_types::SolCall;
 use ark_bn254::Fr;
 use ark_ff::PrimeField;
 use async_trait::async_trait;
 use k256::SecretKey;
 
+use pso_l2_client::abi::ITributeDraft;
 use pso_l2_client::wallet::{
-    prepare_su_ownership_material, prepare_td_keypair, submit_tribute_draft, SuAggregationInput,
+    prepare_su_ownership_material, prepare_td_keypair, SuAggregationInput,
 };
 
 use crate::bridge::SuMintArgs;
@@ -318,10 +325,41 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .map_err(|e| eyre::eyre!("prove join: {e}"))??
     };
 
-    let tx = submit_tribute_draft(env.sra_zero.inner(), &bundle).await?;
-    env.sra_zero
-        .wait_for_tx_success(tx, Duration::from_secs(60))
-        .await?;
+    // Wallet-direct submission: a fresh, never-registered key signs the
+    // TD tx itself and broadcasts through the actor pool. The client
+    // wraps the inner calldata in the PSO envelope (real MinRoot VDF at
+    // the chain's reported difficulty); on-chain, TributeDraft's
+    // envelope-dispatcher fallback strips the header and re-dispatches
+    // `submit(...)` with msg.sender = this wallet.
+    let su_ids_ordered: Vec<U256> = bundle
+        .su_ids
+        .iter()
+        .map(|s| {
+            U256::from_str_radix(s.trim_start_matches("0x"), 16)
+                .map_err(|e| eyre::eyre!("bundle su_id parse: {e}"))
+        })
+        .collect::<eyre::Result<_>>()?;
+    let proof_bytes = hex::decode(bundle.proof_bytes_hex.trim_start_matches("0x"))?;
+    let inner = ITributeDraft::submitCall {
+        tributeDraftId: td_id,
+        derivedOwner: FixedBytes::<32>::from_slice(&td_owner_be),
+        suIds: su_ids_ordered,
+        aggregationProof: Bytes::from(proof_bytes),
+    }
+    .abi_encode();
+
+    let wallet = env.new_actor()?;
+    let tx = wallet
+        .submit_tx(TRIBUTE_DRAFT_ADDR, Bytes::from(inner))
+        .await
+        .map_err(|e| eyre::eyre!("wallet-direct TD submit: {e:?}"))?;
+    let receipt = wallet.wait_for_receipt(tx, Duration::from_secs(60)).await?;
+    if !receipt.status() {
+        return Err(eyre::eyre!(
+            "S001: wallet-direct TD.submit reverted (tx {tx:#x}) — envelope \
+             dispatcher or aggregation verification failed"
+        ));
+    }
 
     // -----------------------------------------------------------------
     // 6. Read the TD back, assert the stored `derivedOwner` matches

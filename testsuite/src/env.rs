@@ -51,6 +51,19 @@ use crate::clients::actor::ActorClient;
 use crate::clients::admin::{AdminClient, SRA_REGISTRY};
 use crate::clients::sra::SraClient;
 
+/// Permission mask SRAs are registered with: bits 0–3 = SU.submit,
+/// SR.submit, AR.submit, heartbeat (reserved) — the same mask the
+/// node's own dev seeding uses for the sequencer (`main.rs`,
+/// `permission_mask: 15`).
+///
+/// Deliberately NOT `u32::MAX`: that is `ADMIN_MASK`, which
+/// short-circuits the agents-lane `(to, selector)` allowlist
+/// entirely and previously let SRAs relay `TributeDraft.submit`
+/// through the agents pool — a backdoor, since `TD.submit` is not
+/// in the allowlist at all. Real topology: TDs are wallet-submitted
+/// through the actor pool only.
+pub const SRA_PERMISSION_MASK: u32 = 0xF;
+
 /// All-in-one handle every scenario takes by reference. See the
 /// module-level doc-comment for the conceptual surface.
 pub struct TestEnv {
@@ -128,16 +141,16 @@ impl TestEnv {
     // -----------------------------------------------------------------
 
     /// Spawn a fresh SRA: roll a random secp256k1 key, register
-    /// it via [`AdminClient::register_sra`] (mask = u32::MAX,
-    /// rate limit 1 M, rotation candidate), and return an
-    /// [`SraClient`] bound to it. The returned client is
-    /// independent of `env.sra_zero` and can submit through the
-    /// agents pool immediately.
+    /// it via [`AdminClient::register_sra`]
+    /// (mask = [`SRA_PERMISSION_MASK`], rate limit 1 M, rotation
+    /// candidate), and return an [`SraClient`] bound to it. The
+    /// returned client is independent of `env.sra_zero` and can
+    /// submit through the agents pool immediately.
     pub async fn new_sra(&self) -> eyre::Result<SraClient> {
         let secret = roll_random_key();
         let target_addr = derive_address(&secret)?;
         self.admin
-            .register_sra(target_addr, u32::MAX, 1_000_000u64, true)
+            .register_sra(target_addr, SRA_PERMISSION_MASK, 1_000_000u64, true)
             .await
             .map_err(|e| eyre::eyre!("register_sra: {e}"))?;
         // Wait for the register receipt to land. The `pending`
@@ -149,19 +162,24 @@ impl TestEnv {
     }
 
     /// Fresh [`ActorClient`] keyed by a random non-SRA wallet
-    /// key. Use this for scenarios whose test surface is "the
-    /// actor RPC bounces non-SRA senders" (S003-S005, S030).
+    /// key — the canonical "end-user wallet" identity. The users
+    /// lane is permissionless since psonet/pso-chain#13 (anti-spam
+    /// = VDF + nullifier + block age, no registry gate), so this
+    /// client's envelopes clear pool admission (S041); whether the
+    /// inner call is *allowed* is the EVM contracts' job
+    /// (`onlyActiveSRA` reverts — S003-S005, S030).
     pub fn new_actor(&self) -> eyre::Result<ActorClient> {
         let key = roll_random_key();
         ActorClient::new(&self.actor_rpc_url, self.chain_id, &key)
             .map_err(|e| eyre::eyre!("new_actor: {e}"))
     }
 
-    /// Fresh [`ActorClient`] keyed by `&env.sra_zero`'s secret —
-    /// i.e. an actor-pool client that clears the
-    /// "SRA not registered" gate inside `rpc/actor.rs::add_raw_tx`.
-    /// Use this for envelope-tampering / VDF-mismatch scenarios
-    /// that need to reach the *post-gate* validator checks.
+    /// Fresh [`ActorClient`] keyed by `&env.sra_zero`'s secret.
+    /// Historically required to clear the users-lane SRA gate
+    /// (removed in psonet/pso-chain#13); kept because the
+    /// envelope-tampering / VDF-mismatch scenarios (S013-S017,
+    /// S031-S032) were written against it and an SRA-keyed sender
+    /// remains valid on the users lane.
     ///
     /// Today the only registered SRA whose secret material the
     /// env physically holds is SRA-0 (Hardhat #1) — that's why
@@ -320,7 +338,7 @@ pub async fn bootstrap_register_sra(
     let write_provider = admin_client.write_provider().map_err(map_l2_err)?;
     let registry_w = ISRARegistryBootstrap::new(SRA_REGISTRY, &write_provider);
     let pending = registry_w
-        .register(target_addr, u32::MAX, 1_000_000u64, true)
+        .register(target_addr, SRA_PERMISSION_MASK, 1_000_000u64, true)
         .max_fee_per_gas(0)
         .max_priority_fee_per_gas(0)
         .send()
