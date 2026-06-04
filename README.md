@@ -98,7 +98,7 @@ pso-integration/
 │                                           # delegate to
 │                                           # `pso_protocol::nft::*`.
 └── testsuite/                              # `pso-e2e` scenario harness.
-                                            # 35+ scenarios; see
+                                            # 40+ scenarios; see
                                             # testsuite/README.md.
 ```
 
@@ -164,12 +164,12 @@ git push origin main
 
 # B. Manual tag push: produce a tag locally and push it. The
 #    release-* jobs fire on the `push: tags` trigger.
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.6.0
+git push origin v0.6.0
 
 # C. UI / scripted dispatch: trigger the release for an existing
 #    tag without pushing anything.
-gh workflow run ci.yml --field tag=v0.2.0
+gh workflow run ci.yml --field tag=v0.6.0
 ```
 
 `gh workflow run ci.yml` with `tag=""` (or omitted) acts as a
@@ -208,7 +208,7 @@ UniFFI bindings are emitted by each crate's `uniffi-bindgen-mobile` /
 `pso-e2e` is the scenario-driven harness. It connects to a running
 `pso-chain --dev` instance, bootstraps the SRA registry, and walks
 through every scenario in `testsuite/src/scenarios/` — both the
-happy-path SR → AR → SU → TD round-trip and the 30+ negative-path
+happy-path SR → AR → SU → wallet-direct TD round-trip and the 40+
 invariants the protocol enforces (envelope tampering, foreign-SRA
 record references, malformed aggregation proofs, registry guards,
 SRA lifecycle transitions, …).
@@ -235,13 +235,14 @@ pso-e2e --list                                                              # en
 ### Pre-built image
 
 Every push to `main` publishes `ghcr.io/psonet/pso-e2e:main`; every
-release tag publishes `:vX.Y.Z` + `:latest`. pso-chain CI consumes
-the image directly:
+release tag `vX.Y.Z` publishes `:X.Y.Z` (no `v` prefix) + `:latest`.
+pso-chain CI pins the versioned tag (`:main` is for local iteration
+only):
 
 ```bash
-docker pull ghcr.io/psonet/pso-e2e:main
+docker pull ghcr.io/psonet/pso-e2e:0.6.0
 
-docker run --rm --network host ghcr.io/psonet/pso-e2e:main \
+docker run --rm --network host ghcr.io/psonet/pso-e2e:0.6.0 \
   --rpc-url       http://127.0.0.1:19545 \
   --actor-rpc-url http://127.0.0.1:8546  \
   --chain-id      19280501               \
@@ -256,8 +257,8 @@ they exercise:
 
 | Group        | Range           | What                                                                           |
 | ------------ | --------------- | ------------------------------------------------------------------------------ |
-| Happy path   | S001            | Full SR → AR → SU mint via bridge → wallet TD prove + submit; `derivedOwner` round-trip. |
-| Pool routing | S002 – S006     | Each pool admits only the txs it should: TD never on agents pool, SR/AR/SU never on actor pool without SRA registration. |
+| Happy path   | S001            | Full SR → AR → SU mint via bridge → **wallet-direct** TD prove + submit through the actor pool; `derivedOwner` round-trip. |
+| Pool routing | S002 – S006     | Each pool admits only the txs it should: TD never on agents pool (no mask bit exists for it), wallet keys can't reach SRA-only contract methods. |
 | SBT guards   | S007, S008      | Duplicate SR id → `AlreadyExists`; SR id 0 → `InvalidTokenId`.                 |
 | SU validity  | S009 – S011, S020 | Foreign-SRA SR/AR + never-registered SR + double-spend → `SpendingRecordsNotOwnedBySender` / `SpendingRecordsAlreadyExist`. |
 | TD invariants| S012, S021 – S023 | Empty `suIds`, `NotFound`, `NotSameWorldwideDay`, `NotSameCurrency`. |
@@ -265,6 +266,8 @@ they exercise:
 | Aggregation negatives | S018, S019 | `MalformedAggregationProof` (length) + `InvalidAggregationProof` (public-input mismatch). |
 | Contract guards | S025 – S030 | `InvalidMetadata`, `InvalidAmount`, `NotAdmin`, `ZeroAddress`, `InvalidMask`, `SRANotActive`. |
 | SRA lifecycle | S033, S035 – S037 | Revoke → SR.submit reverts `SRANotActive`; `updateMask` / `setRotationCandidate` round-trip; revoke unknown → `NotRegistered`. |
+| Epoch / slashing | S038 – S040 | `SequencerEpoch` views; `proveEquivocation` / `proveInvalidVDF` happy paths. |
+| Wallet lifecycle | S041 – S044 | Permissionless actor-lane admission (no SRA gate); mobile-API wallet flow end-to-end through the envelope dispatcher; aged-proof window positive; sequential nonces + stale VDF-binding rejection. |
 
 The full table with descriptions lives in
 [`testsuite/README.md`](testsuite/README.md); each scenario file is
@@ -314,8 +317,13 @@ unit  ─┴─> image (push:main) ─> tag (cocogitto) ─> release-binaries �
   release jobs short-circuit cleanly via
   `if: needs.tag.outputs.tag != ''`.
 
-`pso-chain` consumes `ghcr.io/psonet/pso-e2e:main` directly in its
-own CI (see [pso-chain `.github/workflows/ci.yml::e2e`](https://github.com/psonet/pso-chain/blob/main/.github/workflows/ci.yml)).
+`pso-chain` CI pins a **versioned release tag** of the image (e.g.
+`ghcr.io/psonet/pso-e2e:0.6.0`), NOT `:main` — so the chain side
+doesn't float on an unreleased suite. The pin lives in
+[pso-chain `.github/workflows/ci.yml::e2e`](https://github.com/psonet/pso-chain/blob/main/.github/workflows/ci.yml)
+and must be bumped in lockstep with releases that change
+chain-coupled behavior (e.g. v0.6.0's wallet-direct scenarios require
+the pso-chain envelope dispatcher).
 
 ## Dependencies
 
@@ -337,7 +345,7 @@ See [SECURITY.md](SECURITY.md) for the threat model, the matrix-aware semantics,
 Quick check (JAR):
 
 ```sh
-TAG=v0.3.7
+TAG=v0.6.0
 ARTIFACT="pso-sra-integration-kotlin-$TAG.jar"  # released filenames carry the -$TAG suffix
 gh release download "$TAG" --repo psonet/pso-integration \
   --pattern "$ARTIFACT" --pattern "$ARTIFACT.sig" --pattern "$ARTIFACT.pem"
