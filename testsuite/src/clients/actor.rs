@@ -214,11 +214,37 @@ impl ActorClient {
     where
         F: FnOnce(Vec<u8>) -> Vec<u8>,
     {
+        self.submit_tx_pinned(to, inner_calldata, custom_difficulty, None, mutate)
+            .await
+    }
+
+    /// Like [`Self::submit_tx_with_difficulty`] but additionally lets
+    /// the caller pin `submitted_block` instead of using the current
+    /// head. The envelope's VDF binding is derived for the pinned
+    /// block, so the proof is genuinely "as of" that height —
+    /// admission then depends solely on the chain-side age window
+    /// (`PSO_PROOF_MAX_AGE`). Used by the proof-aging scenario (S043)
+    /// to model a slow wallet whose proof is several blocks old by
+    /// the time it broadcasts.
+    pub async fn submit_tx_pinned<F>(
+        &self,
+        to: Address,
+        inner_calldata: Bytes,
+        custom_difficulty: Option<u64>,
+        pinned_block: Option<u64>,
+        mutate: F,
+    ) -> Result<TxHash, ActorClientError>
+    where
+        F: FnOnce(Vec<u8>) -> Vec<u8>,
+    {
         let difficulty = match custom_difficulty {
             Some(t) => t,
             None => self.fetch_difficulty().await?,
         };
-        let head = self.block_number().await?;
+        let head = match pinned_block {
+            Some(b) => b,
+            None => self.block_number().await?,
+        };
         let nonce = self.nonce().await?;
 
         let envelope = build_users_pool_calldata(
