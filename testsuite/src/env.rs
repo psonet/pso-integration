@@ -51,6 +51,19 @@ use crate::clients::actor::ActorClient;
 use crate::clients::admin::{AdminClient, SRA_REGISTRY};
 use crate::clients::sra::SraClient;
 
+/// Permission mask SRAs are registered with: bits 0–3 = SU.submit,
+/// SR.submit, AR.submit, heartbeat (reserved) — the same mask the
+/// node's own dev seeding uses for the sequencer (`main.rs`,
+/// `permission_mask: 15`).
+///
+/// Deliberately NOT `u32::MAX`: that is `ADMIN_MASK`, which
+/// short-circuits the agents-lane `(to, selector)` allowlist
+/// entirely and previously let SRAs relay `TributeDraft.submit`
+/// through the agents pool — a backdoor, since `TD.submit` is not
+/// in the allowlist at all. Real topology: TDs are wallet-submitted
+/// through the actor pool only.
+pub const SRA_PERMISSION_MASK: u32 = 0xF;
+
 /// All-in-one handle every scenario takes by reference. See the
 /// module-level doc-comment for the conceptual surface.
 pub struct TestEnv {
@@ -128,16 +141,16 @@ impl TestEnv {
     // -----------------------------------------------------------------
 
     /// Spawn a fresh SRA: roll a random secp256k1 key, register
-    /// it via [`AdminClient::register_sra`] (mask = u32::MAX,
-    /// rate limit 1 M, rotation candidate), and return an
-    /// [`SraClient`] bound to it. The returned client is
-    /// independent of `env.sra_zero` and can submit through the
-    /// agents pool immediately.
+    /// it via [`AdminClient::register_sra`]
+    /// (mask = [`SRA_PERMISSION_MASK`], rate limit 1 M, rotation
+    /// candidate), and return an [`SraClient`] bound to it. The
+    /// returned client is independent of `env.sra_zero` and can
+    /// submit through the agents pool immediately.
     pub async fn new_sra(&self) -> eyre::Result<SraClient> {
         let secret = roll_random_key();
         let target_addr = derive_address(&secret)?;
         self.admin
-            .register_sra(target_addr, u32::MAX, 1_000_000u64, true)
+            .register_sra(target_addr, SRA_PERMISSION_MASK, 1_000_000u64, true)
             .await
             .map_err(|e| eyre::eyre!("register_sra: {e}"))?;
         // Wait for the register receipt to land. The `pending`
@@ -325,7 +338,7 @@ pub async fn bootstrap_register_sra(
     let write_provider = admin_client.write_provider().map_err(map_l2_err)?;
     let registry_w = ISRARegistryBootstrap::new(SRA_REGISTRY, &write_provider);
     let pending = registry_w
-        .register(target_addr, u32::MAX, 1_000_000u64, true)
+        .register(target_addr, SRA_PERMISSION_MASK, 1_000_000u64, true)
         .max_fee_per_gas(0)
         .max_priority_fee_per_gas(0)
         .send()

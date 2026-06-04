@@ -4,22 +4,15 @@
 //! SR/AR/SU submission only; TD.submit is intentionally NOT on the
 //! list. The wallet path goes through the actor pool.
 //!
-//! **Caveat:** the `bootstrap_register_sra` flow registers the test
-//! signer with `permission_mask = u32::MAX = ADMIN_MASK`, which
-//! short-circuits the `(to, selector)` allowlist check in
-//! `SraRecord::permits` — admin-masked actors are accepted on every
-//! selector. So under the current bootstrap, the agents pool admits
-//! TD.submit and rejection happens at the contract layer (e.g.
-//! `NotFound` from `_collectSuTotals`, or `InvalidAggregationProof`
-//! from `_verifyAggregationProof`).
-//!
-//! Either rejection mode is acceptable for this invariant: the
-//! scenario passes as long as the SRA's TD.submit attempt **fails**,
-//! whether the agents pool refuses it (`MethodNotPermitted`) or the
-//! EVM reverts (any `PsoContractError` variant other than success).
+//! `sra_zero` is registered with [`crate::env::SRA_PERMISSION_MASK`]
+//! (SU/SR/AR bits only — NOT `ADMIN_MASK`), so the agents-lane
+//! `(to, selector)` allowlist rejects `TD.submit` at pool admission
+//! with `MethodNotPermitted`. The tolerant match below also accepts a
+//! contract-layer revert, so the scenario stays green against warm
+//! nodes whose registry still carries a legacy admin-masked record.
 //! The invariant the test enforces is "SRA cannot mint a TributeDraft
 //! via the agents pool"; the layer that enforces it is an
-//! implementation detail of the current chain build.
+//! implementation detail of the chain build under test.
 
 use alloy::primitives::{Bytes, FixedBytes, U256};
 use alloy::providers::Provider;
