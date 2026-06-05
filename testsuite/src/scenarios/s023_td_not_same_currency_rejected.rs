@@ -96,6 +96,7 @@ async fn mint_su_with(
         .mint_su(SuMintArgs {
             su_id: random_id(),
             consent_pk: consent_sk.public_key(),
+            referrer_address: alloy::primitives::Address::ZERO,
             currency,
             worldwide_day,
             amount_base: base,

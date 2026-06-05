@@ -191,6 +191,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         let args = SuMintArgs {
             su_id,
             consent_pk: consent_pk.clone(),
+            // No wallet EVM address in this harness ⇒ no referrer.
+            referrer_address: alloy::primitives::Address::ZERO,
             currency: shared_shape.currency,
             worldwide_day: shared_shape.worldwide_day,
             amount_base: 100 + (i as u64 * 10),

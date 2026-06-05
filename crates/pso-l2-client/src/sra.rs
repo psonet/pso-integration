@@ -64,6 +64,12 @@ pub struct MintSpendingUnitArgs {
     pub su_id: U256,
     /// Wallet-supplied Poseidon5 ownership commitment for this SU.
     pub derived_owner: FixedBytes<32>,
+    /// Wallet self-address captured at consent initiation. The SRA holds
+    /// it for the consent session and stamps every SU minted in that
+    /// session with it (the on-chain `referrerAddress`). `Address::ZERO`
+    /// means "no referrer". TributeDraft aggregation later collects the
+    /// deduplicated referrer set from the SUs.
+    pub referrer_address: Address,
     /// ISO 4217 numeric currency code.
     pub currency: u16,
     /// Worldwide-day count (days since 2021-01-01) — `uint32` slot.
@@ -93,10 +99,9 @@ pub async fn mint_spending_unit(
         .submit(
             args.su_id,
             args.derived_owner,
-            // `referrerAddress` — optional referral attribution the
-            // wallet may set off-line. The SRA mint flow has no referrer
-            // context, so submit the zero address (== "no referrer").
-            Address::ZERO,
+            // `referrerAddress` — the wallet self-address from the consent
+            // session (`Address::ZERO` if none).
+            args.referrer_address,
             args.currency,
             args.worldwide_day,
             args.amount_base,

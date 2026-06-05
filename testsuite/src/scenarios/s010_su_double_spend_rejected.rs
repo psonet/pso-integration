@@ -53,6 +53,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: su1_id,
             derived_owner: FixedBytes::from([0u8; 32]),
+            referrer_address: alloy::primitives::Address::ZERO,
             currency: shape.currency,
             worldwide_day: shape.worldwide_day,
             amount_base: shape.amount_base,
@@ -74,6 +75,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: su2_id,
             derived_owner: FixedBytes::from([0u8; 32]),
+            referrer_address: alloy::primitives::Address::ZERO,
             currency: shape.currency,
             worldwide_day: shape.worldwide_day,
             amount_base: shape.amount_base,
