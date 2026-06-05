@@ -93,7 +93,7 @@ alloy::sol! {
         uint32  worldwideDay;
         uint64  amountBase;
         uint64  amountAtto;
-        uint256[] suHashes;
+        uint256[] suIds;
         address[] referrers;
         address[] attesters;
     }

@@ -99,7 +99,7 @@ alloy::sol! {
             uint64 amountBase,
             uint64 amountAtto,
             uint16 currency,
-            uint256[] suHashes
+            uint256[] suIds
         );
         function submit(
             uint256 tributeDraftId,
