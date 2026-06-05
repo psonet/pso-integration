@@ -9,7 +9,6 @@
 //! `SraClient` from it, and try to submit an SR — expect the
 //! revert.
 
-use alloy::primitives::FixedBytes;
 use async_trait::async_trait;
 
 use crate::clients::sra::SraClient;
@@ -41,11 +40,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
     let sr_id = random_id();
     let err = stranger
-        .register_spending_record(
-            sr_id,
-            vec!["merchant".into()],
-            vec![FixedBytes::from([0xa1u8; 32])],
-        )
+        .register_spending_record(sr_id)
         .await
         .err()
         .ok_or_else(|| eyre::eyre!("S030: expected SRANotActive revert, got success"))?;

@@ -9,7 +9,7 @@ use alloy::primitives::Bytes;
 use alloy::sol_types::SolCall;
 use async_trait::async_trait;
 
-use pso_l2_client::abi::{ISpendingRecordAmendment, SPENDING_RECORD_AMENDMENT};
+use pso_l2_client::abi::{IAmendmentRecord, AMENDMENT_RECORD};
 
 use crate::clients::actor::ActorClientError;
 use crate::data::random_id;
@@ -32,18 +32,10 @@ impl Scenario for S004 {
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let ar_id = random_id();
-    let call = ISpendingRecordAmendment::submitCall {
-        srId: ar_id,
-        keys: vec!["correction".into()],
-        values: vec![Default::default()],
-    };
+    let call = IAmendmentRecord::submitCall { arId: ar_id };
     let inner = Bytes::from(call.abi_encode());
 
-    match env
-        .new_actor()?
-        .submit_tx(SPENDING_RECORD_AMENDMENT, inner)
-        .await
-    {
+    match env.new_actor()?.submit_tx(AMENDMENT_RECORD, inner).await {
         Err(ActorClientError::PoolRejection(msg)) => {
             tracing::info!(%msg, "S004: actor pool refused tx (no AR landed)");
             Ok(())

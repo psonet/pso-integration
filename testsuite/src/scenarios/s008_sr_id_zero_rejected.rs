@@ -4,7 +4,7 @@
 //! InvalidTokenId())`. Hits agents pool, EVM execution, reverts on
 //! the first storage write.
 
-use alloy::primitives::{FixedBytes, U256};
+use alloy::primitives::U256;
 use async_trait::async_trait;
 
 use crate::clients::sra::into_pso_error;
@@ -28,11 +28,7 @@ impl Scenario for S008 {
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let err = env
         .sra_zero
-        .register_spending_record(
-            U256::ZERO,
-            vec!["merchant".into()],
-            vec![FixedBytes::from([0xa1u8; 32])],
-        )
+        .register_spending_record(U256::ZERO)
         .await
         .err()
         .ok_or_else(|| eyre::eyre!("S008: expected revert on id=0"))?;

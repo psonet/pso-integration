@@ -36,11 +36,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let sr_id = random_id();
     let tx = env
         .sra_zero
-        .register_spending_record(
-            sr_id,
-            vec!["merchant".into()],
-            vec![FixedBytes::from([0xa1u8; 32])],
-        )
+        .register_spending_record(sr_id)
         .await?;
     env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))

@@ -38,19 +38,3 @@ pub(crate) fn parse_uint256_list(s: &str) -> Result<Vec<U256>> {
     }
     s.split(',').map(|tok| parse_uint256(tok.trim())).collect()
 }
-
-/// Parse a comma-separated list of `bytes32` hex values.
-pub(crate) fn parse_b32_list(s: &str) -> Result<Vec<FixedBytes<32>>> {
-    if s.is_empty() {
-        return Ok(Vec::new());
-    }
-    s.split(',').map(|tok| parse_b32(tok.trim())).collect()
-}
-
-/// Parse a comma-separated list of strings (for SR keys).
-pub(crate) fn parse_string_list(s: &str) -> Vec<String> {
-    if s.is_empty() {
-        return Vec::new();
-    }
-    s.split(',').map(|tok| tok.trim().to_string()).collect()
-}

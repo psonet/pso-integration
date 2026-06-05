@@ -9,7 +9,7 @@
 //! generators. Anything that needs a round-trip to L2 lives on the
 //! client or the bridge.
 
-use alloy::primitives::{FixedBytes, U256};
+use alloy::primitives::U256;
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField};
 use chrono::{Datelike, NaiveDate};
@@ -108,37 +108,6 @@ pub fn random_td_args() -> SuTemplate {
     }
 }
 
-/// Random metadata vector for `SpendingRecord.submit(srId, keys, values)`.
-/// Keys mirror the production "merchant / amount / ..." shape; values
-/// are random `bytes32` blobs.
-pub fn random_sr_metadata() -> Vec<(String, FixedBytes<32>)> {
-    let mut rng = OsRng;
-    let mut keys = vec!["merchant".to_string(), "amount".to_string()];
-    if rng.gen_bool(0.5) {
-        keys.push("timestamp".to_string());
-    }
-    keys.into_iter()
-        .map(|k| {
-            let mut b = [0u8; 32];
-            rng.fill_bytes(&mut b);
-            (k, FixedBytes::from(b))
-        })
-        .collect()
-}
-
-/// Same shape as [`random_sr_metadata`] but with amendment-style keys.
-pub fn random_ar_metadata() -> Vec<(String, FixedBytes<32>)> {
-    let mut rng = OsRng;
-    let keys = vec!["correction".to_string(), "reason".to_string()];
-    keys.into_iter()
-        .map(|k| {
-            let mut b = [0u8; 32];
-            rng.fill_bytes(&mut b);
-            (k, FixedBytes::from(b))
-        })
-        .collect()
-}
-
 /// Random worldwide-day count compatible with the SU contract's
 /// `uint32` slot.
 fn worldwide_day(date: &NaiveDate) -> u32 {
@@ -184,12 +153,6 @@ mod tests {
         assert!(t.worldwide_day <= max, "WWD must be in the past");
     }
 
-    #[test]
-    fn metadata_round_trip() {
-        let v = random_sr_metadata();
-        assert!(!v.is_empty());
-        assert!(v.iter().all(|(k, _)| !k.is_empty()));
-    }
 }
 
 // Keep `Datelike` referenced so future helpers that print the date

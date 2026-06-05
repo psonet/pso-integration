@@ -14,7 +14,7 @@ use pso_e2e_testsuite::cli::parse_hex32;
 use pso_e2e_testsuite::clients::envelope::{
     build_users_pool_calldata, derive_vdf_input, pso_magic, DEFAULT_PSO_MAGIC, PSO_MIN_HEADER,
 };
-use pso_e2e_testsuite::data::{currency_eur, random_id, random_sr_metadata, random_su_args};
+use pso_e2e_testsuite::data::{currency_eur, random_id, random_su_args};
 use pso_l2_client::contract_errors::{decode_from_bytes, decode_text};
 use pso_l2_client::PsoContractError;
 
@@ -82,15 +82,6 @@ fn data_random_su_args_shape() {
     assert!(t.currency != 0);
     assert!(t.sr_count >= 1);
     let _ = currency_eur(); // surfaces the helper for future tests
-}
-
-/// `random_sr_metadata` should always carry at least one key/value
-/// pair so `SR.submit` never short-circuits on length checks.
-#[test]
-fn data_random_sr_metadata_nonempty() {
-    let v = random_sr_metadata();
-    assert!(!v.is_empty());
-    assert!(v.iter().all(|(k, _)| !k.is_empty()));
 }
 
 /// `random_id` should produce non-zero ids across reasonable

@@ -13,10 +13,10 @@
 
 use std::time::{Duration, Instant};
 
-use alloy::primitives::{Address, FixedBytes, TxHash, U256};
+use alloy::primitives::{Address, TxHash, U256};
 use alloy::providers::Provider;
 
-use pso_l2_client::abi::{ISpendingRecord, ISpendingRecordAmendment, ISpendingUnit};
+use pso_l2_client::abi::{IAmendmentRecord, ISpendingRecord, ISpendingUnit};
 use pso_l2_client::{sra, L2Client, L2ClientError};
 
 /// Agents-pool RPC client. Cheap to clone (`L2Client` is `Arc`-backed).
@@ -71,24 +71,14 @@ impl SraClient {
     // `into_pso_error`.
     // -----------------------------------------------------------------
 
-    /// `SpendingRecord.submit(srId, keys, values)`.
-    pub async fn register_spending_record(
-        &self,
-        sr_id: U256,
-        keys: Vec<String>,
-        values: Vec<FixedBytes<32>>,
-    ) -> Result<TxHash, L2ClientError> {
-        sra::register_spending_record(&self.inner, sr_id, keys, values).await
+    /// `SpendingRecord.submit(srId)`.
+    pub async fn register_spending_record(&self, sr_id: U256) -> Result<TxHash, L2ClientError> {
+        sra::register_spending_record(&self.inner, sr_id).await
     }
 
-    /// `SpendingRecordAmendment.submit(...)`.
-    pub async fn register_amendment_record(
-        &self,
-        ar_id: U256,
-        keys: Vec<String>,
-        values: Vec<FixedBytes<32>>,
-    ) -> Result<TxHash, L2ClientError> {
-        sra::register_amendment_record(&self.inner, ar_id, keys, values).await
+    /// `AmendmentRecord.submit(arId)`.
+    pub async fn register_amendment_record(&self, ar_id: U256) -> Result<TxHash, L2ClientError> {
+        sra::register_amendment_record(&self.inner, ar_id).await
     }
 
     /// `SpendingUnit.submit(...)`.
@@ -136,8 +126,7 @@ impl SraClient {
     ) -> eyre::Result<()> {
         let provider = self.inner.read_provider();
         let sr = ISpendingRecord::new(pso_l2_client::abi::SPENDING_RECORD, &provider);
-        let ar =
-            ISpendingRecordAmendment::new(pso_l2_client::abi::SPENDING_RECORD_AMENDMENT, &provider);
+        let ar = IAmendmentRecord::new(pso_l2_client::abi::AMENDMENT_RECORD, &provider);
         let deadline = Instant::now() + timeout;
         let mut last_missing: Option<U256> = None;
         loop {
@@ -239,7 +228,7 @@ async fn sr_exists<P: Provider + Clone>(
 }
 
 async fn ar_exists<P: Provider + Clone>(
-    ar: &ISpendingRecordAmendment::ISpendingRecordAmendmentInstance<&P>,
+    ar: &IAmendmentRecord::IAmendmentRecordInstance<&P>,
     id: U256,
 ) -> eyre::Result<bool> {
     let provider = ar.provider();

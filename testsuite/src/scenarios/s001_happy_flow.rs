@@ -133,14 +133,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
         let tx = env
             .sra_zero
-            .register_spending_record(
-                sr1,
-                vec!["merchant".into(), "amount".into()],
-                vec![
-                    FixedBytes::from([0xa1u8; 32]),
-                    FixedBytes::from([0xa2u8; 32]),
-                ],
-            )
+            .register_spending_record(sr1)
             .await?;
         env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
@@ -148,14 +141,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
         let tx = env
             .sra_zero
-            .register_spending_record(
-                sr2,
-                vec!["merchant".into(), "amount".into()],
-                vec![
-                    FixedBytes::from([0xb1u8; 32]),
-                    FixedBytes::from([0xb2u8; 32]),
-                ],
-            )
+            .register_spending_record(sr2)
             .await?;
         env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
@@ -163,11 +149,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
         let tx = env
             .sra_zero
-            .register_amendment_record(
-                ar1,
-                vec!["correction".into()],
-                vec![FixedBytes::from([0xc1u8; 32])],
-            )
+            .register_amendment_record(ar1)
             .await?;
         env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))

@@ -51,8 +51,6 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let sr_id = random_id();
     let call = ISpendingRecord::submitCall {
         srId: sr_id,
-        keys: vec!["merchant".into(), "amount".into()],
-        values: vec![Default::default(), Default::default()],
     };
     let inner = Bytes::from(call.abi_encode());
 

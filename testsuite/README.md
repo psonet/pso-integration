@@ -86,7 +86,6 @@ guard it exercises.
 | S021  | `TributeDraft.submit` with non-existent `suId` reverts `NotFound`.                       |
 | S022  | `TributeDraft.submit` with SUs on different worldwide_days reverts `NotSameWorldwideDay`.|
 | S023  | `TributeDraft.submit` with SUs in different currencies reverts `NotSameCurrency`. |
-| S025  | `SR.submit` with mismatched key/value lengths reverts `InvalidMetadata`.                 |
 | S026  | `SU.submit` with `amount_atto >= 1e18` reverts `InvalidAmount`.               |
 | S027  | `SRARegistry.register` from a non-admin reverts `NotAdmin`.                              |
 | S028  | `SRARegistry.register(address(0), ...)` reverts `ZeroAddress`.                           |

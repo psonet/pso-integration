@@ -51,11 +51,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let ar_id = random_id();
     let tx = env
         .sra_zero
-        .register_amendment_record(
-            ar_id,
-            vec!["correction".into()],
-            vec![FixedBytes::from([0xc1u8; 32])],
-        )
+        .register_amendment_record(ar_id)
         .await?;
     env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))

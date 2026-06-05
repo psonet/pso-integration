@@ -8,74 +8,50 @@
 use alloy::primitives::{Address, FixedBytes, TxHash, U256};
 
 use crate::abi::{
-    ISpendingRecord, ISpendingRecordAmendment, ISpendingUnit, SPENDING_RECORD,
-    SPENDING_RECORD_AMENDMENT, SPENDING_UNIT,
+    IAmendmentRecord, ISpendingRecord, ISpendingUnit, AMENDMENT_RECORD, SPENDING_RECORD,
+    SPENDING_UNIT,
 };
 use crate::client::L2Client;
 use crate::error::L2ClientError;
 
-/// Generic submitter for the SR / SRA contracts — same ABI shape
-/// (`submit(uint256 id, string[] keys, bytes32[] values)`), different
-/// addresses, so the implementation is shared.
-async fn submit_record_like(
-    client: &L2Client,
-    contract: Address,
-    record_id: U256,
-    keys: Vec<String>,
-    values: Vec<FixedBytes<32>>,
-) -> Result<TxHash, L2ClientError> {
-    if keys.len() != values.len() {
-        return Err(L2ClientError::InvalidInput(format!(
-            "keys.len ({}) != values.len ({})",
-            keys.len(),
-            values.len()
-        )));
-    }
-    let provider = client.write_provider()?;
-    // Both interfaces share the same selector & args; pick one for the
-    // generated builder.
-    let inst = ISpendingRecord::new(contract, provider);
-    let pending = inst
-        .submit(record_id, keys, values)
-        .max_fee_per_gas(0)
-        .max_priority_fee_per_gas(0)
-        .send()
-        .await
-        .map_err(|e| L2ClientError::Contract(format!("submit: {e}")))?;
-    Ok(*pending.tx_hash())
-}
-
-/// Submit a spending record. Maps to
-/// `SpendingRecord.submit(srId, keys, values)`.
+/// Submit a spending record. Maps to `SpendingRecord.submit(srId)`.
+///
+/// Under the privacy-preserving L2 model SR is a soulbound NFT whose
+/// only on-chain state is `ownerOf(srId) == submitting SRA`; the
+/// free-form `keys`/`values` metadata of the legacy interface was
+/// dropped (it leaked correlatable plaintext and nothing consumed it).
 pub async fn register_spending_record(
     client: &L2Client,
     sr_id: U256,
-    keys: Vec<String>,
-    values: Vec<FixedBytes<32>>,
 ) -> Result<TxHash, L2ClientError> {
-    submit_record_like(client, SPENDING_RECORD, sr_id, keys, values).await
-}
-
-/// Submit an amendment record. Maps to
-/// `SpendingRecordAmendment.submit(srId, keys, values)`. ABI-identical
-/// to `register_spending_record` — different contract address.
-pub async fn register_amendment_record(
-    client: &L2Client,
-    sr_id: U256,
-    keys: Vec<String>,
-    values: Vec<FixedBytes<32>>,
-) -> Result<TxHash, L2ClientError> {
-    // ISpendingRecordAmendment shares the same selector / args by
-    // design; route through the generic builder.
     let provider = client.write_provider()?;
-    let inst = ISpendingRecordAmendment::new(SPENDING_RECORD_AMENDMENT, provider);
+    let inst = ISpendingRecord::new(SPENDING_RECORD, provider);
     let pending = inst
-        .submit(sr_id, keys, values)
+        .submit(sr_id)
         .max_fee_per_gas(0)
         .max_priority_fee_per_gas(0)
         .send()
         .await
-        .map_err(|e| L2ClientError::Contract(format!("amendment submit: {e}")))?;
+        .map_err(|e| L2ClientError::Contract(format!("SR submit: {e}")))?;
+    Ok(*pending.tx_hash())
+}
+
+/// Submit an amendment record. Maps to `AmendmentRecord.submit(arId)`.
+/// Same soulbound shape as [`register_spending_record`] — different
+/// contract address.
+pub async fn register_amendment_record(
+    client: &L2Client,
+    ar_id: U256,
+) -> Result<TxHash, L2ClientError> {
+    let provider = client.write_provider()?;
+    let inst = IAmendmentRecord::new(AMENDMENT_RECORD, provider);
+    let pending = inst
+        .submit(ar_id)
+        .max_fee_per_gas(0)
+        .max_priority_fee_per_gas(0)
+        .send()
+        .await
+        .map_err(|e| L2ClientError::Contract(format!("AR submit: {e}")))?;
     Ok(*pending.tx_hash())
 }
 
@@ -94,7 +70,9 @@ pub struct MintSpendingUnitArgs {
     pub worldwide_day: u32,
     /// Amount integer part.
     pub amount_base: u64,
-    /// Amount fractional part (atto).
+    /// Amount fractional part (atto). On-chain the SU stores this in a
+    /// `uint64` slot (atto < 1e18 always fits); we keep the wider
+    /// `u128` here for caller convenience and narrow at submit time.
     pub amount_atto: u128,
     /// Spending record IDs included in this SU.
     pub sr_ids: Vec<U256>,
@@ -115,10 +93,15 @@ pub async fn mint_spending_unit(
         .submit(
             args.su_id,
             args.derived_owner,
+            // `referrerAddress` — optional referral attribution the
+            // wallet may set off-line. The SRA mint flow has no referrer
+            // context, so submit the zero address (== "no referrer").
+            Address::ZERO,
             args.currency,
             args.worldwide_day,
             args.amount_base,
-            args.amount_atto,
+            // SU stores atto in a `uint64` slot; atto < 1e18 always fits.
+            args.amount_atto as u64,
             args.sr_ids,
             args.amendment_sr_ids,
         )

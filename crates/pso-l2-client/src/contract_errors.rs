@@ -125,11 +125,6 @@ sol! {
     #[allow(missing_docs)]
     error SpendingRecordAlreadyExists();
 
-    /// `SpendingRecord.InvalidMetadata(string)` / same on
-    /// `SpendingRecordAmendment`.
-    #[allow(missing_docs)]
-    error InvalidMetadata(string reason);
-
     /// `SRARegistry.NotAdmin()`.
     #[allow(missing_docs)]
     error NotAdmin();
@@ -191,8 +186,6 @@ pub enum PsoContractError {
     InvalidAmount,
     /// `SpendingUnit.SpendingRecordAlreadyExists` (single-shot variant).
     SpendingRecordAlreadyExists,
-    /// `SpendingRecord{,Amendment}.InvalidMetadata(string)`.
-    InvalidMetadata(String),
     /// `SRARegistry.NotAdmin`.
     NotAdmin,
     /// `SRARegistry.AlreadyRegistered(address)`.
@@ -259,7 +252,6 @@ impl std::fmt::Display for PsoContractError {
             PsoContractError::SpendingRecordAlreadyExists => {
                 write!(f, "SpendingRecordAlreadyExists")
             }
-            PsoContractError::InvalidMetadata(r) => write!(f, "InvalidMetadata({r:?})"),
             PsoContractError::NotAdmin => write!(f, "NotAdmin"),
             PsoContractError::AlreadyRegistered(a) => write!(f, "AlreadyRegistered({a})"),
             PsoContractError::NotRegistered(a) => write!(f, "NotRegistered({a})"),
@@ -434,11 +426,6 @@ pub fn decode_from_bytes(data: &[u8]) -> PsoContractError {
                 duplicateSRs,
                 duplicateARs,
             );
-        }
-    }
-    if selector == InvalidMetadata::SELECTOR {
-        if let Ok(InvalidMetadata { reason }) = InvalidMetadata::abi_decode_raw(body) {
-            return PsoContractError::InvalidMetadata(reason);
         }
     }
     if selector == AlreadyRegistered::SELECTOR {
