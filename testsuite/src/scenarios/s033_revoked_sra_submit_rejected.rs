@@ -50,9 +50,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // SR submission before we revoke. Otherwise a failure on step
     // 4 wouldn't necessarily isolate the revoke.
     let sr_id_pre = random_id();
-    let tx = sra
-        .register_spending_record(sr_id_pre)
-        .await?;
+    let tx = sra.register_spending_record(sr_id_pre).await?;
     sra.wait_for_tx_success(tx, Duration::from_secs(30)).await?;
     tracing::info!(scenario = "S033", "pre-revoke SR submission landed");
 

@@ -44,9 +44,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let first_nullifier: Arc<Mutex<Option<[u8; 32]>>> = Arc::new(Mutex::new(None));
     let captured = first_nullifier.clone();
     let sr_id_a = random_id();
-    let call_a = ISpendingRecord::submitCall {
-        srId: sr_id_a,
-    };
+    let call_a = ISpendingRecord::submitCall { srId: sr_id_a };
     let inner_a = Bytes::from(call_a.abi_encode());
     let first = env
         .new_actor_as_sra_zero()?
@@ -93,9 +91,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // submitted_block / fresh inner) but force the nullifier slot to
     // the captured value from the first.
     let sr_id_b = random_id();
-    let call_b = ISpendingRecord::submitCall {
-        srId: sr_id_b,
-    };
+    let call_b = ISpendingRecord::submitCall { srId: sr_id_b };
     let inner_b = Bytes::from(call_b.abi_encode());
     let result = env
         .new_actor_as_sra_zero()?

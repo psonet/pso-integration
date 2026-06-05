@@ -63,9 +63,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .map_err(|e| eyre::eyre!("ActorClient: {e}"))?;
 
     let sr_id = random_id();
-    let call = ISpendingRecord::submitCall {
-        srId: sr_id,
-    };
+    let call = ISpendingRecord::submitCall { srId: sr_id };
     let inner = Bytes::from(call.abi_encode());
 
     match actor_sra.submit_tx(SPENDING_RECORD, inner).await {

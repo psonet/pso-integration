@@ -152,7 +152,6 @@ mod tests {
         let max = (today - epoch).num_days() as u32;
         assert!(t.worldwide_day <= max, "WWD must be in the past");
     }
-
 }
 
 // Keep `Datelike` referenced so future helpers that print the date

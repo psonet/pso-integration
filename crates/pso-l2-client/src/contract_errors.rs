@@ -43,8 +43,8 @@ sol! {
     #[allow(missing_docs)]
     error SRANotActive();
 
-    /// `SoulBoundTokenBase.AlreadyExists()` — `_mint` invoked with an
-    /// id whose `submittedBy` slot is already populated.
+    /// `SoulBoundTokenBase.AlreadyExists()` — `_mint`/`_commit` invoked
+    /// with an id that already exists.
     #[allow(missing_docs)]
     error AlreadyExists();
 
@@ -58,7 +58,7 @@ sol! {
     error EmptyArray();
 
     /// `TributeDraft.NotFound(uint256)` — `getData(suId)` returned a
-    /// zero `submittedBy`, i.e. the SU referenced by the TD doesn't
+    /// zero `attesterAddress`, i.e. the SU referenced by the TD doesn't
     /// exist.
     #[allow(missing_docs)]
     error NotFound(uint256 spendingUnitIds);
@@ -93,7 +93,7 @@ sol! {
     /// uint256[], uint256[])` — consolidated revert for SR / AR
     /// fingerprint validation. Fields are
     /// `(badOwnerSRs, badOwnerARs, duplicateSRs, duplicateARs)`:
-    /// the first two list fingerprints whose `submittedBy` is not
+    /// the first two list fingerprints whose owner is not
     /// `_msgSender()` (or that don't exist); the last two list
     /// fingerprints already consumed by a prior SU mint or repeated
     /// within the same batch.

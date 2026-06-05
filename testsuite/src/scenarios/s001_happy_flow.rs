@@ -69,14 +69,14 @@ alloy::sol! {
     struct SpendingUnitEntity {
         uint256 suId;
         bytes32 derivedOwner;
-        address submittedBy;
-        uint256 submittedAt;
+        address attesterAddress;
+        address referrerAddress;
         uint32  worldwideDay;
         uint64  amountBase;
-        uint128 amountAtto;
+        uint64  amountAtto;
         uint16  currency;
-        uint256[] srHashes;
-        uint256[] amendmentSrHashes;
+        uint256[] srIds;
+        uint256[] arIds;
     }
 
     #[sol(rpc)]
@@ -92,9 +92,10 @@ alloy::sol! {
         uint16  currency;
         uint32  worldwideDay;
         uint64  amountBase;
-        uint128 amountAtto;
+        uint64  amountAtto;
         uint256[] suHashes;
-        uint256 createdAt;
+        address[] referrers;
+        address[] attesters;
     }
 
     #[sol(rpc)]
@@ -131,26 +132,17 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         let sr2 = random_id();
         let ar1 = random_id();
 
-        let tx = env
-            .sra_zero
-            .register_spending_record(sr1)
-            .await?;
+        let tx = env.sra_zero.register_spending_record(sr1).await?;
         env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;
 
-        let tx = env
-            .sra_zero
-            .register_spending_record(sr2)
-            .await?;
+        let tx = env.sra_zero.register_spending_record(sr2).await?;
         env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;
 
-        let tx = env
-            .sra_zero
-            .register_amendment_record(ar1)
-            .await?;
+        let tx = env.sra_zero.register_amendment_record(ar1).await?;
         env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;

@@ -85,10 +85,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 /// Returned `su_id` is live in the canonical SU storage.
 async fn mint_one_su(env: &TestEnv) -> eyre::Result<U256> {
     let sr_id = random_id();
-    let tx = env
-        .sra_zero
-        .register_spending_record(sr_id)
-        .await?;
+    let tx = env.sra_zero.register_spending_record(sr_id).await?;
     env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;

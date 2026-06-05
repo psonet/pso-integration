@@ -34,10 +34,7 @@ impl Scenario for S010 {
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     // Register a single SR; both SU mints will reference it.
     let sr_id = random_id();
-    let tx = env
-        .sra_zero
-        .register_spending_record(sr_id)
-        .await?;
+    let tx = env.sra_zero.register_spending_record(sr_id).await?;
     env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;

@@ -49,9 +49,7 @@ impl Scenario for S003 {
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let sr_id = random_id();
-    let call = ISpendingRecord::submitCall {
-        srId: sr_id,
-    };
+    let call = ISpendingRecord::submitCall { srId: sr_id };
     let inner = Bytes::from(call.abi_encode());
 
     match env.new_actor()?.submit_tx(SPENDING_RECORD, inner).await {
