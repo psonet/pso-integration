@@ -340,6 +340,8 @@ fn build_spending_unit(
     Ok(pso_nft::SpendingUnit {
         id,
         owner: ownership,
+        attester: bytes_to_fr(&input.attester)?,
+        referrer: bytes_to_fr(&input.referrer)?,
         currency: currency,
         amount_base: input.amount_base,
         amount_atto: input.amount_atto,
@@ -654,6 +656,8 @@ mod tests {
         let input = SpendingUnitInput {
             id: fr_to_bytes(&id),
             nonce: fr_to_bytes(&nonce),
+            attester: vec![0u8; 32],
+            referrer: vec![0u8; 32],
             currency: 978,
             amount_base: 50,
             amount_atto: 0,

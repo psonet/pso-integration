@@ -240,6 +240,13 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         // chain's `0x0212` precompile reconstruction.
         let su_id_fr = Fr::from_be_bytes_mod_order(&r.su_id.to_be_bytes::<32>());
         let owner_fr = Fr::from_be_bytes_mod_order(&wallet_owner_be);
+        // Consent addresses are bound into the SU hash — read them back
+        // from the on-chain SU (uint160 right-aligned in a 32-byte word,
+        // matching the `0x0212` precompile's address→Fr conversion).
+        let attester_fr =
+            Fr::from_be_bytes_mod_order(on_chain.attesterAddress.into_word().as_slice());
+        let referrer_fr =
+            Fr::from_be_bytes_mod_order(on_chain.referrerAddress.into_word().as_slice());
         let sr_fps: Vec<Fr> = r
             .sr_ids
             .iter()
@@ -253,6 +260,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         let nft_hash = pso_protocol::nft::compute_spending_unit_hash(
             &su_id_fr,
             &owner_fr,
+            &attester_fr,
+            &referrer_fr,
             u64::from(r.worldwide_day),
             r.currency,
             r.amount_base,

@@ -225,6 +225,14 @@ pub struct SpendingUnit {
     /// Ownership hash: `Poseidon5(pk_x_lo, pk_x_hi, pk_y_lo, pk_y_hi, nonce)`
     #[serde(rename = "ownership", with = "serde_helpers::fr_base58")]
     pub owner: Fr,
+    /// Attester (minting SRA) EVM address, as a `uint160`-reduced `Fr`.
+    /// Bound into the SU hash; `0` means unset.
+    #[serde(with = "serde_helpers::fr_base58")]
+    pub attester: Fr,
+    /// Referrer (wallet self-address from consent) EVM address, as a
+    /// `uint160`-reduced `Fr`. Bound into the SU hash; `0` means no referrer.
+    #[serde(with = "serde_helpers::fr_base58")]
+    pub referrer: Fr,
     /// ISO 4217 currency
     pub currency: Currency,
     /// Amount integer part
@@ -278,6 +286,9 @@ impl OwnerGenerated for SpendingUnit {
         let nft = SpendingUnit {
             id,
             owner: ownership,
+            // Reference/test data carries no consent addresses.
+            attester: Fr::from(0u64),
+            referrer: Fr::from(0u64),
             currency,
             amount_base,
             amount_atto,
@@ -307,6 +318,8 @@ impl HashableNFT for SpendingUnit {
         compute_spending_unit_hash(
             &self.id,
             &self.owner,
+            &self.attester,
+            &self.referrer,
             &Fr::from(wwd),
             self.currency.numeric(),
             self.amount_base,
@@ -481,6 +494,8 @@ mod compute_inputs {
     pub fn compute_spending_unit_hash(
         id: &Fr,
         owner: &Fr,
+        attester: &Fr,
+        referrer: &Fr,
         wwd: &Fr,
         currency_numeric: u16,
         amount_base: u64,
@@ -492,6 +507,8 @@ mod compute_inputs {
         pso_protocol::nft::compute_spending_unit_hash(
             id,
             owner,
+            attester,
+            referrer,
             wwd_u64,
             currency_numeric,
             amount_base,
