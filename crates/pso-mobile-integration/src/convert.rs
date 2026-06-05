@@ -5,7 +5,7 @@
 
 use ark_bn254::{Fq, Fr};
 use ark_ff::{BigInteger, PrimeField};
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use iso_currency::Currency;
 use pso_integrations_shared::witness::{derive_grumpkin_public_key, fr_to_be32, GrumpkinKey};
 use pso_poseidon::PoseidonHasher;
@@ -126,18 +126,13 @@ pub fn parse_worldwide_day(value: u32) -> Result<NaiveDate, MobileError> {
 
 // -- Worldwide day --
 
-/// Epoch for worldwide day count (2021-01-01).
-///
-/// Mirrors `pso_nft`'s private `wwd_epoch()`.
-fn wwd_epoch() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2021, 1, 1).expect("2021-01-01 is a valid date")
-}
-
-/// Convert a `NaiveDate` to worldwide day count (days since 2021-01-01).
+/// Encode a `NaiveDate` as the canonical worldwide-day value: the compact
+/// **YYYYMMDD** form (e.g. `20250923`) — the value fed to the SU/TD hash
+/// and stored in the on-chain `worldwideDay` field.
 ///
 /// Mirrors `pso_nft`'s private `worldwide_day_count()`.
 pub fn worldwide_day_count(date: &NaiveDate) -> u64 {
-    (*date - wwd_epoch()).num_days() as u64
+    date.year() as u64 * 10_000 + u64::from(date.month()) * 100 + u64::from(date.day())
 }
 
 // -- Currency --
@@ -231,18 +226,18 @@ mod tests {
     }
 
     #[test]
-    fn test_worldwide_day_count_epoch() {
-        let epoch = NaiveDate::from_ymd_opt(2021, 1, 1).unwrap();
-        assert_eq!(worldwide_day_count(&epoch), 0);
+    fn test_worldwide_day_count_is_yyyymmdd() {
+        let date = NaiveDate::from_ymd_opt(2021, 1, 1).unwrap();
+        assert_eq!(worldwide_day_count(&date), 20_210_101);
     }
 
     #[test]
     fn test_worldwide_day_count_known_date() {
         let date = NaiveDate::from_ymd_opt(2021, 1, 2).unwrap();
-        assert_eq!(worldwide_day_count(&date), 1);
+        assert_eq!(worldwide_day_count(&date), 20_210_102);
 
-        let date = NaiveDate::from_ymd_opt(2022, 1, 1).unwrap();
-        assert_eq!(worldwide_day_count(&date), 365);
+        let date = NaiveDate::from_ymd_opt(2025, 9, 23).unwrap();
+        assert_eq!(worldwide_day_count(&date), 20_250_923);
     }
 
     #[test]

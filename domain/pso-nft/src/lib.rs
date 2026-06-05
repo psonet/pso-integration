@@ -7,7 +7,7 @@
 use anyhow::anyhow;
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField, UniformRand};
-use chrono::{NaiveDate, TimeDelta, Utc};
+use chrono::{Datelike, NaiveDate, TimeDelta, Utc};
 use iso_currency::Currency;
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -107,17 +107,15 @@ impl Owner {
     }
 }
 
-// -- Worldwide day epoch --
+// -- Worldwide day --
 
-/// Epoch for worldwide day computation (2021-01-01).
-fn wwd_epoch() -> anyhow::Result<NaiveDate> {
-    NaiveDate::from_ymd_opt(2021, 1, 1).ok_or_else(|| anyhow!("Cannot construct epoch date"))
-}
-
-/// Convert a NaiveDate to worldwide day count (days since epoch).
+/// Encode a `NaiveDate` as the canonical worldwide-day value: the compact
+/// **YYYYMMDD** form (e.g. `20250923`). This is the value that enters the
+/// SU/TD hash preimage and is stored in the on-chain `worldwideDay` field —
+/// the two must be identical for proofs to verify. (Same encoding the
+/// `naive_date_yyyymmdd` serializer uses.)
 fn worldwide_day_count(date: &NaiveDate) -> anyhow::Result<u64> {
-    let epoch = wwd_epoch()?;
-    Ok((*date - epoch).num_days() as u64)
+    Ok(date.year() as u64 * 10_000 + u64::from(date.month()) * 100 + u64::from(date.day()))
 }
 
 // -- TributeDraft --
