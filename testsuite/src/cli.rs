@@ -130,7 +130,10 @@ pub struct Cli {
 /// typed `Address` rather than a stringly-typed field; the error message
 /// is CLI-end-user readable.
 pub fn parse_address(input: &str) -> Result<alloy::primitives::Address, String> {
-    input.trim().parse().map_err(|e| format!("invalid address: {e}"))
+    input
+        .trim()
+        .parse()
+        .map_err(|e| format!("invalid address: {e}"))
 }
 
 /// Parse a 32-byte secp256k1 secret key from hex.
