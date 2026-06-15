@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.8.0 - 2026-06-15
+#### Features
+- (**testsuite**) S045 — verify chain commits a DA batch to L1 DaInbox - (cb87569) - Anton Velichko
+#### Style
+- (**testsuite**) rustfmt parse_address - (17f3217) - Anton Velichko
+
+- - -
+
 ## v0.7.0 - 2026-06-15
 #### Features
 - (**l2-client**) thread real referrerAddress through the SU mint flow - (94e1fb7) - Anton Velichko
