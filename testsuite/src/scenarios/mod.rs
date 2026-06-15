@@ -28,7 +28,6 @@ pub mod s020_su_with_foreign_ar_rejected;
 pub mod s021_td_su_not_found_rejected;
 pub mod s022_td_not_same_worldwide_day_rejected;
 pub mod s023_td_not_same_currency_rejected;
-pub mod s025_sr_invalid_metadata_rejected;
 pub mod s026_su_invalid_amount_rejected;
 pub mod s027_registry_not_admin_rejected;
 pub mod s028_registry_zero_address_rejected;
@@ -77,7 +76,6 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s021_td_su_not_found_rejected::S021),
         Box::new(s022_td_not_same_worldwide_day_rejected::S022),
         Box::new(s023_td_not_same_currency_rejected::S023),
-        Box::new(s025_sr_invalid_metadata_rejected::S025),
         Box::new(s026_su_invalid_amount_rejected::S026),
         Box::new(s027_registry_not_admin_rejected::S027),
         Box::new(s028_registry_zero_address_rejected::S028),

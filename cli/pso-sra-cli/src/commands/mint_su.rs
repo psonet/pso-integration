@@ -12,6 +12,11 @@ pub struct Args {
     /// Wallet-supplied `derivedOwner` Poseidon5 commitment (32 byte hex).
     #[arg(long)]
     pub derived_owner: String,
+    /// Wallet self-address from consent init (20-byte hex `0x...`).
+    /// Stamped on the SU as `referrerAddress`. Defaults to the zero
+    /// address (no referrer).
+    #[arg(long, default_value = "0x0000000000000000000000000000000000000000")]
+    pub referrer: String,
     /// ISO 4217 currency numeric code (e.g. 978 = EUR).
     #[arg(long)]
     pub currency: u16,
@@ -36,6 +41,7 @@ pub async fn run(client: &L2Client, args: Args) -> Result<()> {
     let mint_args = pso_l2_client::sra::MintSpendingUnitArgs {
         su_id: super::parse_uint256(&args.su_id)?,
         derived_owner: super::parse_b32(&args.derived_owner)?,
+        referrer_address: super::parse_address(&args.referrer)?,
         currency: args.currency,
         worldwide_day: args.worldwide_day,
         amount_base: args.amount_base,

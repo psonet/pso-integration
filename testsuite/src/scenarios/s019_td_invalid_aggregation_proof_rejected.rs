@@ -83,14 +83,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
 async fn mint_one_su(env: &TestEnv) -> eyre::Result<U256> {
     let sr_id = random_id();
-    let tx = env
-        .sra_zero
-        .register_spending_record(
-            sr_id,
-            vec!["merchant".into()],
-            vec![FixedBytes::from([0xa1u8; 32])],
-        )
-        .await?;
+    let tx = env.sra_zero.register_spending_record(sr_id).await?;
     env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
@@ -105,6 +98,7 @@ async fn mint_one_su(env: &TestEnv) -> eyre::Result<U256> {
     let args = SuMintArgs {
         su_id: random_id(),
         consent_pk,
+        referrer_address: alloy::primitives::Address::ZERO,
         currency: shape.currency,
         worldwide_day: shape.worldwide_day,
         amount_base: shape.amount_base,

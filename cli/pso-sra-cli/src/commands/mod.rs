@@ -4,7 +4,7 @@ pub mod mint_su;
 pub mod register_ar;
 pub mod register_sr;
 
-use alloy::primitives::{FixedBytes, U256};
+use alloy::primitives::{Address, FixedBytes, U256};
 use eyre::Result;
 
 /// Parse a hex string into a `U256` (must be exactly 32 bytes).
@@ -17,6 +17,16 @@ pub(crate) fn parse_uint256(s: &str) -> Result<U256> {
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&bytes);
     Ok(U256::from_be_bytes(arr))
+}
+
+/// Parse a 20-byte hex address (`0x...`).
+pub(crate) fn parse_address(s: &str) -> Result<Address> {
+    let s = s.strip_prefix("0x").unwrap_or(s);
+    let bytes = hex::decode(s)?;
+    if bytes.len() != 20 {
+        eyre::bail!("address hex must be 20 bytes, got {}", bytes.len());
+    }
+    Ok(Address::from_slice(&bytes))
 }
 
 /// Parse a hex `bytes32` value.
@@ -37,20 +47,4 @@ pub(crate) fn parse_uint256_list(s: &str) -> Result<Vec<U256>> {
         return Ok(Vec::new());
     }
     s.split(',').map(|tok| parse_uint256(tok.trim())).collect()
-}
-
-/// Parse a comma-separated list of `bytes32` hex values.
-pub(crate) fn parse_b32_list(s: &str) -> Result<Vec<FixedBytes<32>>> {
-    if s.is_empty() {
-        return Ok(Vec::new());
-    }
-    s.split(',').map(|tok| parse_b32(tok.trim())).collect()
-}
-
-/// Parse a comma-separated list of strings (for SR keys).
-pub(crate) fn parse_string_list(s: &str) -> Vec<String> {
-    if s.is_empty() {
-        return Vec::new();
-    }
-    s.split(',').map(|tok| tok.trim().to_string()).collect()
 }

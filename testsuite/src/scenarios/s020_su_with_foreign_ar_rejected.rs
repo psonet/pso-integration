@@ -1,7 +1,7 @@
 //! S020 — `SpendingUnit.submit` rejects an AR owned by a different
-//! SRA in its `amendmentSrHashes` array.
+//! SRA in its `arIds` array.
 //!
-//! Mirrors S009 (which exercises the same invariant for `srHashes`)
+//! Mirrors S009 (which exercises the same invariant for `srIds`)
 //! against the amendment-record side. The privacy spec requires
 //! every fingerprint in EITHER array to be owned by `msg.sender`;
 //! the contract's `_validateRecordOwnershipAndUniqueness` walks
@@ -49,14 +49,7 @@ impl Scenario for S020 {
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     // SRA#1 (env.sra_zero) registers an AR.
     let ar_id = random_id();
-    let tx = env
-        .sra_zero
-        .register_amendment_record(
-            ar_id,
-            vec!["correction".into()],
-            vec![FixedBytes::from([0xc1u8; 32])],
-        )
-        .await?;
+    let tx = env.sra_zero.register_amendment_record(ar_id).await?;
     env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
@@ -72,6 +65,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: random_id(),
             derived_owner: FixedBytes::from([0u8; 32]),
+            referrer_address: alloy::primitives::Address::ZERO,
             currency: shape.currency,
             worldwide_day: shape.worldwide_day,
             amount_base: shape.amount_base,

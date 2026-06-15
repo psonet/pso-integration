@@ -7,7 +7,7 @@
 use anyhow::anyhow;
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField, UniformRand};
-use chrono::{NaiveDate, TimeDelta, Utc};
+use chrono::{Datelike, NaiveDate, TimeDelta, Utc};
 use iso_currency::Currency;
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -107,17 +107,15 @@ impl Owner {
     }
 }
 
-// -- Worldwide day epoch --
+// -- Worldwide day --
 
-/// Epoch for worldwide day computation (2021-01-01).
-fn wwd_epoch() -> anyhow::Result<NaiveDate> {
-    NaiveDate::from_ymd_opt(2021, 1, 1).ok_or_else(|| anyhow!("Cannot construct epoch date"))
-}
-
-/// Convert a NaiveDate to worldwide day count (days since epoch).
+/// Encode a `NaiveDate` as the canonical worldwide-day value: the compact
+/// **YYYYMMDD** form (e.g. `20250923`). This is the value that enters the
+/// SU/TD hash preimage and is stored in the on-chain `worldwideDay` field —
+/// the two must be identical for proofs to verify. (Same encoding the
+/// `naive_date_yyyymmdd` serializer uses.)
 fn worldwide_day_count(date: &NaiveDate) -> anyhow::Result<u64> {
-    let epoch = wwd_epoch()?;
-    Ok((*date - epoch).num_days() as u64)
+    Ok(date.year() as u64 * 10_000 + u64::from(date.month()) * 100 + u64::from(date.day()))
 }
 
 // -- TributeDraft --
@@ -227,6 +225,14 @@ pub struct SpendingUnit {
     /// Ownership hash: `Poseidon5(pk_x_lo, pk_x_hi, pk_y_lo, pk_y_hi, nonce)`
     #[serde(rename = "ownership", with = "serde_helpers::fr_base58")]
     pub owner: Fr,
+    /// Attester (minting SRA) EVM address, as a `uint160`-reduced `Fr`.
+    /// Bound into the SU hash; `0` means unset.
+    #[serde(with = "serde_helpers::fr_base58")]
+    pub attester: Fr,
+    /// Referrer (wallet self-address from consent) EVM address, as a
+    /// `uint160`-reduced `Fr`. Bound into the SU hash; `0` means no referrer.
+    #[serde(with = "serde_helpers::fr_base58")]
+    pub referrer: Fr,
     /// ISO 4217 currency
     pub currency: Currency,
     /// Amount integer part
@@ -280,6 +286,9 @@ impl OwnerGenerated for SpendingUnit {
         let nft = SpendingUnit {
             id,
             owner: ownership,
+            // Reference/test data carries no consent addresses.
+            attester: Fr::from(0u64),
+            referrer: Fr::from(0u64),
             currency,
             amount_base,
             amount_atto,
@@ -309,6 +318,8 @@ impl HashableNFT for SpendingUnit {
         compute_spending_unit_hash(
             &self.id,
             &self.owner,
+            &self.attester,
+            &self.referrer,
             &Fr::from(wwd),
             self.currency.numeric(),
             self.amount_base,
@@ -483,6 +494,8 @@ mod compute_inputs {
     pub fn compute_spending_unit_hash(
         id: &Fr,
         owner: &Fr,
+        attester: &Fr,
+        referrer: &Fr,
         wwd: &Fr,
         currency_numeric: u16,
         amount_base: u64,
@@ -494,6 +507,8 @@ mod compute_inputs {
         pso_protocol::nft::compute_spending_unit_hash(
             id,
             owner,
+            attester,
+            referrer,
             wwd_u64,
             currency_numeric,
             amount_base,

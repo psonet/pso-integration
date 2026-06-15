@@ -28,7 +28,7 @@
 
 use std::time::Duration;
 
-use alloy::primitives::{FixedBytes, TxHash, U256};
+use alloy::primitives::{Address, FixedBytes, TxHash, U256};
 use k256::{PublicKey, SecretKey};
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -49,6 +49,10 @@ pub struct SuMintArgs {
     /// Wallet's long-lived consent public key. The bridge uses this
     /// to derive the same shared key the wallet will arrive at.
     pub consent_pk: PublicKey,
+    /// Wallet self-address captured at consent initiation. Stamped on
+    /// every SU minted in this consent session as `referrerAddress`.
+    /// `Address::ZERO` ⇒ no referrer.
+    pub referrer_address: Address,
     /// ISO 4217 numeric currency code.
     pub currency: u16,
     /// Worldwide-day count (days since 2021-01-01).
@@ -224,6 +228,7 @@ async fn handle_mint(sra: &SraClient, args: SuMintArgs) -> Result<SuMintReceipt,
     let mint_args = MintSpendingUnitArgs {
         su_id: args.su_id,
         derived_owner: FixedBytes::from(derived_owner_bytes),
+        referrer_address: args.referrer_address,
         currency: args.currency,
         worldwide_day: args.worldwide_day,
         amount_base: args.amount_base,

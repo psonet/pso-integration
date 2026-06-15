@@ -42,14 +42,7 @@ impl Scenario for S026 {
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let sr_id = random_id();
-    let tx = env
-        .sra_zero
-        .register_spending_record(
-            sr_id,
-            vec!["merchant".into()],
-            vec![FixedBytes::from([0xa1u8; 32])],
-        )
-        .await?;
+    let tx = env.sra_zero.register_spending_record(sr_id).await?;
     env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
@@ -63,6 +56,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: random_id(),
             derived_owner: FixedBytes::from([0u8; 32]),
+            referrer_address: alloy::primitives::Address::ZERO,
             currency: shape.currency,
             worldwide_day: shape.worldwide_day,
             amount_base: shape.amount_base,

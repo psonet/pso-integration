@@ -9,7 +9,7 @@
 //! generators. Anything that needs a round-trip to L2 lives on the
 //! client or the bridge.
 
-use alloy::primitives::{FixedBytes, U256};
+use alloy::primitives::U256;
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField};
 use chrono::{Datelike, NaiveDate};
@@ -54,7 +54,7 @@ pub fn random_secret_key() -> [u8; 32] {
 pub struct SuTemplate {
     /// ISO 4217 numeric currency code.
     pub currency: u16,
-    /// Worldwide-day count (days since 2021-01-01).
+    /// Worldwide day as compact YYYYMMDD (e.g. 20250923).
     pub worldwide_day: u32,
     /// Amount integer part.
     pub amount_base: u64,
@@ -108,43 +108,11 @@ pub fn random_td_args() -> SuTemplate {
     }
 }
 
-/// Random metadata vector for `SpendingRecord.submit(srId, keys, values)`.
-/// Keys mirror the production "merchant / amount / ..." shape; values
-/// are random `bytes32` blobs.
-pub fn random_sr_metadata() -> Vec<(String, FixedBytes<32>)> {
-    let mut rng = OsRng;
-    let mut keys = vec!["merchant".to_string(), "amount".to_string()];
-    if rng.gen_bool(0.5) {
-        keys.push("timestamp".to_string());
-    }
-    keys.into_iter()
-        .map(|k| {
-            let mut b = [0u8; 32];
-            rng.fill_bytes(&mut b);
-            (k, FixedBytes::from(b))
-        })
-        .collect()
-}
-
-/// Same shape as [`random_sr_metadata`] but with amendment-style keys.
-pub fn random_ar_metadata() -> Vec<(String, FixedBytes<32>)> {
-    let mut rng = OsRng;
-    let keys = vec!["correction".to_string(), "reason".to_string()];
-    keys.into_iter()
-        .map(|k| {
-            let mut b = [0u8; 32];
-            rng.fill_bytes(&mut b);
-            (k, FixedBytes::from(b))
-        })
-        .collect()
-}
-
-/// Random worldwide-day count compatible with the SU contract's
-/// `uint32` slot.
+/// Encode a date as the canonical worldwide-day value: compact YYYYMMDD
+/// (e.g. `20250923`), matching the on-chain `worldwideDay` `uint32` slot
+/// and the SU/TD hash input. Every date this century fits a `u32`.
 fn worldwide_day(date: &NaiveDate) -> u32 {
-    let epoch = NaiveDate::from_ymd_opt(2021, 1, 1).expect("WWD epoch");
-    // Saturating cast — every plausible date this century fits u32.
-    (*date - epoch).num_days().max(0).min(u32::MAX as i64) as u32
+    date.year() as u32 * 10_000 + date.month() * 100 + date.day()
 }
 
 /// Reduce a `pso_nft` `Fr` fingerprint into a `U256` SR id. The
@@ -177,24 +145,16 @@ mod tests {
         let t = random_su_args();
         assert!(t.currency != 0);
         assert!(t.sr_count >= 1);
-        // Days since 2021-01-01; "now" must fit a u32.
+        // Worldwide-day is compact YYYYMMDD; must be a real past date.
         let today = chrono::Utc::now().date_naive();
-        let epoch = NaiveDate::from_ymd_opt(2021, 1, 1).unwrap();
-        let max = (today - epoch).num_days() as u32;
-        assert!(t.worldwide_day <= max, "WWD must be in the past");
+        let today_yyyymmdd = today.year() as u32 * 10_000 + today.month() * 100 + today.day();
+        assert!(
+            t.worldwide_day >= 20_210_101,
+            "WWD must be >= epoch (2021-01-01)"
+        );
+        assert!(
+            t.worldwide_day <= today_yyyymmdd,
+            "WWD must not be in the future"
+        );
     }
-
-    #[test]
-    fn metadata_round_trip() {
-        let v = random_sr_metadata();
-        assert!(!v.is_empty());
-        assert!(v.iter().all(|(k, _)| !k.is_empty()));
-    }
-}
-
-// Keep `Datelike` referenced so future helpers that print the date
-// (debug logs etc.) don't need to re-import.
-#[allow(dead_code)]
-fn _datelike_anchor(d: &NaiveDate) -> i32 {
-    d.year()
 }

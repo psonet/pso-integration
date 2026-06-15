@@ -38,6 +38,8 @@ declare const PsoMobileIntegration: import("./types").PsoMobileIntegrationInterf
 interface SraSpendingUnitResponse {
   id: string; // hex-encoded 32 bytes
   nonce: string; // hex-encoded 32 bytes
+  attester: string; // hex-encoded 32-byte BE uint160 (minting SRA address)
+  referrer: string; // hex-encoded 32-byte BE uint160 (wallet consent address; zero = none)
   currency: number;
   amountBase: number;
   amountAtto: number;
@@ -67,6 +69,8 @@ function mapSraResponse(resp: SraSpendingUnitResponse): SpendingUnitInput {
   return {
     id: hexToBytes(resp.id),
     nonce: hexToBytes(resp.nonce),
+    attester: hexToBytes(resp.attester),
+    referrer: hexToBytes(resp.referrer),
     currency: resp.currency,
     amountBase: resp.amountBase,
     amountAtto: resp.amountAtto,

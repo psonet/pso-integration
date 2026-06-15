@@ -65,6 +65,14 @@ pub struct SpendingUnitInput {
     /// Nonce for this SU's ownership (32 bytes, little-endian BN254 Fr).
     /// Provided by the server that generated the SU.
     pub nonce: Vec<u8>,
+    /// Attester (minting SRA) EVM address — the SU's on-chain
+    /// `attesterAddress`, as a 32-byte big-endian `uint160` slot. Bound
+    /// into the SU hash; all-zero means unset.
+    pub attester: Vec<u8>,
+    /// Referrer (wallet self-address from consent) EVM address — the SU's
+    /// on-chain `referrerAddress`, as a 32-byte big-endian `uint160` slot.
+    /// Bound into the SU hash; all-zero means no referrer.
+    pub referrer: Vec<u8>,
     /// ISO 4217 currency numeric code (e.g., 978 for EUR).
     pub currency: u16,
     /// Amount integer part.

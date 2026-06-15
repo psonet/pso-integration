@@ -18,7 +18,6 @@
 
 use std::time::Duration;
 
-use alloy::primitives::FixedBytes;
 use async_trait::async_trait;
 
 use pso_l2_client::PsoContractError;
@@ -51,13 +50,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // SR submission before we revoke. Otherwise a failure on step
     // 4 wouldn't necessarily isolate the revoke.
     let sr_id_pre = random_id();
-    let tx = sra
-        .register_spending_record(
-            sr_id_pre,
-            vec!["merchant".into()],
-            vec![FixedBytes::from([0xa1u8; 32])],
-        )
-        .await?;
+    let tx = sra.register_spending_record(sr_id_pre).await?;
     sra.wait_for_tx_success(tx, Duration::from_secs(30)).await?;
     tracing::info!(scenario = "S033", "pre-revoke SR submission landed");
 
@@ -80,11 +73,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // pre-revoke one — only the registry-side state changed.
     let sr_id_post = random_id();
     let err = sra
-        .register_spending_record(
-            sr_id_post,
-            vec!["merchant".into()],
-            vec![FixedBytes::from([0xb2u8; 32])],
-        )
+        .register_spending_record(sr_id_post)
         .await
         .err()
         .ok_or_else(|| eyre::eyre!("S033: expected SRANotActive after revoke, got success"))?;

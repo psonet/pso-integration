@@ -43,8 +43,8 @@ sol! {
     #[allow(missing_docs)]
     error SRANotActive();
 
-    /// `SoulBoundTokenBase.AlreadyExists()` — `_mint` invoked with an
-    /// id whose `submittedBy` slot is already populated.
+    /// `SoulBoundTokenBase.AlreadyExists()` — `_mint`/`_commit` invoked
+    /// with an id that already exists.
     #[allow(missing_docs)]
     error AlreadyExists();
 
@@ -58,7 +58,7 @@ sol! {
     error EmptyArray();
 
     /// `TributeDraft.NotFound(uint256)` — `getData(suId)` returned a
-    /// zero `submittedBy`, i.e. the SU referenced by the TD doesn't
+    /// zero `attesterAddress`, i.e. the SU referenced by the TD doesn't
     /// exist.
     #[allow(missing_docs)]
     error NotFound(uint256 spendingUnitIds);
@@ -93,7 +93,7 @@ sol! {
     /// uint256[], uint256[])` — consolidated revert for SR / AR
     /// fingerprint validation. Fields are
     /// `(badOwnerSRs, badOwnerARs, duplicateSRs, duplicateARs)`:
-    /// the first two list fingerprints whose `submittedBy` is not
+    /// the first two list fingerprints whose owner is not
     /// `_msgSender()` (or that don't exist); the last two list
     /// fingerprints already consumed by a prior SU mint or repeated
     /// within the same batch.
@@ -124,11 +124,6 @@ sol! {
     /// duplicate guard (distinct from the array variant above).
     #[allow(missing_docs)]
     error SpendingRecordAlreadyExists();
-
-    /// `SpendingRecord.InvalidMetadata(string)` / same on
-    /// `SpendingRecordAmendment`.
-    #[allow(missing_docs)]
-    error InvalidMetadata(string reason);
 
     /// `SRARegistry.NotAdmin()`.
     #[allow(missing_docs)]
@@ -191,8 +186,6 @@ pub enum PsoContractError {
     InvalidAmount,
     /// `SpendingUnit.SpendingRecordAlreadyExists` (single-shot variant).
     SpendingRecordAlreadyExists,
-    /// `SpendingRecord{,Amendment}.InvalidMetadata(string)`.
-    InvalidMetadata(String),
     /// `SRARegistry.NotAdmin`.
     NotAdmin,
     /// `SRARegistry.AlreadyRegistered(address)`.
@@ -259,7 +252,6 @@ impl std::fmt::Display for PsoContractError {
             PsoContractError::SpendingRecordAlreadyExists => {
                 write!(f, "SpendingRecordAlreadyExists")
             }
-            PsoContractError::InvalidMetadata(r) => write!(f, "InvalidMetadata({r:?})"),
             PsoContractError::NotAdmin => write!(f, "NotAdmin"),
             PsoContractError::AlreadyRegistered(a) => write!(f, "AlreadyRegistered({a})"),
             PsoContractError::NotRegistered(a) => write!(f, "NotRegistered({a})"),
@@ -434,11 +426,6 @@ pub fn decode_from_bytes(data: &[u8]) -> PsoContractError {
                 duplicateSRs,
                 duplicateARs,
             );
-        }
-    }
-    if selector == InvalidMetadata::SELECTOR {
-        if let Ok(InvalidMetadata { reason }) = InvalidMetadata::abi_decode_raw(body) {
-            return PsoContractError::InvalidMetadata(reason);
         }
     }
     if selector == AlreadyRegistered::SELECTOR {

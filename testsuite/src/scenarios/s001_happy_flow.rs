@@ -69,14 +69,14 @@ alloy::sol! {
     struct SpendingUnitEntity {
         uint256 suId;
         bytes32 derivedOwner;
-        address submittedBy;
-        uint256 submittedAt;
+        address attesterAddress;
+        address referrerAddress;
         uint32  worldwideDay;
         uint64  amountBase;
-        uint128 amountAtto;
+        uint64  amountAtto;
         uint16  currency;
-        uint256[] srHashes;
-        uint256[] amendmentSrHashes;
+        uint256[] srIds;
+        uint256[] arIds;
     }
 
     #[sol(rpc)]
@@ -92,9 +92,10 @@ alloy::sol! {
         uint16  currency;
         uint32  worldwideDay;
         uint64  amountBase;
-        uint128 amountAtto;
-        uint256[] suHashes;
-        uint256 createdAt;
+        uint64  amountAtto;
+        uint256[] suIds;
+        address[] referrers;
+        address[] attesters;
     }
 
     #[sol(rpc)]
@@ -131,44 +132,17 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         let sr2 = random_id();
         let ar1 = random_id();
 
-        let tx = env
-            .sra_zero
-            .register_spending_record(
-                sr1,
-                vec!["merchant".into(), "amount".into()],
-                vec![
-                    FixedBytes::from([0xa1u8; 32]),
-                    FixedBytes::from([0xa2u8; 32]),
-                ],
-            )
-            .await?;
+        let tx = env.sra_zero.register_spending_record(sr1).await?;
         env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;
 
-        let tx = env
-            .sra_zero
-            .register_spending_record(
-                sr2,
-                vec!["merchant".into(), "amount".into()],
-                vec![
-                    FixedBytes::from([0xb1u8; 32]),
-                    FixedBytes::from([0xb2u8; 32]),
-                ],
-            )
-            .await?;
+        let tx = env.sra_zero.register_spending_record(sr2).await?;
         env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;
 
-        let tx = env
-            .sra_zero
-            .register_amendment_record(
-                ar1,
-                vec!["correction".into()],
-                vec![FixedBytes::from([0xc1u8; 32])],
-            )
-            .await?;
+        let tx = env.sra_zero.register_amendment_record(ar1).await?;
         env.sra_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;
@@ -209,6 +183,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         let args = SuMintArgs {
             su_id,
             consent_pk: consent_pk.clone(),
+            // No wallet EVM address in this harness ⇒ no referrer.
+            referrer_address: alloy::primitives::Address::ZERO,
             currency: shared_shape.currency,
             worldwide_day: shared_shape.worldwide_day,
             amount_base: 100 + (i as u64 * 10),
@@ -264,6 +240,13 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         // chain's `0x0212` precompile reconstruction.
         let su_id_fr = Fr::from_be_bytes_mod_order(&r.su_id.to_be_bytes::<32>());
         let owner_fr = Fr::from_be_bytes_mod_order(&wallet_owner_be);
+        // Consent addresses are bound into the SU hash — read them back
+        // from the on-chain SU (uint160 right-aligned in a 32-byte word,
+        // matching the `0x0212` precompile's address→Fr conversion).
+        let attester_fr =
+            Fr::from_be_bytes_mod_order(on_chain.attesterAddress.into_word().as_slice());
+        let referrer_fr =
+            Fr::from_be_bytes_mod_order(on_chain.referrerAddress.into_word().as_slice());
         let sr_fps: Vec<Fr> = r
             .sr_ids
             .iter()
@@ -277,6 +260,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         let nft_hash = pso_protocol::nft::compute_spending_unit_hash(
             &su_id_fr,
             &owner_fr,
+            &attester_fr,
+            &referrer_fr,
             u64::from(r.worldwide_day),
             r.currency,
             r.amount_base,

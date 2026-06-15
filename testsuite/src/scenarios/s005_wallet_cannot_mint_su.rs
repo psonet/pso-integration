@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use alloy::primitives::{Bytes, FixedBytes};
+use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::sol_types::SolCall;
 use async_trait::async_trait;
 
@@ -36,12 +36,13 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let call = ISpendingUnit::submitCall {
         suId: su_id,
         derivedOwner: FixedBytes::from([0u8; 32]),
+        referrerAddress: Address::ZERO,
         currency: shape.currency,
         worldwideDay: shape.worldwide_day,
         amountBase: shape.amount_base,
-        amountAtto: shape.amount_atto,
+        amountAtto: shape.amount_atto as u64,
         srIds: vec![random_id()],
-        amendmentSrIds: vec![],
+        arIds: vec![],
     };
     let inner = Bytes::from(call.abi_encode());
 

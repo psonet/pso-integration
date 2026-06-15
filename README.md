@@ -264,7 +264,7 @@ they exercise:
 | TD invariants| S012, S021 – S023 | Empty `suIds`, `NotFound`, `NotSameWorldwideDay`, `NotSameCurrency`. |
 | Envelope tampering | S013 – S017, S031 | Magic prefix, nullifier replay, stale `submitted_block`, bit-flipped VDF proof, bit-flipped VDF output, wrong VDF iteration count `T`. |
 | Aggregation negatives | S018, S019 | `MalformedAggregationProof` (length) + `InvalidAggregationProof` (public-input mismatch). |
-| Contract guards | S025 – S030 | `InvalidMetadata`, `InvalidAmount`, `NotAdmin`, `ZeroAddress`, `InvalidMask`, `SRANotActive`. |
+| Contract guards | S026 – S030 | `InvalidAmount`, `NotAdmin`, `ZeroAddress`, `InvalidMask`, `SRANotActive`. |
 | SRA lifecycle | S033, S035 – S037 | Revoke → SR.submit reverts `SRANotActive`; `updateMask` / `setRotationCandidate` round-trip; revoke unknown → `NotRegistered`. |
 | Epoch / slashing | S038 – S040 | `SequencerEpoch` views; `proveEquivocation` / `proveInvalidVDF` happy paths. |
 | Wallet lifecycle | S041 – S044 | Permissionless actor-lane admission (no SRA gate); mobile-API wallet flow end-to-end through the envelope dispatcher; aged-proof window positive; sequential nonces + stale VDF-binding rejection. |

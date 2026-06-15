@@ -23,6 +23,14 @@ export interface SpendingUnitInput {
   id: Uint8Array;
   /** Nonce for this SU's ownership (32 bytes). Server-provided. */
   nonce: Uint8Array;
+  /** Attester (minting SRA) EVM address — the SU's on-chain
+   * `attesterAddress`, as a 32-byte big-endian uint160 slot. Bound into
+   * the SU hash; all-zero = unset. */
+  attester: Uint8Array;
+  /** Referrer (wallet self-address from consent) EVM address — the SU's
+   * on-chain `referrerAddress`, as a 32-byte big-endian uint160 slot.
+   * Bound into the SU hash; all-zero = no referrer. */
+  referrer: Uint8Array;
   /** ISO 4217 currency numeric code (e.g., 978 for EUR). */
   currency: number;
   /** Amount integer part. */

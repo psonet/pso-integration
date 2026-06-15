@@ -2,7 +2,7 @@
 //! entry doesn't correspond to a registered SU.
 //!
 //! `_collectSuTotals` reads `spendingUnit.getData(suIds[0])` and
-//! checks `submittedBy == address(0)`; default-zero on an unset
+//! checks `attesterAddress == address(0)`; default-zero on an unset
 //! slot means the SU was never minted. The contract reverts with
 //! `NotFound(suIds[0])`.
 //!

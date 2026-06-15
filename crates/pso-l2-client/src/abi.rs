@@ -19,23 +19,24 @@
 
 use alloy::primitives::{address, Address};
 
-/// `SpendingRecord` — soulbound NFT registry of submitted spending
-/// record hashes. The SRA registrar calls `submit(srId, keys, values)`
-/// for each record.
+/// `SpendingRecord` — soulbound (ERC-721) registry of submitted
+/// spending-record ids, owned by the submitting SRA. The registrar
+/// calls `submit(srId)` for each record.
 pub const SPENDING_RECORD: Address = address!("5200000000000000000000000000000000000004");
 
-/// `SpendingRecordAmendment` — soulbound NFT registry of amendment
-/// hashes for spending records. Same interface shape as
-/// `SpendingRecord`.
-pub const SPENDING_RECORD_AMENDMENT: Address = address!("5200000000000000000000000000000000000005");
+/// `AmendmentRecord` — soulbound (ERC-721) registry of amendment-record
+/// ids for spending records, owned by the submitting SRA. Same
+/// interface shape as `SpendingRecord` (`submit(arId)`).
+pub const AMENDMENT_RECORD: Address = address!("5200000000000000000000000000000000000005");
 
-/// `SpendingUnit` — soulbound NFT linking spending records into a
-/// spending unit. The SRA registrar calls `submit(...)` after the
-/// wallet provides a `derivedOwner` Poseidon commitment.
+/// `SpendingUnit` — **commitment token** linking spending records into a
+/// spending unit. It has no holder: the SRA registrar calls `submit(...)`
+/// with the wallet-supplied `derivedOwner` Poseidon commitment, and
+/// ownership is later proven via the `zk_verify` precompile.
 pub const SPENDING_UNIT: Address = address!("5200000000000000000000000000000000000006");
 
-/// `TributeDraft` — soulbound NFT aggregating multiple spending units.
-/// The wallet calls `submit(tdId, derivedOwner, suIds, aggregationProof)`.
+/// `TributeDraft` — **commitment token** aggregating multiple spending
+/// units. The wallet calls `submit(tdId, derivedOwner, suIds, aggregationProof)`.
 pub const TRIBUTE_DRAFT: Address = address!("5200000000000000000000000000000000000007");
 
 /// `SequencerEpoch` — read-only view of the per-epoch leader rotation.
@@ -52,14 +53,14 @@ alloy::sol! {
     #[sol(rpc)]
     interface ISpendingRecord {
         event Submitted(address indexed submitter, uint256 indexed id);
-        function submit(uint256 srId, string[] memory keys, bytes32[] memory values) external;
+        function submit(uint256 srId) external;
     }
 
     #[allow(missing_docs)]
     #[sol(rpc)]
-    interface ISpendingRecordAmendment {
+    interface IAmendmentRecord {
         event Submitted(address indexed submitter, uint256 indexed id);
-        function submit(uint256 srId, string[] memory keys, bytes32[] memory values) external;
+        function submit(uint256 arId) external;
     }
 
     #[allow(missing_docs)]
@@ -67,24 +68,23 @@ alloy::sol! {
     interface ISpendingUnit {
         event Submitted(
             address indexed submitter,
+            bytes32 indexed derivedOwner,
             uint256 indexed id,
-            bytes32 derivedOwner,
-            uint16 currency,
             uint32 worldwideDay,
             uint64 amountBase,
-            uint128 amountAtto,
-            uint256[] srIds,
-            uint256[] amendmentSrIds
+            uint64 amountAtto,
+            uint16 currency
         );
         function submit(
             uint256 suId,
             bytes32 derivedOwner,
+            address referrerAddress,
             uint16 currency,
             uint32 worldwideDay,
             uint64 amountBase,
-            uint128 amountAtto,
+            uint64 amountAtto,
             uint256[] memory srIds,
-            uint256[] memory amendmentSrIds
+            uint256[] memory arIds
         ) external;
     }
 
@@ -92,12 +92,12 @@ alloy::sol! {
     #[sol(rpc)]
     interface ITributeDraft {
         event Submitted(
-            address indexed submitter,
-            bytes32 derivedOwner,
-            uint256 indexed tributeDraftId,
+            address indexed minter,
+            bytes32 indexed derivedOwner,
+            uint256 indexed id,
             uint32 worldwideDay,
             uint64 amountBase,
-            uint128 amountAtto,
+            uint64 amountAtto,
             uint16 currency,
             uint256[] suIds
         );

@@ -34,14 +34,7 @@ impl Scenario for S010 {
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     // Register a single SR; both SU mints will reference it.
     let sr_id = random_id();
-    let tx = env
-        .sra_zero
-        .register_spending_record(
-            sr_id,
-            vec!["merchant".into()],
-            vec![FixedBytes::from([0xa1u8; 32])],
-        )
-        .await?;
+    let tx = env.sra_zero.register_spending_record(sr_id).await?;
     env.sra_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
@@ -57,6 +50,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: su1_id,
             derived_owner: FixedBytes::from([0u8; 32]),
+            referrer_address: alloy::primitives::Address::ZERO,
             currency: shape.currency,
             worldwide_day: shape.worldwide_day,
             amount_base: shape.amount_base,
@@ -78,6 +72,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: su2_id,
             derived_owner: FixedBytes::from([0u8; 32]),
+            referrer_address: alloy::primitives::Address::ZERO,
             currency: shape.currency,
             worldwide_day: shape.worldwide_day,
             amount_base: shape.amount_base,
