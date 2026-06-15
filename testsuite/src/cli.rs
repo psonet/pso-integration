@@ -73,6 +73,21 @@ pub struct Cli {
     #[arg(long, value_parser = parse_hex32)]
     pub wallet_key: Option<[u8; 32]>,
 
+    /// L1 JSON-RPC endpoint the chain posts its DA batches to (the
+    /// `DaInbox` settlement contract lives here). Optional: only the
+    /// data-availability scenario (S045) needs it; when omitted that
+    /// scenario is skipped, so chains that don't expose their L1 to the
+    /// suite (or older consumers) run the rest unaffected.
+    #[arg(long)]
+    pub l1_rpc_url: Option<String>,
+
+    /// Address of the deployed `DaInbox` on `--l1-rpc-url`. Required
+    /// together with `--l1-rpc-url` to enable the DA scenario (S045);
+    /// the harness that brings up the devnet deploys the inbox and
+    /// passes its address here.
+    #[arg(long, value_parser = parse_address)]
+    pub da_inbox: Option<alloy::primitives::Address>,
+
     /// Print one row per compiled-in scenario (id + description) on
     /// stdout, then exit 0 without touching the chain. Combine with
     /// `--only` / `--skip` to preview which scenarios a given filter
@@ -107,6 +122,15 @@ pub struct Cli {
     /// Verbosity. `-v` info, `-vv` debug, `-vvv` trace.
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub verbose: u8,
+}
+
+/// Parse an EVM address (`0x`-prefixed 20-byte hex) for clap.
+///
+/// Thin wrapper over alloy's `Address` parser so `--da-inbox` carries a
+/// typed `Address` rather than a stringly-typed field; the error message
+/// is CLI-end-user readable.
+pub fn parse_address(input: &str) -> Result<alloy::primitives::Address, String> {
+    input.trim().parse().map_err(|e| format!("invalid address: {e}"))
 }
 
 /// Parse a 32-byte secp256k1 secret key from hex.

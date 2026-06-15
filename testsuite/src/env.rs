@@ -94,6 +94,15 @@ pub struct TestEnv {
     /// public method's I/O — most scenarios should call
     /// [`Self::new_actor_as_sra`] with `&env.sra_zero` instead.
     pub(crate) sra_zero_key: [u8; 32],
+
+    /// L1 JSON-RPC the chain posts DA batches to (`--l1-rpc-url`).
+    /// `None` unless the caller wired the data-availability scenario
+    /// (S045); paired with [`Self::da_inbox`].
+    pub l1_rpc_url: Option<String>,
+
+    /// Deployed `DaInbox` address on [`Self::l1_rpc_url`] (`--da-inbox`).
+    /// `None` unless the DA scenario is wired.
+    pub da_inbox: Option<Address>,
 }
 
 impl TestEnv {
@@ -133,6 +142,8 @@ impl TestEnv {
             sra_zero,
             bridge,
             sra_zero_key: sra_key,
+            l1_rpc_url: cli.l1_rpc_url.clone(),
+            da_inbox: cli.da_inbox,
         })
     }
 
