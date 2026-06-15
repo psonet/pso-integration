@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.7.0 - 2026-06-15
+#### Features
+- (**l2-client**) thread real referrerAddress through the SU mint flow - (94e1fb7) - Anton Velichko
+- (**l2-client**) sync ABI bindings to commitment-token contract overhaul - (3516d0a) - Anton Velichko
+- (**su-hash**) consume pso-protocol 0.5.0 — thread attester/referrer - (af983c7) - Anton Velichko
+#### Bug Fixes
+- (**testsuite**) rustfmt + re-sync S001 inline entity mirrors to current ABI - (fde26b7) - Anton Velichko
+- (**wwd**) encode worldwide_day as YYYYMMDD, not days-since-2021 - (0ae542f) - Anton Velichko
+#### Refactoring
+- (**abi**) rename TD suHashes -> suIds to match pso-chain - (db7abdb) - Anton Velichko
+
+- - -
+
 ## v0.6.0 - 2026-06-04
 #### Features
 - (**e2e**) wallet-direct topology release — refresh release & image docs - (77b4d42) - Anton Velichko
