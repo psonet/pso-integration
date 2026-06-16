@@ -55,14 +55,14 @@ fn pso_magic_default_pinned() {
 
 /// Typed-error decoder round trip for a no-arg selector.
 #[test]
-fn errors_decode_sra_not_active() {
+fn errors_decode_attester_not_active() {
     use alloy::sol_types::SolError;
     alloy::sol! {
-        error SRANotActive();
+        error AttesterNotActive();
     }
-    match decode_from_bytes(&SRANotActive::SELECTOR) {
-        PsoContractError::SRANotActive => {}
-        other => panic!("expected SRANotActive, got {other}"),
+    match decode_from_bytes(&AttesterNotActive::SELECTOR) {
+        PsoContractError::AttesterNotActive => {}
+        other => panic!("expected AttesterNotActive, got {other}"),
     }
 }
 
