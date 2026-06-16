@@ -59,13 +59,15 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         )
     };
 
-    // Leg 1 — nonce 0, capture the envelope's VDF section [36..164)
-    // (vdf_input ‖ vdf_output ‖ vdf_proof) for leg 3.
+    // Leg 1 — nonce 0, capture the envelope's VDF binding section
+    // (vdf_input ‖ len‖output ‖ len‖proof; the 0x76 wire VDF_BINDING_RANGE)
+    // for leg 3.
     let captured: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
     let cap = captured.clone();
     let tx0 = wallet
         .submit_tx_with_envelope(TRIBUTE_DRAFT, inner(1), move |bytes| {
-            *cap.lock().expect("vdf capture") = Some(bytes[36..164].to_vec());
+            *cap.lock().expect("vdf capture") =
+                Some(bytes[crate::clients::envelope::VDF_BINDING_RANGE].to_vec());
             bytes
         })
         .await
@@ -100,7 +102,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .ok_or_else(|| eyre::eyre!("S044: leg1 capture missing"))?;
     let result = wallet
         .submit_tx_with_envelope(TRIBUTE_DRAFT, inner(3), move |mut bytes| {
-            bytes[36..164].copy_from_slice(&stale);
+            bytes[crate::clients::envelope::VDF_BINDING_RANGE].copy_from_slice(&stale);
             bytes
         })
         .await;

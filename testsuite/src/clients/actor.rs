@@ -34,7 +34,7 @@ use alloy::signers::Signer;
 use alloy::transports::http::reqwest::{Client as HttpClient, Url};
 use serde_json::{json, Value};
 
-use crate::clients::envelope::build_users_pool_calldata;
+use crate::clients::envelope::build_vdf_envelope;
 use pso_l2_client::contract_errors::{decode_from_bytes, decode_text, PsoContractError};
 
 /// Users-pool client.
@@ -283,20 +283,11 @@ impl ActorClient {
         };
         let nonce = self.nonce().await?;
 
-        let envelope = build_users_pool_calldata(
-            self.address(),
-            nonce,
-            head,
-            self.inner.chain_id,
-            difficulty,
-            &inner_calldata,
-        )
-        .map_err(|e| ActorClientError::Config(format!("envelope build: {e}")))?;
-        let data = mutate(envelope);
-
-        // EIP-1559 envelope with both gas fields zeroed — pso-chain's
-        // actor RPC accepts only `max_fee = max_priority_fee = 0`
-        // for users-pool transactions.
+        // Build & sign the INNER standard tx with CLEAN calldata — the VDF
+        // fields ride the node's `0x76` wire envelope, not the calldata (unlike
+        // pso-chain's `0xCAFED00D` calldata prefix). EIP-1559 with both gas
+        // fields zeroed — the feeless users lane accepts only
+        // `max_fee = max_priority_fee = 0`.
         let mut tx = TxEip1559 {
             chain_id: self.inner.chain_id,
             nonce,
@@ -306,23 +297,32 @@ impl ActorClient {
             to: TxKind::Call(to),
             value: U256::ZERO,
             access_list: AccessList::default(),
-            input: data.into(),
+            input: inner_calldata,
         };
-
-        // Sign synchronously — `PrivateKeySigner` implements both
-        // sync and async variants and the sync path keeps the
-        // tx-build call site flat.
         let signature = self
             .inner
             .signer
             .sign_transaction_sync(&mut tx)
             .map_err(|e| ActorClientError::Config(format!("sign: {e}")))?;
         let signed = tx.into_signed(signature);
-        let envelope: TxEnvelope = signed.into();
+        let inner_envelope: TxEnvelope = signed.into();
 
-        // Encode the EIP-2718 typed-tx wrapper for the wire.
-        let mut raw = Vec::with_capacity(256);
-        alloy::eips::eip2718::Encodable2718::encode_2718(&envelope, &mut raw);
+        // The inner tx's EIP-2718 bytes (e.g. `0x02 || rlp(..)`).
+        let mut inner_2718 = Vec::with_capacity(256);
+        alloy::eips::eip2718::Encodable2718::encode_2718(&inner_envelope, &mut inner_2718);
+
+        // Wrap them in the `0x76` VDF envelope, then let the scenario tamper the
+        // wire bytes (header field offsets are `envelope::*_RANGE`).
+        let wire = build_vdf_envelope(
+            self.address(),
+            nonce,
+            head,
+            self.inner.chain_id,
+            difficulty,
+            &inner_2718,
+        )
+        .map_err(|e| ActorClientError::Config(format!("envelope build: {e}")))?;
+        let raw = mutate(wire);
         let raw_hex = format!("0x{}", hex::encode(&raw));
 
         let resp = self
