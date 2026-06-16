@@ -40,7 +40,7 @@ impl Scenario for S014 {
 }
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     // First submission: capture the nullifier the canonical builder
-    // rolled (bytes [4..36) of the envelope).
+    // rolled (the 0x76 wire's NULLIFIER_RANGE).
     let first_nullifier: Arc<Mutex<Option<[u8; 32]>>> = Arc::new(Mutex::new(None));
     let captured = first_nullifier.clone();
     let sr_id_a = random_id();
@@ -50,7 +50,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .new_actor_as_sra_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner_a, move |bytes| {
             let mut n = [0u8; 32];
-            n.copy_from_slice(&bytes[4..36]);
+            n.copy_from_slice(&bytes[crate::clients::envelope::NULLIFIER_RANGE]);
             *captured.lock().expect("nullifier capture") = Some(n);
             bytes
         })
@@ -96,7 +96,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let result = env
         .new_actor_as_sra_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner_b, move |mut bytes| {
-            bytes[4..36].copy_from_slice(&nullifier);
+            bytes[crate::clients::envelope::NULLIFIER_RANGE].copy_from_slice(&nullifier);
             tracing::info!(
                 target: "pso_e2e::scenario",
                 scenario = "S014",

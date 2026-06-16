@@ -15,11 +15,13 @@
 //! 1. VDF input + proof via `pso_mobile_integration::{derive_vdf_input,
 //!    compute_vdf}` (the same code the UniFFI bindings wrap), sanity
 //!    `verify_vdf` before broadcast as `vdf.rs` recommends.
-//! 2. Envelope bytes assembled inline per the wire spec
-//!    (`pool/calldata.rs`): magic ‖ nullifier ‖ vdf_input ‖
-//!    vdf_output ‖ vdf_proof ‖ submitted_block(BE) ‖ inner.
-//! 3. EIP-1559 signed with gasLimit = 5M and zero fee caps, broadcast
-//!    via raw JSON-RPC `eth_sendRawTransaction` against the actor RPC.
+//! 2. Inner EIP-1559 tx (clean calldata) signed with gasLimit = 5M and
+//!    zero fee caps, then wrapped inline in the node's `0x76`
+//!    VdfProtectedTransaction wire envelope: `0x76` ‖ nullifier ‖
+//!    vdf_input ‖ (len ‖ vdf_output) ‖ (len ‖ vdf_proof) ‖
+//!    submitted_block(BE) ‖ inner_2718.
+//! 3. Broadcast via raw JSON-RPC `eth_sendRawTransaction` against the
+//!    actor RPC.
 //!
 //! The inner calldata is `TributeDraft.getData(7)` — a benign call
 //! that MUST execute with `status == 1`, which proves the full
@@ -155,18 +157,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let mut nullifier = [0u8; 32];
     rand::rngs::OsRng.fill_bytes(&mut nullifier);
 
-    let mut data = Vec::with_capacity(172 + inner.len());
-    data.extend_from_slice(&[0xCA, 0xFE, 0xD0, 0x0D]); // magic
-    data.extend_from_slice(&nullifier); //                 32B nullifier
-    data.extend_from_slice(&vdf_input); //                 32B vdf_input
-    data.extend_from_slice(&vdf.output); //                48B MinRoot output
-    data.extend_from_slice(&vdf.proof); //                 48B Wesolowski proof
-    data.extend_from_slice(&head.to_be_bytes()); //         8B submitted_block (BE!)
-    data.extend_from_slice(&inner);
-
-    // 4. Wallet-side tx assembly — the layer the gasLimit bug lived in.
-    //    gasLimit 5M: intrinsic (~21k + calldata) + execution headroom;
-    //    zero fee caps: feeless users lane.
+    // 4. Build & sign the INNER tx with CLEAN calldata. The VDF fields ride
+    //    the node's 0x76 wire envelope (not the calldata, unlike pso-chain's
+    //    0xCAFED00D prefix). gasLimit 5M; zero fee caps for the feeless lane.
     let mut tx = TxEip1559 {
         chain_id: env.chain_id,
         nonce,
@@ -176,12 +169,26 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         to: TxKind::Call(TRIBUTE_DRAFT),
         value: U256::ZERO,
         access_list: AccessList::default(),
-        input: Bytes::from(data),
+        input: Bytes::from(inner),
     };
     let sig = signer.sign_transaction_sync(&mut tx)?;
-    let envelope: TxEnvelope = tx.into_signed(sig).into();
-    let mut raw = Vec::with_capacity(512);
-    alloy::eips::eip2718::Encodable2718::encode_2718(&envelope, &mut raw);
+    let inner_envelope: TxEnvelope = tx.into_signed(sig).into();
+    let mut inner_2718 = Vec::with_capacity(512);
+    alloy::eips::eip2718::Encodable2718::encode_2718(&inner_envelope, &mut inner_2718);
+
+    // 5. Wrap the inner 2718 bytes in the 0x76 VdfProtectedTransaction wire
+    //    envelope, assembled inline per the node's wire spec.
+    let mut raw =
+        Vec::with_capacity(crate::clients::envelope::ENVELOPE_PREFIX_LEN + inner_2718.len());
+    raw.push(crate::clients::envelope::VDF_ENVELOPE_TYPE); // 0x76
+    raw.extend_from_slice(&nullifier); //                     32B nullifier
+    raw.extend_from_slice(&vdf_input); //                     32B vdf_input
+    raw.extend_from_slice(&(vdf.output.len() as u32).to_be_bytes());
+    raw.extend_from_slice(&vdf.output); //                    MinRoot output
+    raw.extend_from_slice(&(vdf.proof.len() as u32).to_be_bytes());
+    raw.extend_from_slice(&vdf.proof); //                     MinRoot proof
+    raw.extend_from_slice(&head.to_be_bytes()); //            8B submitted_block (BE)
+    raw.extend_from_slice(&inner_2718); //                    inner EIP-2718 tx
 
     let tx_hash = rpc(
         &url,

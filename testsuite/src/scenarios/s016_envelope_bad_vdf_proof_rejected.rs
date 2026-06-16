@@ -38,9 +38,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let result = env
         .new_actor_as_sra_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner, |mut bytes| {
-            // Flip the first byte of the vdf_proof field. Any
-            // change inside the proof invalidates MinRoot verify.
-            bytes[116] ^= 0xAA;
+            // Flip the first byte of the vdf_proof field (0x76 wire range).
+            // Any change inside the proof invalidates MinRoot verify.
+            bytes[crate::clients::envelope::VDF_PROOF_RANGE.start] ^= 0xAA;
             tracing::info!(
                 target: "pso_e2e::scenario",
                 scenario = "S016",

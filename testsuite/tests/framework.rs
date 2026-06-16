@@ -12,23 +12,23 @@
 
 use pso_e2e_testsuite::cli::parse_hex32;
 use pso_e2e_testsuite::clients::envelope::{
-    build_users_pool_calldata, derive_vdf_input, pso_magic, DEFAULT_PSO_MAGIC, PSO_MIN_HEADER,
+    build_vdf_envelope, derive_vdf_input, ENVELOPE_PREFIX_LEN, VDF_ENVELOPE_TYPE,
 };
 use pso_e2e_testsuite::data::{currency_eur, random_id, random_su_args};
 use pso_l2_client::contract_errors::{decode_from_bytes, decode_text};
 use pso_l2_client::PsoContractError;
 
-/// Sanity-check the envelope header layout: 4B magic + 32B nullifier
-/// + 32B vdf_input + 48B vdf_output + 48B vdf_proof + 8B
-/// submitted_block = 172B, followed by `inner` verbatim.
+/// Sanity-check the `0x76` envelope layout: 1B type byte + 32B nullifier
+/// + 32B vdf_input + (4B len + 48B) vdf_output + (4B len + 48B) vdf_proof
+/// + 8B submitted_block = 177B prefix, followed by the inner 2718 tx verbatim.
 #[test]
 fn envelope_header_layout() {
     let signer = alloy::primitives::Address::from([0xab; 20]);
-    let inner = vec![0u8; 96];
-    let env = build_users_pool_calldata(signer, 0, 1, 19_280_501, 16, &inner).unwrap();
-    assert_eq!(env.len(), PSO_MIN_HEADER + inner.len());
-    assert_eq!(&env[..4], &pso_magic());
-    assert_eq!(&env[PSO_MIN_HEADER..], &inner[..]);
+    let inner = vec![0u8; 96]; // stand-in inner 2718 bytes
+    let env = build_vdf_envelope(signer, 0, 1, 19_280_501, 16, &inner).unwrap();
+    assert_eq!(env[0], VDF_ENVELOPE_TYPE);
+    assert_eq!(env.len(), ENVELOPE_PREFIX_LEN + inner.len());
+    assert_eq!(&env[ENVELOPE_PREFIX_LEN..], &inner[..]);
 }
 
 /// Confirm the VDF binding is deterministic on identical inputs and
@@ -44,13 +44,13 @@ fn vdf_input_binding_is_canonical() {
     assert_ne!(a, c, "differs on nonce change");
 }
 
-/// `DEFAULT_PSO_MAGIC` must match the chain's
-/// `pso-chain/crates/pso-chain/src/pool/calldata.rs::DEFAULT_PSO_MAGIC`.
-/// If this changes, both sides have to update in lockstep — pin it
-/// in a test so the drift is loud.
+/// The `0x76` envelope type byte must match the node's `VDF_ENVELOPE_TYPE`
+/// (the anonymous-lane discriminator, replacing pso-chain's calldata magic).
+/// If this changes, both sides have to update in lockstep — pin it so the
+/// drift is loud.
 #[test]
-fn pso_magic_default_pinned() {
-    assert_eq!(DEFAULT_PSO_MAGIC, [0xCA, 0xFE, 0xD0, 0x0D]);
+fn vdf_envelope_type_pinned() {
+    assert_eq!(VDF_ENVELOPE_TYPE, 0x76);
 }
 
 /// Typed-error decoder round trip for a no-arg selector.

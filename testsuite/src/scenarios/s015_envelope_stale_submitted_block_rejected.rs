@@ -38,10 +38,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let result = env
         .new_actor_as_sra_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner, |mut bytes| {
-            // Overwrite the BE-encoded submitted_block at [164..172)
-            // with the value zero — guaranteed to be far older than
-            // any reasonable validity window.
-            for i in 164..172 {
+            // Overwrite the BE-encoded submitted_block (0x76 wire range)
+            // with zero — guaranteed far older than any validity window.
+            for i in crate::clients::envelope::SUBMITTED_BLOCK_RANGE {
                 bytes[i] = 0;
             }
             tracing::info!(

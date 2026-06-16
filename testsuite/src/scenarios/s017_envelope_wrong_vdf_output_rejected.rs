@@ -40,10 +40,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let result = env
         .new_actor_as_sra_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner, |mut bytes| {
-            // Flip the last byte of the vdf_output field at
-            // [68..116). Any single-byte change makes the encoded
-            // output not equal `MinRoot(vdf_input, T)`.
-            bytes[115] ^= 0x55;
+            // Flip the last byte of the vdf_output field (0x76 wire range).
+            // Any single-byte change makes the encoded output not equal
+            // `MinRoot(vdf_input, T)`.
+            bytes[crate::clients::envelope::VDF_OUTPUT_RANGE.end - 1] ^= 0x55;
             tracing::info!(
                 target: "pso_e2e::scenario",
                 scenario = "S017",
