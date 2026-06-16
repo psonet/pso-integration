@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.8.4 - 2026-06-16
+#### Bug Fixes
+- (**testsuite**) generous receipt timeout for S043/S044 (CI block-time jitter) - (9e65906) - Anton Velichko
+
+- - -
+
 ## v0.8.3 - 2026-06-16
 #### Bug Fixes
 - (**testsuite**) users lane uses the node's 0x76 VdfProtectedTransaction envelope - (f9745bc) - Anton Velichko
