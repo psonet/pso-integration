@@ -5,7 +5,7 @@
 //! inner calldata here is `SpendingRecord.submit(...)` — but the
 //! sender is the actor wallet (a non-SRA key), so the
 //! `onlyActiveSRA` modifier on the EVM side reverts with
-//! `SRANotActive`.
+//! `AttesterNotActive`.
 //!
 //! **Note**: pso-chain doesn't currently strip the PSO header from
 //! `tx.data` before EVM dispatch; the EVM sees the wrapped calldata
@@ -13,7 +13,7 @@
 //! invariant we enforce is "the chain refuses to mint anything from
 //! this caller through this path" — we accept either of:
 //!
-//! - A typed `SRANotActive` revert (chain strips the header).
+//! - A typed `AttesterNotActive` revert (chain strips the header).
 //! - An EVM-level revert / pool rejection (header not stripped) —
 //!   surfaces as `Other(...)` / `PoolRejection(...)` with a status-0
 //!   receipt.
@@ -59,7 +59,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             tracing::info!(%msg, "S003: actor pool refused tx (no SR landed)");
             Ok(())
         }
-        Err(ActorClientError::Revert(PsoContractError::SRANotActive)) => Ok(()),
+        Err(ActorClientError::Revert(PsoContractError::AttesterNotActive)) => Ok(()),
         Err(other) => {
             tracing::info!(?other, "S003: actor surfaced typed error");
             // Anything that isn't an admission counts as success.

@@ -51,7 +51,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             tracing::info!(%msg, "S005: actor pool refused tx (no SU minted)");
             Ok(())
         }
-        Err(ActorClientError::Revert(PsoContractError::SRANotActive)) => Ok(()),
+        Err(ActorClientError::Revert(PsoContractError::AttesterNotActive)) => Ok(()),
         Err(other) => {
             tracing::info!(?other, "S005: actor surfaced typed error");
             Ok(())

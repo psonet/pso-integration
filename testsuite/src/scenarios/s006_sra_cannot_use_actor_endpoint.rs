@@ -25,7 +25,7 @@
 //!
 //! When pso-chain adds an explicit "actor endpoint is wallet-only"
 //! check, tighten the assertion to `MethodNotPermitted` /
-//! `SRANotActive` / `MagicMismatch` here.
+//! `AttesterNotActive` / `MagicMismatch` here.
 
 use std::time::Duration;
 

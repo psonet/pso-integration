@@ -1,6 +1,6 @@
 //! Typed Solidity custom-error decoder for the PSO L2 contracts.
 //!
-//! The contracts revert with named custom errors (`error SRANotActive();`
+//! The contracts revert with named custom errors (`error AttesterNotActive();`
 //! etc.); alloy surfaces them as `alloy::contract::Error::TransportError`
 //! with the 4-byte selector + ABI-encoded args in the inner JSON-RPC
 //! reply's `data` field. This module centralises:
@@ -9,7 +9,7 @@
 //!    pso-chain contracts under test (`alloy::sol!`-derived
 //!    `SolError`s with the right argument types).
 //! 2. A flat enum [`PsoContractError`] each scenario asserts against —
-//!    `matches!(err, PsoContractError::SRANotActive)` etc.
+//!    `matches!(err, PsoContractError::AttesterNotActive)` etc.
 //! 3. Two entry points the rest of the crate goes through:
 //!    [`decode`] from an `alloy::contract::Error`, and
 //!    [`decode_from_bytes`] when only the raw revert bytes are
@@ -37,11 +37,11 @@ use crate::L2ClientError;
 // -----------------------------------------------------------------
 
 sol! {
-    /// `ISRAAware.SRANotActive()` — agents-pool-side guard on every
+    /// `ISRAAware.AttesterNotActive()` — agents-pool-side guard on every
     /// SR/AR/SU/TD submit entry point, fires when the EVM-side check
     /// `sraRegistry.isActive(_msgSender())` returns false.
     #[allow(missing_docs)]
-    error SRANotActive();
+    error AttesterNotActive();
 
     /// `SoulBoundTokenBase.AlreadyExists()` — `_mint`/`_commit` invoked
     /// with an id that already exists.
@@ -125,23 +125,23 @@ sol! {
     #[allow(missing_docs)]
     error SpendingRecordAlreadyExists();
 
-    /// `SRARegistry.NotAdmin()`.
+    /// `AttestersRegistry.NotAdmin()`.
     #[allow(missing_docs)]
     error NotAdmin();
 
-    /// `SRARegistry.AlreadyRegistered(address)`.
+    /// `AttestersRegistry.AlreadyRegistered(address)`.
     #[allow(missing_docs)]
     error AlreadyRegistered(address sra);
 
-    /// `SRARegistry.NotRegistered(address)`.
+    /// `AttestersRegistry.NotRegistered(address)`.
     #[allow(missing_docs)]
     error NotRegistered(address sra);
 
-    /// `SRARegistry.ZeroAddress()`.
+    /// `AttestersRegistry.ZeroAddress()`.
     #[allow(missing_docs)]
     error ZeroAddress();
 
-    /// `SRARegistry.InvalidMask()` — bad permission bitmask.
+    /// `AttestersRegistry.InvalidMask()` — bad permission bitmask.
     #[allow(missing_docs)]
     error InvalidMask();
 }
@@ -150,8 +150,8 @@ sol! {
 /// rejection the suite cares about.
 #[derive(Debug, Clone)]
 pub enum PsoContractError {
-    /// `ISRAAware.SRANotActive`.
-    SRANotActive,
+    /// `ISRAAware.AttesterNotActive`.
+    AttesterNotActive,
     /// `SoulBoundTokenBase.AlreadyExists`.
     AlreadyExists,
     /// `SoulBoundTokenBase.InvalidTokenId`.
@@ -186,15 +186,15 @@ pub enum PsoContractError {
     InvalidAmount,
     /// `SpendingUnit.SpendingRecordAlreadyExists` (single-shot variant).
     SpendingRecordAlreadyExists,
-    /// `SRARegistry.NotAdmin`.
+    /// `AttestersRegistry.NotAdmin`.
     NotAdmin,
-    /// `SRARegistry.AlreadyRegistered(address)`.
+    /// `AttestersRegistry.AlreadyRegistered(address)`.
     AlreadyRegistered(Address),
-    /// `SRARegistry.NotRegistered(address)`.
+    /// `AttestersRegistry.NotRegistered(address)`.
     NotRegistered(Address),
-    /// `SRARegistry.ZeroAddress`.
+    /// `AttestersRegistry.ZeroAddress`.
     ZeroAddress,
-    /// `SRARegistry.InvalidMask`.
+    /// `AttestersRegistry.InvalidMask`.
     InvalidMask,
     /// Agents-pool / actor-pool rejection: the wallet's tx was never
     /// admitted. Carries the structured reason string the validator
@@ -226,7 +226,7 @@ impl PsoContractError {
 impl std::fmt::Display for PsoContractError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PsoContractError::SRANotActive => write!(f, "SRANotActive"),
+            PsoContractError::AttesterNotActive => write!(f, "AttesterNotActive"),
             PsoContractError::AlreadyExists => write!(f, "AlreadyExists"),
             PsoContractError::InvalidTokenId => write!(f, "InvalidTokenId"),
             PsoContractError::EmptyArray => write!(f, "EmptyArray"),
@@ -296,7 +296,7 @@ pub fn decode(err: alloy::contract::Error) -> PsoContractError {
 /// ```ignore
 /// let err = sra.call().await.map_err(into_pso_error)?;
 /// match err {
-///     PsoContractError::SRANotActive => { ... }
+///     PsoContractError::AttesterNotActive => { ... }
 ///     PsoContractError::NotFound(id) => { ... }
 ///     other => Err(other),
 /// }
@@ -349,8 +349,8 @@ pub fn decode_from_bytes(data: &[u8]) -> PsoContractError {
     let body = &data[4..];
 
     // Static (no-arg) errors — selector match alone is sufficient.
-    if selector == SRANotActive::SELECTOR {
-        return PsoContractError::SRANotActive;
+    if selector == AttesterNotActive::SELECTOR {
+        return PsoContractError::AttesterNotActive;
     }
     if selector == AlreadyExists::SELECTOR {
         return PsoContractError::AlreadyExists;
@@ -555,10 +555,10 @@ mod tests {
 
     #[test]
     fn decode_sra_not_active_selector() {
-        let bytes = SRANotActive::SELECTOR.to_vec();
+        let bytes = AttesterNotActive::SELECTOR.to_vec();
         match decode_from_bytes(&bytes) {
-            PsoContractError::SRANotActive => {}
-            other => panic!("expected SRANotActive, got {other}"),
+            PsoContractError::AttesterNotActive => {}
+            other => panic!("expected AttesterNotActive, got {other}"),
         }
     }
 

@@ -2,7 +2,7 @@
 //!
 //! Wraps a signing [`L2Client`] bound to the registry admin's
 //! secret key. Exposes the registry-mutating surface
-//! (`SRARegistry.register / revoke / updateMask /
+//! (`AttestersRegistry.register / revoke / updateMask /
 //! setRotationCandidate / initiateAdminTransfer`) plus a read-only
 //! view of the current epoch + difficulty.
 //!
@@ -42,31 +42,35 @@ pub const SRA_REGISTRY: Address =
 
 sol! {
     #[sol(rpc)]
-    interface ISRARegistry {
+    interface IAttestersRegistry {
         function register(
-            address sra,
+            address attester,
             uint32 permissionMask,
-            uint64 rateLimit,
-            bool isRotationCandidate
+            bool isRotationCandidate,
+            bytes32 consensusKey,
+            uint256 p2pAddr
         ) external;
-        function revoke(address sra) external;
-        function updateMask(address sra, uint32 newMask) external;
-        function setRotationCandidate(address sra, bool isRotationCandidate) external;
-        function isActive(address sra) external view returns (bool);
+        function revoke(address attester) external;
+        function updateMask(address attester, uint32 newMask) external;
+        function setRotationCandidate(address attester, bool isRotationCandidate) external;
+        function setConsensusIdentity(address attester, bytes32 consensusKey, uint256 p2pAddr) external;
+        function isActive(address attester) external view returns (bool);
 
-        /// Mirror of `ISRARegistry.SRARecord` byte-for-byte. Field
-        /// order MUST match the Solidity struct exactly — alloy
-        /// decodes by position, not by name, so a misalignment
-        /// silently reads garbage into adjacent slots.
-        /// See `pso-chain/contracts/src/interfaces/ISRARegistry.sol:14`.
-        struct SRARecord {
+        /// Mirror of `IAttestersRegistry.AttesterRecord` byte-for-byte. Field
+        /// order MUST match the Solidity struct exactly — alloy decodes by
+        /// position, not by name, so a misalignment silently reads garbage
+        /// into adjacent slots. M3 schema: no `rateLimit`; adds `consensusKey`
+        /// + `p2pAddr`.
+        /// See `pso-chain-research/contracts/src/interfaces/IAttestersRegistry.sol`.
+        struct AttesterRecord {
             bool active;
             uint32 permissionMask;
-            uint64 rateLimit;
             uint64 registeredAt;
             bool isRotationCandidate;
+            bytes32 consensusKey;
+            uint256 p2pAddr;
         }
-        function getRecord(address sra) external view returns (SRARecord memory);
+        function getRecord(address attester) external view returns (AttesterRecord memory);
     }
 }
 
@@ -110,18 +114,32 @@ impl AdminClient {
     // Registry mutations.
     // -----------------------------------------------------------------
 
-    /// `SRARegistry.register(sra, permissionMask, rateLimit, isRotationCandidate)`.
+    /// `AttestersRegistry.register(attester, permissionMask, isRotationCandidate, consensusKey, p2pAddr)`.
+    ///
+    /// The M3 `AttestersRegistry` dropped `rateLimit` and added the consensus
+    /// identity. A rotation candidate must carry a non-zero `consensusKey`
+    /// (contract invariant); the testsuite SRA only needs to be *active* to
+    /// submit records, so it registers as a non-rotation attester with a zero
+    /// identity. Pass an explicit `consensus_key` (and set
+    /// `is_rotation_candidate`) only when a scenario exercises rotation.
     pub async fn register_sra(
         &self,
         sra: Address,
         permission_mask: u32,
-        rate_limit: u64,
         is_rotation_candidate: bool,
+        consensus_key: alloy::primitives::B256,
+        p2p_addr: alloy::primitives::U256,
     ) -> Result<TxHash, L2ClientError> {
         let provider = self.inner.write_provider()?;
-        let reg = ISRARegistry::new(SRA_REGISTRY, provider);
+        let reg = IAttestersRegistry::new(SRA_REGISTRY, provider);
         let pending = reg
-            .register(sra, permission_mask, rate_limit, is_rotation_candidate)
+            .register(
+                sra,
+                permission_mask,
+                is_rotation_candidate,
+                consensus_key,
+                p2p_addr,
+            )
             .max_fee_per_gas(0)
             .max_priority_fee_per_gas(0)
             .send()
@@ -130,11 +148,11 @@ impl AdminClient {
         Ok(*pending.tx_hash())
     }
 
-    /// `SRARegistry.revoke(sra)`. After this the SRA's submissions
-    /// are bounced with `SRANotActive`.
+    /// `AttestersRegistry.revoke(sra)`. After this the SRA's submissions
+    /// are bounced with `AttesterNotActive`.
     pub async fn revoke_sra(&self, sra: Address) -> Result<TxHash, L2ClientError> {
         let provider = self.inner.write_provider()?;
-        let reg = ISRARegistry::new(SRA_REGISTRY, provider);
+        let reg = IAttestersRegistry::new(SRA_REGISTRY, provider);
         let pending = reg
             .revoke(sra)
             .max_fee_per_gas(0)
@@ -145,10 +163,10 @@ impl AdminClient {
         Ok(*pending.tx_hash())
     }
 
-    /// `SRARegistry.updateMask(sra, newMask)`.
+    /// `AttestersRegistry.updateMask(sra, newMask)`.
     pub async fn update_mask(&self, sra: Address, new_mask: u32) -> Result<TxHash, L2ClientError> {
         let provider = self.inner.write_provider()?;
-        let reg = ISRARegistry::new(SRA_REGISTRY, provider);
+        let reg = IAttestersRegistry::new(SRA_REGISTRY, provider);
         let pending = reg
             .updateMask(sra, new_mask)
             .max_fee_per_gas(0)
@@ -159,14 +177,14 @@ impl AdminClient {
         Ok(*pending.tx_hash())
     }
 
-    /// `SRARegistry.setRotationCandidate(sra, isRotationCandidate)`.
+    /// `AttestersRegistry.setRotationCandidate(sra, isRotationCandidate)`.
     pub async fn set_rotation_candidate(
         &self,
         sra: Address,
         is_rotation_candidate: bool,
     ) -> Result<TxHash, L2ClientError> {
         let provider = self.inner.write_provider()?;
-        let reg = ISRARegistry::new(SRA_REGISTRY, provider);
+        let reg = IAttestersRegistry::new(SRA_REGISTRY, provider);
         let pending = reg
             .setRotationCandidate(sra, is_rotation_candidate)
             .max_fee_per_gas(0)
@@ -177,23 +195,48 @@ impl AdminClient {
         Ok(*pending.tx_hash())
     }
 
+    /// `AttestersRegistry.setConsensusIdentity(attester, consensusKey, p2pAddr)`.
+    /// M3: a non-zero `consensusKey` is the precondition for rotation
+    /// candidacy — the contract rejects `setRotationCandidate(true)` without
+    /// one. (`p2pAddr` may be 0; the node falls back to `<addr>.pso.network`.)
+    pub async fn set_consensus_identity(
+        &self,
+        sra: Address,
+        consensus_key: alloy::primitives::B256,
+        p2p_addr: alloy::primitives::U256,
+    ) -> Result<TxHash, L2ClientError> {
+        let provider = self.inner.write_provider()?;
+        let reg = IAttestersRegistry::new(SRA_REGISTRY, provider);
+        let pending = reg
+            .setConsensusIdentity(sra, consensus_key, p2p_addr)
+            .max_fee_per_gas(0)
+            .max_priority_fee_per_gas(0)
+            .send()
+            .await
+            .map_err(|e| L2ClientError::Contract(format!("setConsensusIdentity: {e}")))?;
+        Ok(*pending.tx_hash())
+    }
+
     // -----------------------------------------------------------------
     // Registry read views.
     // -----------------------------------------------------------------
 
-    /// `SRARegistry.isActive(sra)` — true once admin has registered
+    /// `AttestersRegistry.isActive(sra)` — true once admin has registered
     /// and not revoked.
     pub async fn is_active(&self, sra: Address) -> eyre::Result<bool> {
         let provider = self.inner.read_provider();
-        let reg = ISRARegistry::new(SRA_REGISTRY, &provider);
+        let reg = IAttestersRegistry::new(SRA_REGISTRY, &provider);
         Ok(reg.isActive(sra).call().await?)
     }
 
-    /// `SRARegistry.getRecord(sra)` — full record (mask, rate
+    /// `AttestersRegistry.getRecord(sra)` — full record (mask, rate
     /// limit, rotation flag, active bit).
-    pub async fn get_record(&self, sra: Address) -> eyre::Result<ISRARegistry::SRARecord> {
+    pub async fn get_record(
+        &self,
+        sra: Address,
+    ) -> eyre::Result<IAttestersRegistry::AttesterRecord> {
         let provider = self.inner.read_provider();
-        let reg = ISRARegistry::new(SRA_REGISTRY, &provider);
+        let reg = IAttestersRegistry::new(SRA_REGISTRY, &provider);
         Ok(reg.getRecord(sra).call().await?)
     }
 
@@ -202,8 +245,7 @@ impl AdminClient {
     // -----------------------------------------------------------------
 
     /// `pso_vdfInfo` — the chain's current MinRoot VDF iteration count `T`
-    /// (the `current_difficulty` field of the one-shot VDF info). Hits the
-    /// actor RPC directly (the agents pool exposes the same endpoint).
+    /// (the `current_difficulty` field). Served on both gated ports.
     pub async fn current_difficulty(&self) -> Result<u64, L2ClientError> {
         let resp = self.raw_json_rpc("pso_vdfInfo", json!([])).await?;
         resp.get("current_difficulty")

@@ -1,7 +1,7 @@
-//! S028 — `SRARegistry.register(address(0), ...)` reverts with
+//! S028 — `AttestersRegistry.register(address(0), ...)` reverts with
 //! `ZeroAddress()`.
 //!
-//! Among the SRARegistry guards (`onlyAdmin` first), the body of
+//! Among the AttestersRegistry guards (`onlyAdmin` first), the body of
 //! `register` checks `sra == address(0)` and reverts before
 //! `permissionMask == 0` (the InvalidMask check, see S029). So we
 //! call from the admin signer to clear the gate, supply
@@ -23,7 +23,7 @@ impl Scenario for S028 {
         "S028"
     }
     fn description(&self) -> &'static str {
-        "SRARegistry.register(address(0), ...) reverts ZeroAddress"
+        "AttestersRegistry.register(address(0), ...) reverts ZeroAddress"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -33,7 +33,13 @@ impl Scenario for S028 {
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let err = env
         .admin
-        .register_sra(Address::ZERO, u32::MAX, 1_000_000u64, false)
+        .register_sra(
+            Address::ZERO,
+            u32::MAX,
+            false,
+            alloy::primitives::B256::ZERO,
+            alloy::primitives::U256::ZERO,
+        )
         .await
         .err()
         .ok_or_else(|| eyre::eyre!("S028: expected ZeroAddress revert, got success"))?;
