@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.8.1 - 2026-06-16
+#### Bug Fixes
+- (**testsuite**) use pso_vdfInfo (one-shot) for difficulty + head block - (170c9d3) - Anton Velichko
+
+- - -
+
 ## v0.8.0 - 2026-06-15
 #### Features
 - (**testsuite**) S045 — verify chain commits a DA batch to L1 DaInbox - (cb87569) - Anton Velichko
