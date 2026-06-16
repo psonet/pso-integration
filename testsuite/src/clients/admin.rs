@@ -201,16 +201,16 @@ impl AdminClient {
     // Network parameter reads.
     // -----------------------------------------------------------------
 
-    /// `pso_epochDifficulty` — the chain's current MinRoot VDF
-    /// iteration count `T`. Hits the actor RPC directly (the
-    /// agents pool exposes the same endpoint).
+    /// `pso_vdfInfo` — the chain's current MinRoot VDF iteration count `T`
+    /// (the `current_difficulty` field of the one-shot VDF info). Hits the
+    /// actor RPC directly (the agents pool exposes the same endpoint).
     pub async fn current_difficulty(&self) -> Result<u64, L2ClientError> {
-        let resp = self.raw_json_rpc("pso_epochDifficulty", json!([])).await?;
-        resp.get("difficulty")
+        let resp = self.raw_json_rpc("pso_vdfInfo", json!([])).await?;
+        resp.get("current_difficulty")
             .and_then(|v| v.as_u64())
             .ok_or_else(|| {
                 L2ClientError::Rpc(format!(
-                    "pso_epochDifficulty missing 'difficulty' field: {resp}"
+                    "pso_vdfInfo missing 'current_difficulty' field: {resp}"
                 ))
             })
     }
