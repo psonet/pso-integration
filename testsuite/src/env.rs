@@ -151,17 +151,31 @@ impl TestEnv {
     // Per-scenario client factories.
     // -----------------------------------------------------------------
 
-    /// Spawn a fresh SRA: roll a random secp256k1 key, register
-    /// it via [`AdminClient::register_sra`]
-    /// (mask = [`SRA_PERMISSION_MASK`], rate limit 1 M, rotation
-    /// candidate), and return an [`SraClient`] bound to it. The
-    /// returned client is independent of `env.sra_zero` and can
-    /// submit through the agents pool immediately.
+    /// Spawn a fresh SRA: roll a random secp256k1 key, register it via
+    /// [`AdminClient::register_sra`] (mask = [`SRA_PERMISSION_MASK`],
+    /// active but non-rotation with a zero consensus identity — the
+    /// testsuite SRA only needs to be active to submit records, and the
+    /// M3 `AttestersRegistry` requires a non-zero `consensusKey` for
+    /// rotation candidacy), and return an [`SraClient`] bound to it. The
+    /// returned client is independent of `env.sra_zero` and can submit
+    /// through the agents pool immediately.
     pub async fn new_sra(&self) -> eyre::Result<SraClient> {
         let secret = roll_random_key();
         let target_addr = derive_address(&secret)?;
+        // Active-only attester: a zero consensus identity (rotation candidacy
+        // would require a non-zero `consensus_key`, which this SRA doesn't need
+        // — it only submits records).
+        let is_rotation_candidate = false;
+        let consensus_key = alloy::primitives::B256::ZERO;
+        let p2p_addr = alloy::primitives::U256::ZERO;
         self.admin
-            .register_sra(target_addr, SRA_PERMISSION_MASK, 1_000_000u64, true)
+            .register_sra(
+                target_addr,
+                SRA_PERMISSION_MASK,
+                is_rotation_candidate,
+                consensus_key,
+                p2p_addr,
+            )
             .await
             .map_err(|e| eyre::eyre!("register_sra: {e}"))?;
         // Wait for the register receipt to land. The `pending`
@@ -304,13 +318,14 @@ async fn wait_for_active(
 
 alloy::sol! {
     #[sol(rpc)]
-    interface ISRARegistryBootstrap {
-        function isActive(address sra) external view returns (bool);
+    interface IAttestersRegistryBootstrap {
+        function isActive(address attester) external view returns (bool);
         function register(
-            address sra,
+            address attester,
             uint32 permissionMask,
-            uint64 rateLimit,
-            bool isRotationCandidate
+            bool isRotationCandidate,
+            bytes32 consensusKey,
+            uint256 p2pAddr
         ) external;
     }
 }
@@ -339,7 +354,7 @@ pub async fn bootstrap_register_sra(
         .ok_or_else(|| eyre::eyre!("SRA signer missing"))?;
 
     let read_provider = target_client.read_provider();
-    let registry = ISRARegistryBootstrap::new(SRA_REGISTRY, &read_provider);
+    let registry = IAttestersRegistryBootstrap::new(SRA_REGISTRY, &read_provider);
     if registry.isActive(target_addr).call().await? {
         return Ok(());
     }
@@ -347,9 +362,19 @@ pub async fn bootstrap_register_sra(
     let admin_client =
         L2Client::connect_with_signer(rpc, chain_id, admin_secret_key).map_err(map_l2_err)?;
     let write_provider = admin_client.write_provider().map_err(map_l2_err)?;
-    let registry_w = ISRARegistryBootstrap::new(SRA_REGISTRY, &write_provider);
+    let registry_w = IAttestersRegistryBootstrap::new(SRA_REGISTRY, &write_provider);
+    // Active-only attester with a zero consensus identity (see `new_sra`).
+    let is_rotation_candidate = false;
+    let consensus_key = alloy::primitives::B256::ZERO;
+    let p2p_addr = alloy::primitives::U256::ZERO;
     let pending = registry_w
-        .register(target_addr, SRA_PERMISSION_MASK, 1_000_000u64, true)
+        .register(
+            target_addr,
+            SRA_PERMISSION_MASK,
+            is_rotation_candidate,
+            consensus_key,
+            p2p_addr,
+        )
         .max_fee_per_gas(0)
         .max_priority_fee_per_gas(0)
         .send()

@@ -1,4 +1,4 @@
-//! S035 — `SRARegistry.updateMask` mutates the on-chain record
+//! S035 — `AttestersRegistry.updateMask` mutates the on-chain record
 //! and `getRecord` reads back the new value.
 //!
 //! Positive-side complement to S029 (admin sets `mask = 0` →

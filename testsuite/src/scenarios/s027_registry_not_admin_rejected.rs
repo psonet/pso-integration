@@ -1,4 +1,4 @@
-//! S027 — `SRARegistry.register` from a non-admin signer reverts
+//! S027 — `AttestersRegistry.register` from a non-admin signer reverts
 //! with `NotAdmin`.
 //!
 //! The registry's `onlyAdmin` modifier guards every state-mutating
@@ -21,12 +21,13 @@ use crate::{PsoContractError, Scenario, TestEnv};
 
 sol! {
     #[sol(rpc)]
-    interface ISRARegistryView {
+    interface IAttestersRegistryView {
         function register(
-            address sra,
+            address attester,
             uint32 permissionMask,
-            uint64 rateLimit,
-            bool isRotationCandidate
+            bool isRotationCandidate,
+            bytes32 consensusKey,
+            uint256 p2pAddr
         ) external;
     }
 }
@@ -42,7 +43,7 @@ impl Scenario for S027 {
         "S027"
     }
     fn description(&self) -> &'static str {
-        "SRARegistry.register from non-admin reverts NotAdmin"
+        "AttestersRegistry.register from non-admin reverts NotAdmin"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -52,7 +53,7 @@ impl Scenario for S027 {
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     // The SRA signer is active but NOT the admin — perfect impostor.
     let provider = env.sra_zero.inner().write_provider()?;
-    let reg = ISRARegistryView::new(SRA_REGISTRY, provider);
+    let reg = IAttestersRegistryView::new(SRA_REGISTRY, provider);
 
     // Pick a plausible-but-otherwise-irrelevant fresh address to
     // "register". The contract reverts at the admin gate first;
@@ -60,7 +61,13 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let fake = Address::from([0xab; 20]);
 
     let err = reg
-        .register(fake, u32::MAX, 1_000_000u64, false)
+        .register(
+            fake,
+            u32::MAX,
+            false,
+            alloy::primitives::B256::ZERO,
+            alloy::primitives::U256::ZERO,
+        )
         .max_fee_per_gas(0)
         .max_priority_fee_per_gas(0)
         .send()

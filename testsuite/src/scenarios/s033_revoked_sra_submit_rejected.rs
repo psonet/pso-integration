@@ -1,5 +1,5 @@
 //! S033 — a revoked SRA's `SpendingRecord.submit` reverts with
-//! `SRANotActive`.
+//! `AttesterNotActive`.
 //!
 //! Lifecycle the scenario exercises end-to-end:
 //!
@@ -10,7 +10,7 @@
 //! 3. Admin `revoke_sra(addr)`.
 //! 4. The same SRA attempts a second SR submission. The
 //!    `onlyActiveSRA` modifier reads `isActive(addr) == false`
-//!    post-revoke and reverts `SRANotActive`.
+//!    post-revoke and reverts `AttesterNotActive`.
 //!
 //! Bookends the S030 invariant ("a never-registered SRA can't
 //! submit") with the temporal axis ("a previously-registered SRA
@@ -34,7 +34,7 @@ impl Scenario for S033 {
         "S033"
     }
     fn description(&self) -> &'static str {
-        "revoked SRA's SR.submit reverts SRANotActive"
+        "revoked SRA's SR.submit reverts AttesterNotActive"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -76,11 +76,11 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .register_spending_record(sr_id_post)
         .await
         .err()
-        .ok_or_else(|| eyre::eyre!("S033: expected SRANotActive after revoke, got success"))?;
+        .ok_or_else(|| eyre::eyre!("S033: expected AttesterNotActive after revoke, got success"))?;
 
     let typed = into_pso_error(err);
     match &typed {
-        PsoContractError::SRANotActive => Ok(()),
-        other => Err(eyre::eyre!("S033: expected SRANotActive, got {other}")),
+        PsoContractError::AttesterNotActive => Ok(()),
+        other => Err(eyre::eyre!("S033: expected AttesterNotActive, got {other}")),
     }
 }

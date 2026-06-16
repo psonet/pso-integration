@@ -1,11 +1,11 @@
 //! S030 — `SpendingRecord.submit` from a never-registered signer
-//! reverts with `SRANotActive`.
+//! reverts with `AttesterNotActive`.
 //!
 //! Every state-mutating entry point on the agents-pool path goes
 //! through the `onlyActiveSRA` modifier (`ISRAAware`), which calls
 //! `sraRegistry.isActive(_msgSender())`. A never-registered signer
 //! sees `isActive == false` and the modifier reverts with
-//! `SRANotActive()`. We roll a fresh secp256k1 key, build an
+//! `AttesterNotActive()`. We roll a fresh secp256k1 key, build an
 //! `SraClient` from it, and try to submit an SR — expect the
 //! revert.
 
@@ -25,7 +25,7 @@ impl Scenario for S030 {
         "S030"
     }
     fn description(&self) -> &'static str {
-        "SR.submit from never-registered SRA reverts SRANotActive"
+        "SR.submit from never-registered SRA reverts AttesterNotActive"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -43,11 +43,11 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .register_spending_record(sr_id)
         .await
         .err()
-        .ok_or_else(|| eyre::eyre!("S030: expected SRANotActive revert, got success"))?;
+        .ok_or_else(|| eyre::eyre!("S030: expected AttesterNotActive revert, got success"))?;
 
     let typed = into_pso_error(err);
     match &typed {
-        PsoContractError::SRANotActive => Ok(()),
-        other => Err(eyre::eyre!("S030: expected SRANotActive, got {other}")),
+        PsoContractError::AttesterNotActive => Ok(()),
+        other => Err(eyre::eyre!("S030: expected AttesterNotActive, got {other}")),
     }
 }

@@ -1,4 +1,4 @@
-//! S029 — `SRARegistry.register(addr, 0, ...)` reverts with
+//! S029 — `AttestersRegistry.register(addr, 0, ...)` reverts with
 //! `InvalidMask()`.
 //!
 //! After the `onlyAdmin` gate and `sra != address(0)` check
@@ -22,7 +22,7 @@ impl Scenario for S029 {
         "S029"
     }
     fn description(&self) -> &'static str {
-        "SRARegistry.register with permissionMask=0 reverts InvalidMask"
+        "AttestersRegistry.register with permissionMask=0 reverts InvalidMask"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -33,7 +33,13 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let fake = Address::from([0xab; 20]);
     let err = env
         .admin
-        .register_sra(fake, 0u32, 1_000_000u64, false)
+        .register_sra(
+            fake,
+            0u32,
+            false,
+            alloy::primitives::B256::ZERO,
+            alloy::primitives::U256::ZERO,
+        )
         .await
         .err()
         .ok_or_else(|| eyre::eyre!("S029: expected InvalidMask revert, got success"))?;
