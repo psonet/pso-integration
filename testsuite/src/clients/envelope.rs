@@ -18,7 +18,7 @@
 //! We compute the VDF here synchronously — at `T_BASE = 100` (the
 //! pso-chain `--dev` setting) the cost is sub-millisecond on a
 //! desktop CPU. The helper takes the difficulty as an argument so
-//! callers who already polled `pso_epochDifficulty` don't pay for it
+//! callers who already polled `pso_vdfInfo` don't pay for it
 //! twice.
 
 use alloy::primitives::Address;
@@ -99,7 +99,7 @@ pub fn derive_vdf_input(
 ///    chain rejects duplicates).
 /// 2. Derive `vdf_input` per the canonical binding.
 /// 3. Run MinRoot at `difficulty` iterations (the caller's job to
-///    fetch the right value from `pso_epochDifficulty`).
+///    fetch the right value from `pso_vdfInfo`).
 /// 4. Concatenate the 172-byte header with the inner EVM calldata.
 ///
 /// Returns the encoded bytes ready to be set as the `data` field of

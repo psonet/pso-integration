@@ -12,7 +12,7 @@
 //! Surface:
 //!
 //! - [`ActorClient::new`] — construct with rpc, chain id, secret key.
-//! - [`ActorClient::fetch_difficulty`] — `pso_epochDifficulty` poll.
+//! - [`ActorClient::fetch_difficulty`] — `pso_vdfInfo` poll.
 //! - [`ActorClient::submit_tx`] — fetch nonce + head + difficulty,
 //!   wrap calldata, sign EIP-1559 with `max_fee = 0`, broadcast.
 //! - [`ActorClient::wait_for_receipt`] — poll a tx hash to inclusion.
@@ -83,6 +83,21 @@ impl std::fmt::Display for ActorClientError {
 
 impl std::error::Error for ActorClientError {}
 
+/// One-shot VDF proving parameters, as returned by `pso_vdfInfo` — mirrors
+/// the node's `VdfStatus`. Carries everything an envelope build needs:
+/// the difficulty to prove at and the head block to bind against.
+#[derive(Debug, Clone, Copy)]
+pub struct VdfInfo {
+    /// Active-epoch VDF difficulty `T` — prove against this.
+    pub current_difficulty: u64,
+    /// Prior epoch's difficulty — accepted within the one-epoch boundary.
+    pub previous_difficulty: u64,
+    /// Current consensus epoch number.
+    pub epoch: u64,
+    /// Head L2 block — the VDF window upper bound (`submitted_block <= block`).
+    pub block: u64,
+}
+
 impl ActorClient {
     /// Construct an actor-pool client.
     pub fn new(
@@ -121,22 +136,38 @@ impl ActorClient {
         ProviderBuilder::new().connect_http(self.inner.rpc_url.clone())
     }
 
-    /// Call `pso_epochDifficulty()` on the actor RPC and parse the
-    /// `difficulty` field out of the JSON response.
-    pub async fn fetch_difficulty(&self) -> Result<u64, ActorClientError> {
-        let resp = self.raw_json_rpc("pso_epochDifficulty", json!([])).await?;
-        let diff = resp
-            .get("difficulty")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| {
+    /// One-shot VDF proving parameters from `pso_vdfInfo`: the current +
+    /// previous epoch difficulty, the consensus epoch, and the head block
+    /// (the VDF window upper bound, `submitted_block <= block`). A single
+    /// call replaces a separate difficulty poll *and* an `eth_blockNumber`
+    /// round-trip — the node already returns the head here. (Replaces
+    /// pso-chain's `pso_epochDifficulty`.)
+    pub async fn fetch_vdf_info(&self) -> Result<VdfInfo, ActorClientError> {
+        let resp = self.raw_json_rpc("pso_vdfInfo", json!([])).await?;
+        let field = |name: &str| -> Result<u64, ActorClientError> {
+            resp.get(name).and_then(Value::as_u64).ok_or_else(|| {
                 ActorClientError::Transport(format!(
-                    "pso_epochDifficulty: missing/invalid 'difficulty' field in {resp}"
+                    "pso_vdfInfo: missing/invalid '{name}' field in {resp}"
                 ))
-            })?;
-        Ok(diff)
+            })
+        };
+        Ok(VdfInfo {
+            current_difficulty: field("current_difficulty")?,
+            previous_difficulty: field("previous_difficulty")?,
+            epoch: field("epoch")?,
+            block: field("block")?,
+        })
     }
 
-    /// Fetch the current head block number.
+    /// Convenience: just the current VDF difficulty (`fetch_vdf_info`'s
+    /// `current_difficulty`).
+    pub async fn fetch_difficulty(&self) -> Result<u64, ActorClientError> {
+        Ok(self.fetch_vdf_info().await?.current_difficulty)
+    }
+
+    /// Fetch the current head block number. Prefer [`Self::fetch_vdf_info`]
+    /// when the difficulty is also needed — it returns the head too, in one
+    /// call.
     pub async fn block_number(&self) -> Result<u64, ActorClientError> {
         self.provider()
             .get_block_number()
@@ -197,7 +228,7 @@ impl ActorClient {
     /// Like [`Self::submit_tx_with_envelope`] but lets the caller
     /// pick a custom VDF iteration count `T` to compute the proof
     /// at. `None` falls back to `fetch_difficulty()` (canonical
-    /// happy-path source — `pso_epochDifficulty` against the chain's
+    /// happy-path source — `pso_vdfInfo` against the chain's
     /// current epoch). `Some(t)` runs MinRoot at exactly `t`
     /// iterations.
     ///
@@ -237,13 +268,18 @@ impl ActorClient {
     where
         F: FnOnce(Vec<u8>) -> Vec<u8>,
     {
-        let difficulty = match custom_difficulty {
-            Some(t) => t,
-            None => self.fetch_difficulty().await?,
-        };
-        let head = match pinned_block {
-            Some(b) => b,
-            None => self.block_number().await?,
+        // Resolve difficulty + head. When NEITHER is overridden, a single
+        // pso_vdfInfo call supplies both (it returns the head block too) — no
+        // separate eth_blockNumber round-trip. When one is pinned, fetch only
+        // the other.
+        let (difficulty, head) = match (custom_difficulty, pinned_block) {
+            (Some(t), Some(b)) => (t, b),
+            (Some(t), None) => (t, self.block_number().await?),
+            (None, Some(b)) => (self.fetch_difficulty().await?, b),
+            (None, None) => {
+                let info = self.fetch_vdf_info().await?;
+                (info.current_difficulty, info.block)
+            }
         };
         let nonce = self.nonce().await?;
 

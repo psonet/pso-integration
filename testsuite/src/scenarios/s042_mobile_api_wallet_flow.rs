@@ -102,14 +102,19 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let signer = PrivateKeySigner::from_slice(&sk)?.with_chain_id(Some(env.chain_id));
     let wallet_addr = signer.address();
 
-    // 1. Chain context straight off the actor RPC (the only endpoint
-    //    a real wallet talks to).
-    let difficulty = rpc(&url, "pso_epochDifficulty", json!([]))
-        .await?
-        .get("difficulty")
+    // 1. Chain context straight off the actor RPC (the only endpoint a real
+    //    wallet talks to). One pso_vdfInfo call carries BOTH the difficulty to
+    //    prove at and the head block to bind against — no separate
+    //    eth_blockNumber round-trip.
+    let vdf_info = rpc(&url, "pso_vdfInfo", json!([])).await?;
+    let difficulty = vdf_info
+        .get("current_difficulty")
         .and_then(Value::as_u64)
-        .ok_or_else(|| eyre::eyre!("pso_epochDifficulty: no difficulty"))?;
-    let head = hex_u64(&rpc(&url, "eth_blockNumber", json!([])).await?)?;
+        .ok_or_else(|| eyre::eyre!("pso_vdfInfo: no current_difficulty"))?;
+    let head = vdf_info
+        .get("block")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| eyre::eyre!("pso_vdfInfo: no block"))?;
     let nonce = hex_u64(
         &rpc(
             &url,
