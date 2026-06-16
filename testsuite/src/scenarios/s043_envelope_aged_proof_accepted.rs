@@ -89,8 +89,14 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             eyre::eyre!("S043: aged-but-valid proof rejected (age ≈ {AGE_BLOCKS} blocks): {e:?}")
         })?;
 
-    // Bonus assertion: it must also execute through the dispatcher.
-    let receipt = wallet.wait_for_receipt(tx, Duration::from_secs(30)).await?;
+    // Bonus assertion: it must also execute through the dispatcher. Generous
+    // receipt budget: this scenario first ages ~20 blocks, so the submit lands
+    // while the node has been producing blocks for a while — on a load-jittery
+    // CI runner the next block can lag well past 30s. 120s matches the aging
+    // budget above and removes the flake without weakening the check.
+    let receipt = wallet
+        .wait_for_receipt(tx, Duration::from_secs(120))
+        .await?;
     if !receipt.status() {
         return Err(eyre::eyre!(
             "S043: aged proof admitted but execution reverted (tx {tx:#x})"

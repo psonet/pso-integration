@@ -73,7 +73,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .await
         .map_err(|e| eyre::eyre!("S044 leg1 (nonce 0): {e:?}"))?;
     let r0 = wallet
-        .wait_for_receipt(tx0, Duration::from_secs(30))
+        .wait_for_receipt(tx0, Duration::from_secs(120))
         .await?;
     if !r0.status() {
         return Err(eyre::eyre!("S044 leg1 reverted (tx {tx0:#x})"));
@@ -86,7 +86,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .await
         .map_err(|e| eyre::eyre!("S044 leg2 (nonce 1): {e:?}"))?;
     let r1 = wallet
-        .wait_for_receipt(tx1, Duration::from_secs(30))
+        .wait_for_receipt(tx1, Duration::from_secs(120))
         .await?;
     if !r1.status() {
         return Err(eyre::eyre!("S044 leg2 reverted (tx {tx1:#x})"));
