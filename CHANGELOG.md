@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.8.2 - 2026-06-16
+#### Bug Fixes
+- (**testsuite**) align registry surface to research AttestersRegistry - (5a735db) - Anton Velichko
+#### Tests
+- (**framework**) SRANotActive -> AttesterNotActive decoder round-trip - (e272954) - Anton Velichko
+
+- - -
+
 ## v0.8.1 - 2026-06-16
 #### Bug Fixes
 - (**testsuite**) use pso_vdfInfo (one-shot) for difficulty + head block - (170c9d3) - Anton Velichko
