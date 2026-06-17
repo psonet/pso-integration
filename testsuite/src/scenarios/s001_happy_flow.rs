@@ -298,24 +298,38 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // unique id the wallet controls). Pick a random one.
     let td_id = random_id();
 
+    // The TD is submitted by a fresh, never-registered per-tx opaque key
+    // whose EOA is `msg.sender` on-chain. Create it BEFORE proving: the
+    // aggregation proof's `binding_hash = Poseidon4(sender, tdId, chainId)`
+    // commits to this exact submitter, so it must be fixed up front and the
+    // SAME key must sign the submit below.
+    let wallet = env.new_actor()?;
+    let sender = wallet.address();
+    let chain_id = wallet.chain_id();
+
     // The flat-aggregation prover wraps `noir_rs` which spins up its
     // own tokio runtime; push the synchronous work onto a blocking
     // thread to avoid runtime-in-runtime panics.
     let bundle = {
         let su_inputs_owned = su_inputs.clone();
         tokio::task::spawn_blocking(move || {
-            pso_l2_client::wallet::prove_su_aggregation(&su_inputs_owned, td_id, td_owner_fr)
+            pso_l2_client::wallet::prove_su_aggregation(
+                &su_inputs_owned,
+                td_id,
+                td_owner_fr,
+                sender,
+                chain_id,
+            )
         })
         .await
         .map_err(|e| eyre::eyre!("prove join: {e}"))??
     };
 
-    // Wallet-direct submission: a fresh, never-registered key signs the
-    // TD tx itself and broadcasts through the actor pool. The client
-    // wraps the inner calldata in the PSO envelope (real MinRoot VDF at
-    // the chain's reported difficulty); on-chain, TributeDraft's
-    // envelope-dispatcher fallback strips the header and re-dispatches
-    // `submit(...)` with msg.sender = this wallet.
+    // Wallet-direct submission: `wallet` (created above, the key the proof's
+    // binding_hash commits to) signs the TD tx itself and broadcasts through
+    // the actor pool. The client wraps the inner calldata in the PSO envelope
+    // (real MinRoot VDF at the chain's reported difficulty); on-chain,
+    // TributeDraft sees `msg.sender = wallet` and recomputes the same binding.
     let su_ids_ordered: Vec<U256> = bundle
         .su_ids
         .iter()
@@ -333,7 +347,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     }
     .abi_encode();
 
-    let wallet = env.new_actor()?;
+    // `wallet` was created above (the submitter the proof binds to).
     let tx = wallet
         .submit_tx(TRIBUTE_DRAFT_ADDR, Bytes::from(inner))
         .await

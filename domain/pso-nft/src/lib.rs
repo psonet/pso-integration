@@ -559,6 +559,7 @@ mod tests {
                 key: &data.owner_keys.key,
                 nonce: data.nonce,
                 merkle_path: &merkle_path,
+                binding_hash: ark_bn254::Fr::from(0u64),
             },
         )
         .unwrap();
@@ -579,6 +580,7 @@ mod tests {
                 key: &data.owner_keys.key,
                 nonce: data.nonce,
                 nft_hash,
+                binding_hash: ark_bn254::Fr::from(0u64),
             },
         )
         .unwrap();
@@ -610,6 +612,7 @@ mod tests {
                 key: &data.owner_keys.key,
                 nonce: data.nonce,
                 merkle_path: &merkle_path,
+                binding_hash: ark_bn254::Fr::from(0u64),
             },
         )
         .unwrap();
@@ -630,6 +633,7 @@ mod tests {
                 key: &data.owner_keys.key,
                 nonce: data.nonce,
                 nft_hash,
+                binding_hash: ark_bn254::Fr::from(0u64),
             },
         )
         .unwrap();

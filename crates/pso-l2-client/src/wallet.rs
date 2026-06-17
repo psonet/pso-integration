@@ -34,7 +34,7 @@
 //!   once the contract switches its `zk_verify` lookup to
 //!   `FLAT_AGGREGATION_N*` (pso-chain side, separate workstream).
 
-use alloy::primitives::{Bytes, FixedBytes, TxHash, U256};
+use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, U256};
 use ark_bn254::Fr;
 use ark_ff::PrimeField;
 use k256::{PublicKey, SecretKey};
@@ -199,6 +199,8 @@ pub fn prove_su_aggregation(
     inputs: &[SuAggregationInput],
     tribute_draft_id: U256,
     td_derived_owner: Fr,
+    sender: Address,
+    chain_id: u64,
 ) -> Result<AggregationProofBundle, L2ClientError> {
     use pso_integrations_shared::witness::{
         build_flat_aggregation_witness, derive_grumpkin_public_key, FlatAggregationSlot,
@@ -209,6 +211,16 @@ pub fn prove_su_aggregation(
             "at least one SU input required".into(),
         ));
     }
+
+    // Submission binding: `binding_hash = Poseidon4(sender, tributeDraftId,
+    // chainId)`, recomputed on-chain via precompile 0x0210. Folded into every
+    // per-SU signature and exposed as the trailing public input, so the proof
+    // is valid only for this (sender, tdId, chain) tuple. `sender` is the
+    // opaque EOA the wallet will submit from.
+    let tdid_be: [u8; 32] = tribute_draft_id.to_be_bytes::<32>();
+    let binding_hash =
+        pso_protocol::binding::compute_binding_hash(&sender.into_array(), &tdid_be, chain_id)
+            .map_err(|e| L2ClientError::Witness(format!("compute_binding_hash: {e}")))?;
 
     let tier_resolved =
         pso_zk_canonical::select_aggregation_tier(inputs.len() as u32).ok_or_else(|| {
@@ -231,7 +243,7 @@ pub fn prove_su_aggregation(
         });
     }
 
-    let witness_vec = build_flat_aggregation_witness(&slots, tier_resolved.tier_n)
+    let witness_vec = build_flat_aggregation_witness(&slots, tier_resolved.tier_n, binding_hash)
         .map_err(|e| L2ClientError::Witness(format!("flat witness: {e}")))?;
     let witness_map = pso_zk_circuit_noir::witness::from_vec_to_witness_map(witness_vec)
         .map_err(|e| L2ClientError::Witness(format!("witness map: {e}")))?;
@@ -561,7 +573,7 @@ mod tests {
 
     #[test]
     fn prove_aggregation_rejects_empty_input() {
-        let r = prove_su_aggregation(&[], U256::from(1u64), Fr::from(0u64));
+        let r = prove_su_aggregation(&[], U256::from(1u64), Fr::from(0u64), Address::ZERO, 1);
         match r {
             Err(L2ClientError::InvalidInput(_)) => {}
             other => panic!("expected InvalidInput, got {other:?}"),

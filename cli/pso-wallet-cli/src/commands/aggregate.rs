@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 
-use alloy::primitives::U256;
+use alloy::primitives::{Address, U256};
 use ark_bn254::Fr;
 use ark_ff::PrimeField;
 use clap::Args as ClapArgs;
@@ -44,9 +44,14 @@ pub struct Args {
     /// Output JSON path for the aggregation bundle.
     #[arg(long)]
     pub output: PathBuf,
+    /// The EVM address the TD will be submitted from (`msg.sender`). The
+    /// proof's `binding_hash = Poseidon4(sender, tributeDraftId, chainId)`
+    /// commits to it, so the SAME key must sign the eventual `submit-td`.
+    #[arg(long)]
+    pub sender: Address,
 }
 
-pub fn run(_consent_key: &[u8; 32], _chain_id: u64, args: Args) -> Result<()> {
+pub fn run(_consent_key: &[u8; 32], chain_id: u64, args: Args) -> Result<()> {
     let witnesses: Vec<SuOwnershipWitness> = args
         .witnesses
         .iter()
@@ -90,7 +95,7 @@ pub fn run(_consent_key: &[u8; 32], _chain_id: u64, args: Args) -> Result<()> {
     let td_id = U256::from_be_bytes(td_id_bytes);
     let td_owner_fr =
         Fr::from_be_bytes_mod_order(&decode_hex32(&td_material.td_derived_owner_be_hex)?);
-    let bundle = prove_su_aggregation(&inputs, td_id, td_owner_fr)?;
+    let bundle = prove_su_aggregation(&inputs, td_id, td_owner_fr, args.sender, chain_id)?;
     crate::write_json(&args.output, &bundle)?;
     println!(
         "{{\"tier_n\":{},\"label\":\"{}\",\"tribute_draft_id\":\"{}\"}}",

@@ -46,6 +46,8 @@ pub fn handle_proof_generate(
     circuit_path: &Path,
     mode: ProofMode,
     output: &Path,
+    redeemer: &[u8; 20],
+    chain_id: u64,
 ) -> Result<()> {
     // 1. Read and parse the GeneratedOutput from the NFT file.
     let nft_content = std::fs::read_to_string(nft_path)
@@ -91,10 +93,17 @@ pub fn handle_proof_generate(
             nonce,
             &merkle_path,
             circuit_bytecode,
+            redeemer,
+            chain_id,
         )?,
-        ProofMode::Ownership => {
-            generate_ownership_proof(&generated_output, &grumpkin_key, nonce, circuit_bytecode)?
-        }
+        ProofMode::Ownership => generate_ownership_proof(
+            &generated_output,
+            &grumpkin_key,
+            nonce,
+            circuit_bytecode,
+            redeemer,
+            chain_id,
+        )?,
     };
 
     // 7. Write the proof to the output file.
@@ -209,6 +218,16 @@ pub fn handle_proof_verify(proof_path: &Path, circuit_path: &Path) -> Result<()>
 
 // -- Internal helpers --
 
+/// Redemption binding `compute_binding_hash(redeemer, commitmentId, chainId)`
+/// for a standalone ownership/full proof — folded into the signature and
+/// exposed as a public input so the L1 verifier can pin the proof to the
+/// `(redeemer, commitmentId, chainId)` tuple. `commitment_id` is the NFT id.
+fn redemption_binding(redeemer: &[u8; 20], commitment_id: Fr, chain_id: u64) -> Result<Fr> {
+    let commitment_be = pso_protocol::fr::fr_to_be_bytes(&commitment_id);
+    pso_protocol::binding::compute_binding_hash(redeemer, &commitment_be, chain_id)
+        .context("compute_binding_hash")
+}
+
 /// Generate a full proof (ownership + Merkle inclusion) for the given NFT data.
 fn generate_full_proof(
     generated_output: &GeneratedOutput,
@@ -216,6 +235,8 @@ fn generate_full_proof(
     nonce: Fr,
     merkle_path: &[pso_protocol::merkle::MerklePathElement],
     circuit_bytecode: pso_zk_circuit_noir::CircuitBytecode,
+    redeemer: &[u8; 20],
+    chain_id: u64,
 ) -> Result<SerializableProof> {
     // Deserialize the NFT based on nft_type.
     let witness = match generated_output.nft_type.as_str() {
@@ -226,6 +247,7 @@ fn generate_full_proof(
                 key,
                 nonce,
                 merkle_path,
+                binding_hash: redemption_binding(redeemer, nft.id, chain_id)?,
             };
             build_full_proof_witness(&nft, ctx)
                 .context("Failed to generate full proof witness for TributeDraft")?
@@ -237,6 +259,7 @@ fn generate_full_proof(
                 key,
                 nonce,
                 merkle_path,
+                binding_hash: redemption_binding(redeemer, nft.id, chain_id)?,
             };
             build_full_proof_witness(&nft, ctx)
                 .context("Failed to generate full proof witness for SpendingUnit")?
@@ -267,6 +290,8 @@ fn generate_ownership_proof(
     key: &GrumpkinKey,
     nonce: Fr,
     circuit_bytecode: pso_zk_circuit_noir::CircuitBytecode,
+    redeemer: &[u8; 20],
+    chain_id: u64,
 ) -> Result<SerializableProof> {
     // Deserialize the NFT based on nft_type.
     let witness = match generated_output.nft_type.as_str() {
@@ -278,6 +303,7 @@ fn generate_ownership_proof(
                 key,
                 nonce,
                 nft_hash,
+                binding_hash: redemption_binding(redeemer, nft.id, chain_id)?,
             };
             build_ownership_witness(&nft, ctx)
                 .context("Failed to generate ownership witness for TributeDraft")?
@@ -290,6 +316,7 @@ fn generate_ownership_proof(
                 key,
                 nonce,
                 nft_hash,
+                binding_hash: redemption_binding(redeemer, nft.id, chain_id)?,
             };
             build_ownership_witness(&nft, ctx)
                 .context("Failed to generate ownership witness for SpendingUnit")?

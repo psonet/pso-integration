@@ -1,14 +1,15 @@
-//! S019 — `TributeDraft.submit` rejects a 68-byte aggregation proof
+//! S019 — `TributeDraft.submit` rejects a 100-byte aggregation proof
 //! whose declared public inputs don't match the on-chain
 //! reconstruction with `InvalidAggregationProof`.
 //!
 //! Mirror image of S018 (`MalformedAggregationProof` on bad length).
 //! Here the proof clears the structural checks:
-//! - `combinedProof.length >= 68` (exactly headerLen for tier 1).
-//! - `num_inputs` prefix BE-decodes to 2, matching `k`.
-//! But the two declared public inputs are zero — they can't match
-//! the reconstructed `(derived_owner, su_hash)` pair. The contract
-//! reverts at the first mismatch with `InvalidAggregationProof`.
+//! - `combinedProof.length >= 100` (exactly headerLen for tier 1, k=3).
+//! - `num_inputs` prefix BE-decodes to 3 (= 2N+1), matching `k`.
+//! But the three declared public inputs are zero — they can't match
+//! the reconstructed `(derived_owner, su_hash, binding_hash)` triple.
+//! The contract reverts at the first mismatch with
+//! `InvalidAggregationProof`.
 //!
 //! This isolates the public-input-mismatch path from the SNARK
 //! precompile rejection path; both surface the same error variant,
@@ -46,14 +47,16 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let su_id = mint_one_su(env).await?;
     tracing::info!(scenario = "S019", step = "su-minted", %su_id, "minted SU for TD reference");
 
-    // Tier-1 header: 4-byte BE `num_inputs = 2` + 2 × 32-byte
-    // zero-filled "public inputs". Length = 68, the exact
-    // `headerLen` the contract computes for k=2, so the length and
-    // num_inputs checks both pass. The first input compare ((0) vs
-    // the SU's real `derivedOwner`) fails -> InvalidAggregationProof.
-    let mut proof = Vec::with_capacity(68);
-    proof.extend_from_slice(&2u32.to_be_bytes());
-    proof.extend_from_slice(&[0u8; 64]);
+    // Tier-1 header: 4-byte BE `num_inputs = 3` (= 2N+1: two
+    // (owner, nft_hash) slots + the trailing binding_hash) + 3 × 32-byte
+    // zero-filled "public inputs". Length = 100, the exact `headerLen`
+    // the contract computes for k=3, so the length and num_inputs checks
+    // both pass. The first input compare ((0) vs the SU's real
+    // `derivedOwner`) fails -> InvalidAggregationProof (not the count-based
+    // MalformedAggregationProof).
+    let mut proof = Vec::with_capacity(100);
+    proof.extend_from_slice(&3u32.to_be_bytes());
+    proof.extend_from_slice(&[0u8; 96]);
 
     let provider = env.sra_zero.inner().write_provider()?;
     let td = ITributeDraft::new(TRIBUTE_DRAFT, provider);
