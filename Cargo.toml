@@ -26,13 +26,14 @@ resolver = "2"
 #   downstream consumers in this workspace need, so we no longer
 #   carry a separate `noir_rs` dep or the `[patch.zkpassport/noir_rs]`
 #   override here.
-pso-protocol         = "0.5"
-pso-zk-canonical     = "0.3"
-# Pinned to the feat/pso-protocol-0.5 branch (psonet/pso-zk-circuits#5)
-# until it merges + re-tags — keeps the whole chain on pso-protocol 0.5.0
-# so witness types match across the proof-path boundary. Switch back to a
-# `tag` once the release is cut.
-pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", rev = "6a9c105d0cee5de29f5bbff3d12d2abb5827d6ba" }
+pso-protocol         = "0.7"
+pso-zk-canonical     = "0.7"
+# Pinned to v0.7.0 — the binding-hash revision: the ownership/aggregation
+# circuits fold `binding_hash` into the per-SU Schnorr pre-hash and expose it
+# as the trailing public input (2N+1), and pso-protocol 0.7 renamed the binding
+# id to the generic `commitment_id`. The whole stack stays on the 0.7 line so
+# witness types + circuit hashes match across the proof-path boundary.
+pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.7.0" }
 
 # Crates internal to this workspace
 pso-nft                  = { path = "domain/pso-nft" }

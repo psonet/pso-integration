@@ -74,6 +74,16 @@ pub enum ProofCommands {
         /// Output JSON file path for the generated proof
         #[arg(short, long)]
         output: PathBuf,
+
+        /// Redeemer EOA as 20-byte hex (`0x...`). The proof's binding_hash
+        /// commits to `(redeemer, commitmentId, chainId)` so an L1 verifier
+        /// can pin redemption to this address.
+        #[arg(long)]
+        redeemer: String,
+
+        /// Chain id for the binding_hash.
+        #[arg(long)]
+        chain_id: u64,
     },
     /// Verify a previously generated proof
     Verify {

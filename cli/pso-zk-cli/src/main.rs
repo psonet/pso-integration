@@ -29,7 +29,11 @@ fn main() {
                 circuit,
                 mode,
                 output,
-            } => proof::handle_proof_generate(&nft, &circuit, mode, &output),
+                redeemer,
+                chain_id,
+            } => decode_redeemer(&redeemer).and_then(|r| {
+                proof::handle_proof_generate(&nft, &circuit, mode, &output, &r, chain_id)
+            }),
             ProofCommands::Verify { proof, circuit } => {
                 proof::handle_proof_verify(&proof, &circuit)
             }
@@ -43,4 +47,14 @@ fn main() {
         eprintln!("Error: {e:#}");
         std::process::exit(1);
     }
+}
+
+/// Decode a `0x`-prefixed (or bare) 20-byte hex address for the redemption
+/// `binding_hash`.
+fn decode_redeemer(s: &str) -> anyhow::Result<[u8; 20]> {
+    let bytes = hex::decode(s.trim_start_matches("0x"))
+        .map_err(|e| anyhow::anyhow!("redeemer hex: {e}"))?;
+    bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("redeemer must be 20 bytes"))
 }

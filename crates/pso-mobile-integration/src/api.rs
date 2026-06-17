@@ -166,17 +166,45 @@ pub fn compute_tribute_ownership(
 
 // -- 2. Prove SpendingUnit ownership --
 
+/// Redemption binding hash for a standalone ownership/full proof:
+/// `compute_binding_hash(redeemer, commitmentId, chainId)`. Folded into the
+/// proof's signature + exposed as a public input so the L1 verifier can pin
+/// the proof to the `(redeemer, commitmentId, chainId)` tuple. `commitment_id`
+/// is the SU/TD id (encoded big-endian, matching the on-chain `uint256`).
+fn redemption_binding(
+    redeemer: &[u8],
+    commitment_id: Fr,
+    chain_id: u64,
+) -> Result<Fr, MobileError> {
+    let redeemer_arr: [u8; 20] =
+        redeemer
+            .try_into()
+            .map_err(|_| MobileError::WitnessGenerationFailed {
+                detail: format!("redeemer must be 20 bytes, got {}", redeemer.len()),
+            })?;
+    let commitment_be = pso_protocol::fr::fr_to_be_bytes(&commitment_id);
+    pso_protocol::binding::compute_binding_hash(&redeemer_arr, &commitment_be, chain_id).map_err(
+        |e| MobileError::WitnessGenerationFailed {
+            detail: format!("compute_binding_hash: {e}"),
+        },
+    )
+}
+
 /// Generate an ownership-only proof for a SpendingUnit.
 ///
 /// The nonce and ID are provided by the SRA server that generated the SU.
+/// `redeemer` (20-byte EOA) + `chain_id` bind the proof for L1 redemption.
 #[uniffi::export]
 pub fn prove_spending_unit_ownership(
     secret_key: Vec<u8>,
     spending_unit: SpendingUnitInput,
+    redeemer: Vec<u8>,
+    chain_id: u64,
 ) -> Result<ProofResult, MobileError> {
     let sk = parse_secret_key(&secret_key)?;
     let nonce = bytes_to_fr(&spending_unit.nonce)?;
     let su = build_spending_unit(&sk, nonce, &spending_unit)?;
+    let binding_hash = redemption_binding(&redeemer, su.id, chain_id)?;
 
     let su_nft_hash = HashableNFT::hash(&su).map_err(|e| MobileError::WitnessGenerationFailed {
         detail: format!("su hash: {e}"),
@@ -187,6 +215,7 @@ pub fn prove_spending_unit_ownership(
             key: &sk,
             nonce,
             nft_hash: su_nft_hash,
+            binding_hash,
         },
     )
     .map_err(|e| MobileError::WitnessGenerationFailed {
@@ -213,10 +242,13 @@ pub fn prove_tribute_ownership(
     secret_key: Vec<u8>,
     nonce: Vec<u8>,
     tribute: TributeInput,
+    redeemer: Vec<u8>,
+    chain_id: u64,
 ) -> Result<ProofResult, MobileError> {
     let sk = parse_secret_key(&secret_key)?;
     let nonce_fr = bytes_to_fr(&nonce)?;
     let td = build_tribute_draft(&sk, nonce_fr, &tribute)?;
+    let binding_hash = redemption_binding(&redeemer, td.id, chain_id)?;
 
     let td_nft_hash = HashableNFT::hash(&td).map_err(|e| MobileError::WitnessGenerationFailed {
         detail: format!("td hash: {e}"),
@@ -227,6 +259,7 @@ pub fn prove_tribute_ownership(
             key: &sk,
             nonce: nonce_fr,
             nft_hash: td_nft_hash,
+            binding_hash,
         },
     )
     .map_err(|e| MobileError::WitnessGenerationFailed {
@@ -251,11 +284,14 @@ pub fn prove_spending_unit_full(
     secret_key: Vec<u8>,
     spending_unit: SpendingUnitInput,
     merkle_path: Vec<MerklePathElementInput>,
+    redeemer: Vec<u8>,
+    chain_id: u64,
 ) -> Result<ProofResult, MobileError> {
     let sk = parse_secret_key(&secret_key)?;
     let nonce = bytes_to_fr(&spending_unit.nonce)?;
     let su = build_spending_unit(&sk, nonce, &spending_unit)?;
     let path = parse_merkle_path(&merkle_path)?;
+    let binding_hash = redemption_binding(&redeemer, su.id, chain_id)?;
 
     let witness = build_full_proof_witness(
         &su,
@@ -263,6 +299,7 @@ pub fn prove_spending_unit_full(
             key: &sk,
             nonce,
             merkle_path: &path,
+            binding_hash,
         },
     )
     .map_err(|e| MobileError::WitnessGenerationFailed {
@@ -290,11 +327,14 @@ pub fn prove_tribute_full(
     nonce: Vec<u8>,
     tribute: TributeInput,
     merkle_path: Vec<MerklePathElementInput>,
+    redeemer: Vec<u8>,
+    chain_id: u64,
 ) -> Result<ProofResult, MobileError> {
     let sk = parse_secret_key(&secret_key)?;
     let nonce_fr = bytes_to_fr(&nonce)?;
     let td = build_tribute_draft(&sk, nonce_fr, &tribute)?;
     let path = parse_merkle_path(&merkle_path)?;
+    let binding_hash = redemption_binding(&redeemer, td.id, chain_id)?;
 
     let witness = build_full_proof_witness(
         &td,
@@ -302,6 +342,7 @@ pub fn prove_tribute_full(
             key: &sk,
             nonce: nonce_fr,
             merkle_path: &path,
+            binding_hash,
         },
     )
     .map_err(|e| MobileError::WitnessGenerationFailed {
@@ -459,17 +500,21 @@ pub fn su_aggregation_tier_sizes() -> Vec<u32> {
 /// zero-padded inside the witness builder.
 ///
 /// **Note**: the `secret_key`/`sender`/`tribute_draft_id`/`chain_id`
-/// args from the pre-Schnorr API are now unused -- each slot carries
-/// its own per-SU Grumpkin secret key, and the consensus binding is
-/// done on-chain by reading per-SU `(owner, nft_hash)` from canonical
-/// SU storage. They're kept for FFI compatibility but ignored.
+/// `_secret_key` is unused (each slot carries its own per-SU Grumpkin
+/// secret key). `sender` / `tribute_draft_id` / `chain_id` ARE used: they
+/// form the submission binding `binding_hash = Poseidon4(sender,
+/// tributeDraftId, chainId)` that the circuit folds into every per-SU
+/// signature and the on-chain `TributeDraft.submit` recomputes — so the
+/// proof is valid only when submitted from `sender` for this `tribute_draft_id`
+/// on this `chain_id`. `sender` must be the 20-byte EOA the wallet will
+/// submit from; `tribute_draft_id` the 32-byte BE id.
 #[uniffi::export]
 pub fn prove_su_ownership_aggregation(
     _secret_key: Vec<u8>,
     su_slots: Vec<SuAggregationSlot>,
-    _sender: Vec<u8>,
-    _tribute_draft_id: Vec<u8>,
-    _chain_id: u64,
+    sender: Vec<u8>,
+    tribute_draft_id: Vec<u8>,
+    chain_id: u64,
 ) -> Result<ProofResult, MobileError> {
     use pso_integrations_shared::witness::{build_flat_aggregation_witness, FlatAggregationSlot};
 
@@ -506,11 +551,36 @@ pub fn prove_su_ownership_aggregation(
         });
     }
 
-    let witness_vec = build_flat_aggregation_witness(&slots, tier.tier_n).map_err(|e| {
+    // Submission binding: Poseidon4(sender, tributeDraftId, chainId), folded
+    // into every per-SU signature and exposed as the trailing public input.
+    let sender_arr: [u8; 20] =
+        sender
+            .as_slice()
+            .try_into()
+            .map_err(|_| MobileError::WitnessGenerationFailed {
+                detail: format!("sender must be 20 bytes, got {}", sender.len()),
+            })?;
+    let tdid_arr: [u8; 32] = tribute_draft_id.as_slice().try_into().map_err(|_| {
         MobileError::WitnessGenerationFailed {
-            detail: e.to_string(),
+            detail: format!(
+                "tribute_draft_id must be 32 bytes, got {}",
+                tribute_draft_id.len()
+            ),
         }
     })?;
+    let binding_hash =
+        pso_protocol::binding::compute_binding_hash(&sender_arr, &tdid_arr, chain_id).map_err(
+            |e| MobileError::WitnessGenerationFailed {
+                detail: format!("compute_binding_hash: {e}"),
+            },
+        )?;
+
+    let witness_vec =
+        build_flat_aggregation_witness(&slots, tier.tier_n, binding_hash).map_err(|e| {
+            MobileError::WitnessGenerationFailed {
+                detail: e.to_string(),
+            }
+        })?;
     let witness_map =
         pso_zk_circuit_noir::witness::from_vec_to_witness_map(witness_vec).map_err(|e| {
             MobileError::WitnessGenerationFailed {
