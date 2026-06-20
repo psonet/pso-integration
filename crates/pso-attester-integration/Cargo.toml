@@ -1,5 +1,5 @@
 [package]
-name = "pso-sra-integration"
+name = "pso-attester-integration"
 version.workspace = true
 edition = "2021"
 description = "UniFFI bindings for the PSO attester (SRA): consent-box NFT issuance + SpendingUnit hashing"
@@ -22,5 +22,5 @@ uniffi = { version = "0.31", features = ["cli"] }
 thiserror = "2"
 
 [[bin]]
-name = "uniffi-bindgen-sra"
+name = "uniffi-bindgen-attester"
 path = "src/bin/uniffi-bindgen.rs"

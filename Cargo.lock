@@ -3491,6 +3491,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "pso-attester-integration"
+version = "0.8.4"
+dependencies = [
+ "alloy-primitives",
+ "ark-std 0.6.0",
+ "pso-chain-abi",
+ "pso-protocol",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "uniffi",
+]
+
+[[package]]
 name = "pso-chain-abi"
 version = "0.3.0"
 source = "git+ssh://git@github.com/psonet/pso-chain-next.git?branch=feat%2Fprotocol-0.8#263b56de2e5f822493729bf7032845c51be56b70"
@@ -3557,19 +3570,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "pso-sra-integration"
-version = "0.8.4"
-dependencies = [
- "alloy-primitives",
- "ark-std 0.6.0",
- "pso-chain-abi",
- "pso-protocol",
- "sha2 0.10.9",
- "thiserror 2.0.18",
- "uniffi",
 ]
 
 [[package]]

@@ -5,7 +5,7 @@ edition = "2021"
 [workspace]
 members = [
     "crates/pso-mobile-integration",
-    "crates/pso-sra-integration",
+    "crates/pso-attester-integration",
     # --- FOLLOW-UP pass (testsuite rework). Temporarily out of the workspace so
     # the FFI crates above build standalone; these still use the old 0.7 surface.
     # `pso-l2-client` is slated for removal: its sol! ABI is superseded by

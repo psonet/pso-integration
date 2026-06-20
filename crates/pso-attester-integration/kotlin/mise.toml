@@ -1,4 +1,4 @@
-# mise-managed JVM toolchain for the pso-sra-integration Kotlin
+# mise-managed JVM toolchain for the pso-attester-integration Kotlin
 # subproject. Scoped to this directory so the rest of the (Rust-only)
 # workspace doesn't pull JDK / Gradle into its environment.
 #
