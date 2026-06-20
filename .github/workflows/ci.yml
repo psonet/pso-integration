@@ -1057,6 +1057,7 @@ jobs:
       - build-mobile-android
       - build-bindgen
       - build-attester-kotlin-jar
+      - build-attester-python
     if: |
       always() &&
       needs.release-image.result == 'success' &&
@@ -1114,6 +1115,16 @@ jobs:
           name: pso-attester-integration-kotlin-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
           path: artifacts/attester-kotlin/
 
+      # Attester Python wheels — one per platform slice (linux x86_64/aarch64,
+      # macOS arm64). Each upload is its own artifact, so merge them into one
+      # dir; the staging step copies the .whl files out.
+      - name: Download Attester Python wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/attester-python/
+          pattern: pso-attester-integration-python-*
+          merge-multiple: true
+
       - name: Stage release artifacts + SHA256SUMS
         run: |
           set -euo pipefail
@@ -1147,6 +1158,12 @@ jobs:
           # by exact name so it lands directly under artifacts/attester-kotlin/.
           cp artifacts/attester-kotlin/pso-attester-integration-kotlin-*.jar \
              release/
+
+          # Attester Python wheels — one per platform slice (nullglob: a flaky
+          # cross-built wheel just won't be staged, like the mobile slices).
+          for f in artifacts/attester-python/*.whl; do
+            cp "$f" "release/$(basename "$f")"
+          done
 
           ls -lh release/
           cd release
@@ -1191,6 +1208,7 @@ jobs:
             release/pso-mobile-integration-*
             release/uniffi-bindgen-mobile-*
             release/pso-attester-integration-kotlin-*.jar
+            release/pso_attester_integration-*.whl
             release/SHA256SUMS
 
       - name: Compose release body
@@ -1249,7 +1267,20 @@ jobs:
             echo "dependencies { implementation(\"net.pso:integration.attester:${version}\") }"
             echo '```'
             echo
-            echo "Attester is server-side, JVM-only — no standalone \`libpso_attester_integration.*\` files are attached; the JAR is the only Attester artifact on this release."
+            echo "### Attester Python bindings (pso-attester-integration)"
+            echo
+            echo "Platform wheels — UniFFI-generated module + one self-contained native lib each (the attester is pure Rust, no native proving deps):"
+            echo
+            echo "- \`pso_attester_integration-${version}-py3-none-manylinux_2_34_x86_64.whl\` — Linux x86_64"
+            echo "- \`pso_attester_integration-${version}-py3-none-manylinux_2_34_aarch64.whl\` — Linux aarch64"
+            echo "- \`pso_attester_integration-${version}-py3-none-macosx_11_0_arm64.whl\` — macOS arm64"
+            echo
+            echo '```python'
+            echo "pip install pso_attester_integration-${version}-py3-none-manylinux_2_34_x86_64.whl"
+            echo "from pso_attester_integration import Attester"
+            echo '```'
+            echo
+            echo "The attester is server-side (JVM + Python); no standalone \`libpso_attester_integration.*\` files are attached — the native lib ships bundled inside the JAR and the wheels."
             echo
             echo "### Verification"
             echo
