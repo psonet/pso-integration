@@ -1,15 +1,16 @@
-//! S005 — wallet (non-SRA) cannot mint an SU via the actor pool.
+//! S005 — wallet (non-Attester) cannot mint an SU via the actor pool.
 //!
 //! Same shape as S003 / S004, addressed at `SpendingUnit.submit`.
 //! Same two-path acceptance documented in S003's body.
 
 use std::time::Duration;
 
-use alloy::primitives::{Address, Bytes, FixedBytes};
-use alloy::sol_types::SolCall;
+use alloy_primitives::{Address, Bytes, FixedBytes};
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 
-use pso_l2_client::abi::{ISpendingUnit, SPENDING_UNIT};
+use pso_chain_abi::addresses::SPENDING_UNIT;
+use pso_chain_abi::interfaces::ISpendingUnit;
 
 use crate::clients::actor::ActorClientError;
 use crate::data::{random_id, random_su_args};
@@ -23,7 +24,7 @@ impl Scenario for S005 {
         "S005"
     }
     fn description(&self) -> &'static str {
-        "non-SRA wallet cannot mint a SpendingUnit through the actor pool"
+        "non-Attester wallet cannot mint a SpendingUnit through the actor pool"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await

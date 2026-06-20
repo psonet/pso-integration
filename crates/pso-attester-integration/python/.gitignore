@@ -1,0 +1,10 @@
+# CI-staged build inputs (generated bindings module + cross-built native libs).
+# Committed sources are only __init__.py, pyproject.toml, setup.py, uniffi.toml.
+pso_attester_integration/pso_attester_integration.py
+pso_attester_integration/*.so
+pso_attester_integration/*.dylib
+
+# Build outputs
+build/
+dist/
+*.egg-info/

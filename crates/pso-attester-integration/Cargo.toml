@@ -1,0 +1,26 @@
+[package]
+name = "pso-attester-integration"
+version.workspace = true
+edition = "2021"
+description = "UniFFI bindings for the PSO attester: consent-box NFT issuance + SpendingUnit hashing"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+# Consent box + entity hashing (alloy feature = FieldEncode impls for the
+# pso-chain-abi entity's ABI field types).
+pso-protocol = { workspace = true, features = ["alloy"] }
+# Typed SpendingUnit entity (the on-chain hash preimage).
+pso-chain-abi.workspace = true
+alloy-primitives.workspace = true
+ark-std.workspace = true
+sha2.workspace = true
+
+uniffi = { version = "0.31", features = ["cli"] }
+thiserror = "2"
+
+[[bin]]
+name = "uniffi-bindgen-attester"
+path = "src/bin/uniffi-bindgen.rs"

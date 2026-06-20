@@ -1,15 +1,16 @@
-//! S004 — wallet (non-SRA) cannot register an AR via the actor pool.
+//! S004 — wallet (non-Attester) cannot register an AR via the actor pool.
 //!
 //! Same shape as S003, addressed at `SpendingRecordAmendment.submit`.
 //! See S003's body for the documented two-path acceptance.
 
 use std::time::Duration;
 
-use alloy::primitives::Bytes;
-use alloy::sol_types::SolCall;
+use alloy_primitives::Bytes;
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 
-use pso_l2_client::abi::{IAmendmentRecord, AMENDMENT_RECORD};
+use pso_chain_abi::addresses::AMENDMENT_RECORD;
+use pso_chain_abi::interfaces::IAmendmentRecord;
 
 use crate::clients::actor::ActorClientError;
 use crate::data::random_id;
@@ -23,7 +24,7 @@ impl Scenario for S004 {
         "S004"
     }
     fn description(&self) -> &'static str {
-        "non-SRA wallet cannot submit a SpendingRecordAmendment through the actor pool"
+        "non-Attester wallet cannot submit a SpendingRecordAmendment through the actor pool"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await

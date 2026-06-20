@@ -28,10 +28,11 @@
 
 use crate::data::random_id;
 use crate::{Scenario, TestEnv};
-use alloy::primitives::Bytes;
-use alloy::sol_types::SolCall;
+use alloy_primitives::Bytes;
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
-use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
+use pso_chain_abi::addresses::SPENDING_RECORD;
+use pso_chain_abi::interfaces::ISpendingRecord;
 
 pub struct S032;
 
@@ -50,7 +51,7 @@ impl Scenario for S032 {
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let old_t = env
-        .new_actor_as_sra_zero()?
+        .new_actor_as_attester_zero()?
         .fetch_difficulty()
         .await
         .map_err(|e| eyre::eyre!("S032: fetch_difficulty: {e}"))?;
@@ -83,7 +84,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // Compute at `old_t`, which is now the chain's `previous` slot —
     // pool tries current (fails) then falls back to previous (accepts).
     let tx_hash = env
-        .new_actor_as_sra_zero()?
+        .new_actor_as_attester_zero()?
         .submit_tx_with_difficulty(SPENDING_RECORD, inner, Some(old_t), |env_bytes| env_bytes)
         .await
         .map_err(|e| eyre::eyre!("S032: expected previous-T fallback acceptance, got {e}"))?;

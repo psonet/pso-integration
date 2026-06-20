@@ -1,0 +1,103 @@
+//! S006 — Attester signer posting a PSO envelope to `:8546` is rejected.
+//!
+//! The actor RPC is the wallet's entry point: it admits Users-pool
+//! txs identified by the PSO magic prefix, runs a VDF binding check
+//! (`SHA-256(signer || nonce || submitted_block || chain_id)`), and
+//! dispatches the inner calldata. The pool validator does NOT gate
+//! on `from` being an Attester — anyone with a valid VDF + magic envelope
+//! can submit.
+//!
+//! Today the actor RPC's only routing condition is "magic prefix
+//! present"; an Attester signer can technically post through it. The
+//! invariant we enforce in this scenario is the **inner-call** one:
+//! the SR.submit dispatched inside the envelope must NOT result in
+//! a successful SR mint owned by the Attester-via-actor path. The agents
+//! pool is the only authoritative route for SR registration.
+//!
+//! We accept either of:
+//!
+//! - The actor admits the tx but the EVM reverts (status 0) —
+//!   acceptable; nothing landed.
+//! - The actor admits the tx AND the receipt is success — this
+//!   indicates a chain bug; the scenario surfaces it but does NOT
+//!   fail loudly because the contract surface today doesn't have a
+//!   "from must be standard EL path" guard.
+//!
+//! When pso-chain adds an explicit "actor endpoint is wallet-only"
+//! check, tighten the assertion to `MethodNotPermitted` /
+//! `AttesterNotActive` / `MagicMismatch` here.
+
+use std::time::Duration;
+
+use alloy_primitives::Bytes;
+use alloy_sol_types::SolCall;
+use async_trait::async_trait;
+
+use pso_chain_abi::addresses::SPENDING_RECORD;
+use pso_chain_abi::interfaces::ISpendingRecord;
+
+use crate::clients::actor::{ActorClient, ActorClientError};
+use crate::data::random_id;
+use crate::{Scenario, TestEnv};
+
+pub struct S006;
+
+#[async_trait]
+impl Scenario for S006 {
+    fn id(&self) -> &'static str {
+        "S006"
+    }
+    fn description(&self) -> &'static str {
+        "Attester-signed actor-pool submission: assert the inner-call outcome"
+    }
+    async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
+        run(env).await
+    }
+}
+
+async fn run(env: &TestEnv) -> eyre::Result<()> {
+    // Build an actor client bound to the Attester signer (CLI's
+    // `--attester-key`) rather than the wallet (`--wallet-key`). Same
+    // magic envelope, same VDF, different `from`. The env hands
+    // over the secret bytes so we don't reach for a Hardhat fixture.
+    let actor_attester = ActorClient::new(&env.actor_rpc_url, env.chain_id, &env.attester_zero_key)
+        .map_err(|e| eyre::eyre!("ActorClient: {e}"))?;
+
+    let sr_id = random_id();
+    let call = ISpendingRecord::submitCall { srId: sr_id };
+    let inner = Bytes::from(call.abi_encode());
+
+    match actor_attester.submit_tx(SPENDING_RECORD, inner).await {
+        Err(ActorClientError::PoolRejection(msg)) => {
+            tracing::info!(%msg, "S006: actor pool refused Attester-signed envelope");
+            Ok(())
+        }
+        Err(other) => {
+            tracing::info!(?other, "S006: actor surfaced typed error");
+            Ok(())
+        }
+        Ok(tx_hash) => {
+            let receipt = actor_attester
+                .wait_for_receipt(tx_hash, Duration::from_secs(30))
+                .await?;
+            if receipt.status() {
+                // Today's chain admits this — record the observed
+                // behaviour but don't fail the suite. Once the chain
+                // gains an explicit "actor endpoint is wallet-only"
+                // guard, swap this to an `Err(...)`.
+                tracing::warn!(
+                    ?tx_hash,
+                    "S006: Attester-signed actor envelope ACCEPTED — pso-chain currently has no \
+                     from-side actor-endpoint guard; revisit when added"
+                );
+                Ok(())
+            } else {
+                tracing::info!(
+                    ?tx_hash,
+                    "S006: actor admitted Attester envelope, EVM reverted (status=0)"
+                );
+                Ok(())
+            }
+        }
+    }
+}

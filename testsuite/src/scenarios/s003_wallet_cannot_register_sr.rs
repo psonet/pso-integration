@@ -1,10 +1,10 @@
-//! S003 — wallet (non-SRA) cannot register an SR via the actor pool.
+//! S003 — wallet (non-Attester) cannot register an SR via the actor pool.
 //!
 //! The actor RPC admits PSO-magic-prefixed calldata after a VDF
 //! check, then dispatches the inner calldata through the EVM. The
 //! inner calldata here is `SpendingRecord.submit(...)` — but the
-//! sender is the actor wallet (a non-SRA key), so the
-//! `onlyActiveSRA` modifier on the EVM side reverts with
+//! sender is the actor wallet (a non-Attester key), so the
+//! `onlyActiveAttester` modifier on the EVM side reverts with
 //! `AttesterNotActive`.
 //!
 //! **Note**: pso-chain doesn't currently strip the PSO header from
@@ -22,11 +22,12 @@
 
 use std::time::Duration;
 
-use alloy::primitives::Bytes;
-use alloy::sol_types::SolCall;
+use alloy_primitives::Bytes;
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 
-use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
+use pso_chain_abi::addresses::SPENDING_RECORD;
+use pso_chain_abi::interfaces::ISpendingRecord;
 
 use crate::clients::actor::ActorClientError;
 use crate::data::random_id;
@@ -40,7 +41,7 @@ impl Scenario for S003 {
         "S003"
     }
     fn description(&self) -> &'static str {
-        "non-SRA wallet cannot submit a SpendingRecord through the actor pool"
+        "non-Attester wallet cannot submit a SpendingRecord through the actor pool"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await

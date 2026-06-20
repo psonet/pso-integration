@@ -11,19 +11,19 @@
 //! what the `pso-e2e` binary is for.
 
 use pso_e2e_testsuite::cli::parse_hex32;
+use pso_e2e_testsuite::clients::contract_errors::{decode_from_bytes, decode_text};
 use pso_e2e_testsuite::clients::envelope::{
     build_vdf_envelope, derive_vdf_input, ENVELOPE_PREFIX_LEN, VDF_ENVELOPE_TYPE,
 };
 use pso_e2e_testsuite::data::{currency_eur, random_id, random_su_args};
-use pso_l2_client::contract_errors::{decode_from_bytes, decode_text};
-use pso_l2_client::PsoContractError;
+use pso_e2e_testsuite::PsoContractError;
 
 /// Sanity-check the `0x76` envelope layout: 1B type byte + 32B nullifier
 /// + 32B vdf_input + (4B len + 48B) vdf_output + (4B len + 48B) vdf_proof
 /// + 8B submitted_block = 177B prefix, followed by the inner 2718 tx verbatim.
 #[test]
 fn envelope_header_layout() {
-    let signer = alloy::primitives::Address::from([0xab; 20]);
+    let signer = alloy_primitives::Address::from([0xab; 20]);
     let inner = vec![0u8; 96]; // stand-in inner 2718 bytes
     let env = build_vdf_envelope(signer, 0, 1, 19_280_501, 16, &inner).unwrap();
     assert_eq!(env[0], VDF_ENVELOPE_TYPE);
@@ -36,7 +36,7 @@ fn envelope_header_layout() {
 /// re-derivation step and surface as `BadVdfInputBinding`.
 #[test]
 fn vdf_input_binding_is_canonical() {
-    let signer = alloy::primitives::Address::from([0xcd; 20]);
+    let signer = alloy_primitives::Address::from([0xcd; 20]);
     let a = derive_vdf_input(signer, 7, 100, 19_280_501);
     let b = derive_vdf_input(signer, 7, 100, 19_280_501);
     let c = derive_vdf_input(signer, 8, 100, 19_280_501);
@@ -56,8 +56,8 @@ fn vdf_envelope_type_pinned() {
 /// Typed-error decoder round trip for a no-arg selector.
 #[test]
 fn errors_decode_attester_not_active() {
-    use alloy::sol_types::SolError;
-    alloy::sol! {
+    use alloy_sol_types::SolError;
+    alloy_sol_types::sol! {
         error AttesterNotActive();
     }
     match decode_from_bytes(&AttesterNotActive::SELECTOR) {

@@ -26,17 +26,12 @@ fn main() {
         Commands::Proof { action } => match action {
             ProofCommands::Generate {
                 nft,
-                circuit,
-                mode,
                 output,
                 redeemer,
                 chain_id,
-            } => decode_redeemer(&redeemer).and_then(|r| {
-                proof::handle_proof_generate(&nft, &circuit, mode, &output, &r, chain_id)
-            }),
-            ProofCommands::Verify { proof, circuit } => {
-                proof::handle_proof_verify(&proof, &circuit)
-            }
+            } => decode_redeemer(&redeemer)
+                .and_then(|r| proof::handle_proof_generate(&nft, &output, &r, chain_id)),
+            ProofCommands::Verify { proof } => proof::handle_proof_verify(&proof),
             ProofCommands::Aggregate { input, output } => {
                 aggregate::handle_proof_aggregate(&input, &output)
             }

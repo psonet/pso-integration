@@ -23,19 +23,19 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use alloy::consensus::{SignableTransaction, TxEip1559, TxEnvelope};
-use alloy::eips::eip2930::AccessList;
-use alloy::network::TxSignerSync;
-use alloy::primitives::{Address, Bytes, TxHash, TxKind, U256};
-use alloy::providers::{Provider, ProviderBuilder};
-use alloy::rpc::types::TransactionReceipt;
-use alloy::signers::local::PrivateKeySigner;
-use alloy::signers::Signer;
-use alloy::transports::http::reqwest::{Client as HttpClient, Url};
+use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
+use alloy_eips::eip2930::AccessList;
+use alloy_network::TxSignerSync;
+use alloy_primitives::{Address, Bytes, TxHash, TxKind, U256};
+use alloy_provider::{Provider, ProviderBuilder};
+use alloy_rpc_types_eth::TransactionReceipt;
+use alloy_signer::Signer;
+use alloy_signer_local::PrivateKeySigner;
+use alloy_transport_http::reqwest::{Client as HttpClient, Url};
 use serde_json::{json, Value};
 
+use crate::clients::contract_errors::{decode_from_bytes, decode_text, PsoContractError};
 use crate::clients::envelope::build_vdf_envelope;
-use pso_l2_client::contract_errors::{decode_from_bytes, decode_text, PsoContractError};
 
 /// Users-pool client.
 #[derive(Clone)]
@@ -309,7 +309,7 @@ impl ActorClient {
 
         // The inner tx's EIP-2718 bytes (e.g. `0x02 || rlp(..)`).
         let mut inner_2718 = Vec::with_capacity(256);
-        alloy::eips::eip2718::Encodable2718::encode_2718(&inner_envelope, &mut inner_2718);
+        alloy_eips::eip2718::Encodable2718::encode_2718(&inner_envelope, &mut inner_2718);
 
         // Wrap them in the `0x76` VDF envelope, then let the scenario tamper the
         // wire bytes (header field offsets are `envelope::*_RANGE`).

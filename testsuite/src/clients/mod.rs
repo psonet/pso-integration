@@ -1,16 +1,22 @@
-//! Two client surfaces, one per pool.
+//! Two client surfaces, one per pool, plus the shared client plumbing.
 //!
-//! - [`sra`] — agents-pool side: standard EL JSON-RPC at `:19545`.
-//!   Wraps `pso-l2-client::sra` so test code reads as
-//!   `env.sra.register_spending_record(...)` without dragging the
-//!   underlying `L2Client` shape into every scenario.
-//! - [`actor`] — users-pool side: PSO-magic-prefixed calldata posted
+//! - [`attester`] — agents-pool side: standard EL JSON-RPC at `:19545`.
+//!   Test code reads as `env.attester.register_spending_record(...)` without
+//!   dragging the underlying [`rpc::RpcHandle`] shape into every scenario.
+//! - [`actor`] — users-pool side: PSO `0x76`-enveloped calldata posted
 //!   to `:8546`, carrying a real MinRoot VDF proof.
-//! - [`envelope`] — pure byte-layout helpers for the
-//!   `[magic|nullifier|vdf_*|submitted_block|inner]` header. Shared
-//!   between the client and any future direct-RPC tests.
+//! - [`admin`] — Hardhat #0: the AttestersRegistry-mutating surface.
+//! - [`envelope`] — pure byte-layout helpers for the `0x76`
+//!   VdfProtectedTransaction envelope.
+//! - [`rpc`] — the small alloy provider+signer handle the Attester/admin
+//!   clients are built on (the testsuite owns this; there is no shared
+//!   `l2-client` crate anymore).
+//! - [`contract_errors`] — the typed Solidity revert decoder
+//!   ([`PsoContractError`](contract_errors::PsoContractError)).
 
 pub mod actor;
 pub mod admin;
+pub mod attester;
+pub mod contract_errors;
 pub mod envelope;
-pub mod sra;
+pub mod rpc;

@@ -1,41 +1,39 @@
 //! Data generators for scenario inputs.
 //!
-//! Backed by `pso_nft::{SpendingUnit, TributeDraft, Generated}` so the
-//! shapes match the protocol's reference test data. Scenarios pull
-//! a [`SuTemplate`] from [`random_su_args`] and feed its fields
-//! straight into `SraClient::mint_spending_unit`, etc.
+//! Scenarios pull a [`SuTemplate`] from [`random_su_args`] and feed its
+//! fields straight into `AttesterClient::mint_spending_unit`, etc. The shapes
+//! mirror plausible protocol values (EUR, a recent past worldwide-day,
+//! a handful of SR/AR fingerprints) without going through any heavy
+//! reference generator.
 //!
 //! The helpers here do NOT touch the chain — they're pure shape
 //! generators. Anything that needs a round-trip to L2 lives on the
 //! client or the bridge.
 
-use alloy::primitives::U256;
+use alloy_primitives::U256;
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField};
+use ark_std::UniformRand;
 use chrono::{Datelike, NaiveDate};
 use iso_currency::Currency;
 use rand::rngs::OsRng;
 use rand::Rng;
 use rand::RngCore;
 
-// pso_nft re-exported so test callers can reach into the protocol's
-// reference NFT shapes when they need them (e.g. for `compute_spending_unit_hash`
-// inputs in S001). We deliberately do not call `SpendingUnit::generate`
-// here — it allocates a `barretenberg-rs`-backed Grumpkin keypair via
-// `Owner::generate`, which is a heavy dependency for tests that only
-// need plausible currency / amount / wwd values.
-#[allow(unused_imports)]
-pub use pso_nft::{Generated, SpendingUnit, TributeDraft};
-
 /// Random `uint256` id (used for SR / AR / SU / TD ids on chain).
 ///
 /// We sample a fresh 32-byte BE blob so collision probability is
 /// negligible across an entire test session — the SR / SU SBTs
 /// would revert with `AlreadyExists` on duplicates.
+///
+/// **Reduced into the BN254 scalar field.** These ids are folded as
+/// canonical field elements by the SU/TD-hash precompiles (`0x0211`/
+/// `0x0212`), which reject any value `>=` the modulus (a raw 256-bit
+/// sample exceeds it ~80% of the time). The field is ~2^254, so the
+/// reduction keeps collisions negligible.
 pub fn random_id() -> U256 {
-    let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
-    U256::from_be_bytes(bytes)
+    let fr = Fr::rand(&mut OsRng);
+    U256::from_be_slice(&fr.into_bigint().to_bytes_be())
 }
 
 /// Random 32-byte secp256k1 secret-key material. Caller must wrap
@@ -69,15 +67,11 @@ pub struct SuTemplate {
 }
 
 /// Roll a [`SuTemplate`] with plausible currency / amount / wwd /
-/// fingerprint-count values. The shape mirrors what
-/// `pso_nft::SpendingUnit::generate` produces (EUR, recent past day,
-/// 1-4 SRs, 0-2 ARs) without going through the protocol's reference
-/// generator — that path constructs a Grumpkin owner via
-/// `barretenberg-rs` which we don't need for arg-shape generation.
+/// fingerprint-count values (EUR, a recent past day, 1-4 SRs, 0-2 ARs).
 pub fn random_su_args() -> SuTemplate {
     let mut rng = OsRng;
     let today = chrono::Utc::now().date_naive();
-    // Same shape as `pso_nft::SpendingUnit::generate`: 1-6 days ago.
+    // Recent past day: 1-6 days ago.
     let days_shift = rng.gen_range(1..7);
     let wwd_date = today - chrono::Duration::days(days_shift as i64);
     SuTemplate {
@@ -90,9 +84,7 @@ pub fn random_su_args() -> SuTemplate {
     }
 }
 
-/// Roll a TD-style shape — currency / wwd / amounts. Same caveat
-/// as [`random_su_args`]: this does NOT call into `pso_nft` so we
-/// avoid the Grumpkin/barretenberg setup cost.
+/// Roll a TD-style shape — currency / wwd / amounts (no SR/AR).
 pub fn random_td_args() -> SuTemplate {
     let mut rng = OsRng;
     let today = chrono::Utc::now().date_naive();
@@ -113,20 +105,6 @@ pub fn random_td_args() -> SuTemplate {
 /// and the SU/TD hash input. Every date this century fits a `u32`.
 fn worldwide_day(date: &NaiveDate) -> u32 {
     date.year() as u32 * 10_000 + date.month() * 100 + date.day()
-}
-
-/// Reduce a `pso_nft` `Fr` fingerprint into a `U256` SR id. The
-/// in-protocol SR fingerprint is a Poseidon hash mod the BN254
-/// scalar field; the on-chain SBT slot is a `uint256`. We map LE
-/// → BE so the bytes parse identically on the chain side.
-#[allow(dead_code)]
-pub fn fr_to_u256_be(fr: &Fr) -> U256 {
-    let le = fr.into_bigint().to_bytes_le();
-    let mut be = [0u8; 32];
-    for (i, b) in le.iter().take(32).enumerate() {
-        be[31 - i] = *b;
-    }
-    U256::from_be_bytes(be)
 }
 
 /// Iso-currency lookup; surfaced here for scenarios that need to

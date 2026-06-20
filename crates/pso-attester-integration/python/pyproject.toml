@@ -1,0 +1,54 @@
+# Python distribution for the PSO attester UniFFI bindings.
+#
+# The package bundles a self-contained native shared library per platform
+# (the attester crate is pure Rust — no barretenberg/native proving deps —
+# so the .so/.dylib has no external runtime dependencies beyond libc/libm).
+# Because a native lib is bundled, this is a PLATFORM wheel, not pure-python:
+# `setup.py` forces the platform tag, and CI passes `--plat-name` per target
+# (manylinux_2_34_{x86_64,aarch64}, macosx_11_0_arm64).
+#
+# CI build (see .github/workflows/ci.yml, build-attester-python job):
+#   1. cargo build the cdylib for the target  -> libpso_attester_integration.{so,dylib}
+#   2. uniffi-bindgen-attester generate --language python
+#        -> pso_attester_integration/pso_attester_integration.py
+#   3. stage both into pso_attester_integration/  and build the wheel.
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pso-attester-integration"
+description = "Python (UniFFI) bindings for the PSO attester: consent-box NFT issuance + SpendingUnit hashing"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+authors = [{ name = "PSO (psonet)", email = "dev@pso.network" }]
+maintainers = [{ name = "PSO (psonet)", email = "dev@pso.network" }]
+keywords = ["pso", "attester", "uniffi", "ffi", "blockchain"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Topic :: Security :: Cryptography",
+    "Intended Audience :: Developers",
+]
+# Version is injected by CI from the release tag (sans `v`); CI rewrites this
+# line before `python -m build`. Default is a dev placeholder for local builds.
+version = "0.0.0.dev0"
+
+[project.urls]
+Homepage = "https://github.com/psonet/pso-integration"
+Repository = "https://github.com/psonet/pso-integration"
+Source = "https://github.com/psonet/pso-integration/tree/main/crates/pso-attester-integration"
+Issues = "https://github.com/psonet/pso-integration/issues"
+
+[tool.setuptools]
+# Flat layout: the package dir `pso_attester_integration/` holds __init__.py,
+# the generated bindings module, and the bundled native lib side-by-side.
+packages = ["pso_attester_integration"]
+
+[tool.setuptools.package-data]
+# Ship the generated bindings module + the native lib inside the wheel.
+pso_attester_integration = ["*.so", "*.dylib", "pso_attester_integration.py"]

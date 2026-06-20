@@ -6,18 +6,15 @@
 //! `setRotationCandidate`, `initiateAdminTransfer`). A non-admin
 //! caller fails the `msg.sender != admin` check immediately.
 //!
-//! We use the SRA client (env.sra_zero) — it's an active SRA, but NOT
+//! We use the Attester client (env.attester_zero) — it's an active Attester, but NOT
 //! the admin — to call register; the contract reverts before
-//! looking at the arguments, so any plausible `sra` / `mask` works.
+//! looking at the arguments, so any plausible `attester` / `mask` works.
 
-use alloy::primitives::Address;
-use alloy::sol;
+use alloy_primitives::Address;
+use alloy_sol_types::sol;
 use async_trait::async_trait;
 
-use pso_l2_client::L2ClientError;
-
-use crate::clients::sra::into_pso_error;
-use crate::{PsoContractError, Scenario, TestEnv};
+use crate::{decode_text, PsoContractError, Scenario, TestEnv};
 
 sol! {
     #[sol(rpc)]
@@ -32,8 +29,8 @@ sol! {
     }
 }
 
-const SRA_REGISTRY: Address =
-    alloy::primitives::address!("5200000000000000000000000000000000000001");
+const ATTESTER_REGISTRY: Address =
+    alloy_primitives::address!("5200000000000000000000000000000000000001");
 
 pub struct S027;
 
@@ -51,9 +48,9 @@ impl Scenario for S027 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    // The SRA signer is active but NOT the admin — perfect impostor.
-    let provider = env.sra_zero.inner().write_provider()?;
-    let reg = IAttestersRegistryView::new(SRA_REGISTRY, provider);
+    // The Attester signer is active but NOT the admin — perfect impostor.
+    let provider = env.attester_zero.inner().write_provider()?;
+    let reg = IAttestersRegistryView::new(ATTESTER_REGISTRY, provider);
 
     // Pick a plausible-but-otherwise-irrelevant fresh address to
     // "register". The contract reverts at the admin gate first;
@@ -65,8 +62,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             fake,
             u32::MAX,
             false,
-            alloy::primitives::B256::ZERO,
-            alloy::primitives::U256::ZERO,
+            alloy_primitives::B256::ZERO,
+            alloy_primitives::U256::ZERO,
         )
         .max_fee_per_gas(0)
         .max_priority_fee_per_gas(0)
@@ -75,7 +72,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .err()
         .ok_or_else(|| eyre::eyre!("S027: expected NotAdmin revert, got success"))?;
 
-    let typed = into_pso_error(L2ClientError::Contract(format!("{err}")));
+    let typed = decode_text(&format!("{err}"));
     match &typed {
         PsoContractError::NotAdmin => Ok(()),
         other => Err(eyre::eyre!("S027: expected NotAdmin, got {other}")),

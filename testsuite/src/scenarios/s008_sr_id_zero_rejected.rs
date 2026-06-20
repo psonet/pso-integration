@@ -4,10 +4,10 @@
 //! InvalidTokenId())`. Hits agents pool, EVM execution, reverts on
 //! the first storage write.
 
-use alloy::primitives::U256;
+use alloy_primitives::U256;
 use async_trait::async_trait;
 
-use crate::clients::sra::into_pso_error;
+use crate::clients::attester::into_pso_error;
 use crate::{PsoContractError, Scenario, TestEnv};
 
 pub struct S008;
@@ -27,7 +27,7 @@ impl Scenario for S008 {
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let err = env
-        .sra_zero
+        .attester_zero
         .register_spending_record(U256::ZERO)
         .await
         .err()

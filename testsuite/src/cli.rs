@@ -2,7 +2,7 @@
 //!
 //! Endpoints and signing keys are CLI-only by design — there are no
 //! env-var fallbacks. pso-chain CI invokes the binary with explicit
-//! `--admin-key` / `--sra-key` / `--rpc-url` arguments derived from
+//! `--admin-key` / `--attester-key` / `--rpc-url` arguments derived from
 //! the devnet container it spun up.
 //!
 //! See the crate `README.md` for usage examples; the doc-comments on
@@ -32,14 +32,14 @@ pub enum ReportFormat {
 #[command(
     name = "pso-e2e",
     about = "End-to-end test harness for the PSO L2 (agents pool + actor pool).",
-    long_about = "Drives the SRA + Wallet round-trip plus a suite of \
+    long_about = "Drives the Attester + Wallet round-trip plus a suite of \
                   negative-path invariants against a live PSO L2 devnet. \
                   Exits 0 on full pass, 1 on at least one scenario \
                   failure, 2 on bootstrap / arg-parse error. Use \
                   `--list` to enumerate the compiled-in scenarios."
 )]
 pub struct Cli {
-    /// Agents-pool JSON-RPC endpoint. The SRA-key signer submits SR /
+    /// Agents-pool JSON-RPC endpoint. The Attester-key signer submits SR /
     /// AR / SU contract calls through this URL.
     #[arg(long, default_value = DEFAULT_AGENTS_RPC)]
     pub rpc_url: String,
@@ -53,19 +53,19 @@ pub struct Cli {
     #[arg(long, default_value_t = DEVNET_CHAIN_ID)]
     pub chain_id: u64,
 
-    /// Hex secret key of the SRARegistry admin (0x-prefixed or bare).
-    /// Used to register the SRA signer and any per-scenario auxiliary
-    /// SRAs. Not required with `--list`.
+    /// Hex secret key of the AttestersRegistry admin (0x-prefixed or bare).
+    /// Used to register the Attester signer and any per-scenario auxiliary
+    /// Attesters. Not required with `--list`.
     #[arg(long, value_parser = parse_hex32, required_unless_present = "list")]
     pub admin_key: Option<[u8; 32]>,
 
-    /// Hex secret key of the primary SRA. The suite registers this
+    /// Hex secret key of the primary Attester. The suite registers this
     /// address with the registry (if not already active) and uses it
     /// for every agents-pool tx. Agents are otherwise dynamic — the
     /// suite generates auxiliary keys at runtime. Not required with
     /// `--list`.
     #[arg(long, value_parser = parse_hex32, required_unless_present = "list")]
-    pub sra_key: Option<[u8; 32]>,
+    pub attester_key: Option<[u8; 32]>,
 
     /// Wallet (actor-pool) signer. Optional; if omitted the suite
     /// rolls a fresh key per run. Useful only when CI wants stable
@@ -86,13 +86,13 @@ pub struct Cli {
     /// the harness that brings up the devnet deploys the inbox and
     /// passes its address here.
     #[arg(long, value_parser = parse_address)]
-    pub da_inbox: Option<alloy::primitives::Address>,
+    pub da_inbox: Option<alloy_primitives::Address>,
 
     /// Print one row per compiled-in scenario (id + description) on
     /// stdout, then exit 0 without touching the chain. Combine with
     /// `--only` / `--skip` to preview which scenarios a given filter
     /// would actually run. The key parameters (`--admin-key`,
-    /// `--sra-key`) are NOT required when this flag is set.
+    /// `--attester-key`) are NOT required when this flag is set.
     #[arg(long)]
     pub list: bool,
 
@@ -129,7 +129,7 @@ pub struct Cli {
 /// Thin wrapper over alloy's `Address` parser so `--da-inbox` carries a
 /// typed `Address` rather than a stringly-typed field; the error message
 /// is CLI-end-user readable.
-pub fn parse_address(input: &str) -> Result<alloy::primitives::Address, String> {
+pub fn parse_address(input: &str) -> Result<alloy_primitives::Address, String> {
     input
         .trim()
         .parse()

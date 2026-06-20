@@ -20,10 +20,11 @@
 use crate::clients::actor::ActorClientError;
 use crate::data::random_id;
 use crate::{Scenario, TestEnv};
-use alloy::primitives::Bytes;
-use alloy::sol_types::SolCall;
+use alloy_primitives::Bytes;
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
-use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
+use pso_chain_abi::addresses::SPENDING_RECORD;
+use pso_chain_abi::interfaces::ISpendingRecord;
 use std::sync::{Arc, Mutex};
 pub struct S014;
 #[async_trait]
@@ -47,7 +48,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let call_a = ISpendingRecord::submitCall { srId: sr_id_a };
     let inner_a = Bytes::from(call_a.abi_encode());
     let first = env
-        .new_actor_as_sra_zero()?
+        .new_actor_as_attester_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner_a, move |bytes| {
             let mut n = [0u8; 32];
             n.copy_from_slice(&bytes[crate::clients::envelope::NULLIFIER_RANGE]);
@@ -94,7 +95,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let call_b = ISpendingRecord::submitCall { srId: sr_id_b };
     let inner_b = Bytes::from(call_b.abi_encode());
     let result = env
-        .new_actor_as_sra_zero()?
+        .new_actor_as_attester_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner_b, move |mut bytes| {
             bytes[crate::clients::envelope::NULLIFIER_RANGE].copy_from_slice(&nullifier);
             tracing::info!(

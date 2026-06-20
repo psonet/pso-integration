@@ -21,10 +21,11 @@
 use crate::clients::actor::ActorClientError;
 use crate::data::random_id;
 use crate::{Scenario, TestEnv};
-use alloy::primitives::Bytes;
-use alloy::sol_types::SolCall;
+use alloy_primitives::Bytes;
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
-use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
+use pso_chain_abi::addresses::SPENDING_RECORD;
+use pso_chain_abi::interfaces::ISpendingRecord;
 pub struct S031;
 #[async_trait]
 impl Scenario for S031 {
@@ -40,7 +41,7 @@ impl Scenario for S031 {
 }
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let current_t = env
-        .new_actor_as_sra_zero()?
+        .new_actor_as_attester_zero()?
         .fetch_difficulty()
         .await
         .map_err(|e| eyre::eyre!("S031: fetch_difficulty: {e}"))?;
@@ -55,7 +56,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let call = ISpendingRecord::submitCall { srId: sr_id };
     let inner = Bytes::from(call.abi_encode());
     let result = env
-        .new_actor_as_sra_zero()?
+        .new_actor_as_attester_zero()?
         .submit_tx_with_difficulty(SPENDING_RECORD, inner, Some(wrong_t), |env_bytes| env_bytes)
         .await;
     match result {

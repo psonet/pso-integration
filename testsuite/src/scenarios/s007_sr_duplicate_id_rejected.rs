@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::clients::sra::into_pso_error;
+use crate::clients::attester::into_pso_error;
 use crate::data::random_id;
 use crate::{PsoContractError, Scenario, TestEnv};
 
@@ -31,15 +31,15 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let sr_id = random_id();
 
     // First submission: must land.
-    let tx1 = env.sra_zero.register_spending_record(sr_id).await?;
-    env.sra_zero
+    let tx1 = env.attester_zero.register_spending_record(sr_id).await?;
+    env.attester_zero
         .wait_for_tx_success(tx1, Duration::from_secs(30))
         .await?;
 
     // Second submission with the same id: must revert with
     // `AlreadyExists`. The SBT base contract guards every `_mint` call.
     let err = env
-        .sra_zero
+        .attester_zero
         .register_spending_record(sr_id)
         .await
         .err()

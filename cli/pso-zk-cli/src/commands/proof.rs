@@ -1,342 +1,204 @@
 //! Handlers for the `proof generate` and `proof verify` CLI commands.
 //!
 //! `proof generate` reads an NFT JSON file (from `nft generate`),
-//! reconstructs the domain types, generates a ZK witness, loads the
-//! circuit, and produces a proof saved to a JSON file.
+//! reconstructs the entity + signer, and produces an **ownership** proof
+//! against the canonical `OwnershipProof` circuit via the Barretenberg
+//! backend.
 //!
-//! `proof verify` reads a proof JSON file (from `proof generate`),
-//! loads the circuit, and verifies the proof.
+//! `proof verify` reads a proof JSON file and verifies it against the
+//! same circuit.
+//!
+//! NOTE: the pre-0.8 CLI also offered a "full" mode (ownership + Merkle
+//! inclusion) backed by `pso-zk-circuit-noir`'s `NoirFullProofCircuit`.
+//! The new `pso-zk-canonical` surface exposes the ownership circuit (and
+//! the flat-aggregation tiers); the standalone full-proof circuit is not
+//! part of it, so only the ownership proof is produced here.
 
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
-use ark_bn254::Fr;
-use ark_ff::PrimeField;
+use ark_std::rand::rngs::StdRng;
+use ark_std::rand::SeedableRng;
+use rand::rngs::OsRng;
+use rand::RngCore;
 
-use pso_integrations_shared::witness::{
-    build_full_proof_witness, build_ownership_witness, derive_grumpkin_public_key,
-    FullProofWitnessCtx, GrumpkinKey, OwnershipWitnessCtx,
-};
-use pso_nft::{SpendingUnit, TributeDraft};
-use pso_protocol::witness::HashableNFT;
-use pso_zk_circuit_noir::{
-    circuit_loader, NoirCircuitConfig, NoirFullProofCircuit, NoirOwnershipCircuit, NoirProof,
-    ZKCircuit, ZKMode,
-};
+use pso_protocol::protocol::key::{NftSecret, Signer};
+use pso_protocol::protocol::zk::{Circuit, ProofGenerator, ProofVerifier};
+use pso_protocol::{Codec, PsoV1, Suite};
+use pso_zk_backend::barretenberg::Barretenberg;
+use pso_zk_canonical::noir::ownership_proof::{OwnershipProof, PublicInputs};
+use pso_zk_canonical::ownership::Provable;
 
 use crate::display::{build_table, KeyValueRow};
-use crate::types::{
-    from_serializable_merkle_path, from_serializable_proof, to_serializable_proof, GeneratedOutput,
-    SerializableProof,
-};
-use crate::ProofMode;
+use crate::types::{GeneratedOutput, SerializableProof};
 
-// -- Constants --
+type Fr = <PsoV1 as Suite>::Field;
 
-/// Circuit version string matching the existing test suite.
-const CIRCUIT_VERSION: &str = "0.0.1";
-
-/// Handle the `proof generate` command.
-///
-/// Reads the NFT JSON file, reconstructs the secret key and nonce,
-/// generates a ZK witness, loads the circuit, produces a proof, and
-/// writes the serialized proof to the output file.
+/// Handle the `proof generate` command. Reconstructs the entity +
+/// signer from the NFT file, builds the ownership witness over the
+/// redemption binding, runs the backend, and writes the proof.
 pub fn handle_proof_generate(
     nft_path: &Path,
-    circuit_path: &Path,
-    mode: ProofMode,
     output: &Path,
     redeemer: &[u8; 20],
     chain_id: u64,
 ) -> Result<()> {
-    // 1. Read and parse the GeneratedOutput from the NFT file.
-    let nft_content = std::fs::read_to_string(nft_path)
+    let content = std::fs::read_to_string(nft_path)
         .with_context(|| format!("Failed to read NFT file: {}", nft_path.display()))?;
-    let generated_output: GeneratedOutput = serde_json::from_str(&nft_content)
-        .context("Failed to parse NFT file as GeneratedOutput")?;
+    let gen: GeneratedOutput =
+        serde_json::from_str(&content).context("Failed to parse NFT file as GeneratedOutput")?;
 
-    // 2. Reconstruct the Grumpkin secret key from hex (32 bytes).
-    let secret_key_bytes = hex::decode(&generated_output.secret_key_hex)
-        .context("Failed to decode secret_key_hex as hex")?;
-    let sk_arr: [u8; 32] = secret_key_bytes
+    // Reconstruct the signing key + nonce.
+    let sk_bytes = hex::decode(&gen.secret_key_hex).context("decode secret_key_hex")?;
+    let sk = PsoV1::secret_from_bytes(&sk_bytes).context("secret_from_bytes")?;
+    let nonce_bytes: [u8; 32] = hex::decode(&gen.nonce_hex)
+        .context("decode nonce_hex")?
         .try_into()
-        .map_err(|_| anyhow!("secret_key_hex must decode to exactly 32 bytes"))?;
-    let grumpkin_key = derive_grumpkin_public_key(&sk_arr)
-        .context("Failed to derive Grumpkin public key from secret key bytes")?;
+        .map_err(|_| anyhow!("nonce_hex must be 32 bytes"))?;
+    let nonce = PsoV1::field_from_be32(&nonce_bytes);
+    let signer =
+        Signer::<PsoV1>::from_secret(NftSecret::new(sk), nonce).context("bind signer to nonce")?;
 
-    // 3. Reconstruct the nonce from hex with field validation.
-    let nonce_bytes =
-        hex::decode(&generated_output.nonce_hex).context("Failed to decode nonce_hex as hex")?;
-    let nonce_arr: [u8; 32] = nonce_bytes
+    // The commitment the binding pins: the NFT id.
+    let commitment_id: [u8; 32] = hex::decode(gen.nft_id.strip_prefix("0x").unwrap_or(&gen.nft_id))
+        .context("decode nft_id")?
         .try_into()
-        .map_err(|_| anyhow!("nonce_hex must decode to exactly 32 bytes"))?;
-    let nonce: Fr = Fr::from_be_bytes_mod_order(&nonce_arr);
+        .map_err(|_| anyhow!("nft_id must be 32 bytes"))?;
+    let binding = PsoV1::binding(redeemer, &commitment_id, chain_id).context("binding")?;
 
-    // 4. Reconstruct the Merkle path from the serialized form.
-    let merkle_path = from_serializable_merkle_path(&generated_output.merkle_path)
-        .context("Failed to reconstruct Merkle path")?;
+    let mut seed = [0u8; 32];
+    OsRng.fill_bytes(&mut seed);
+    let mut rng = StdRng::from_seed(seed);
 
-    // 5. Load the circuit bytecode.
-    let circuit_bytecode = circuit_loader::load_circuit(circuit_path)
-        .with_context(|| format!("Failed to load circuit: {}", circuit_path.display()))?;
-
-    // 6. Dispatch based on proof mode and NFT type.
-    let mode_str = match mode {
-        ProofMode::Full => "full",
-        ProofMode::Ownership => "ownership",
+    // Build the ownership witness from the entity (which carries the
+    // matching `derivedOwner`), then prove.
+    let (witness, public, circuit_hash) = match gen.nft_type.as_str() {
+        "spending-unit" => {
+            let entity = gen
+                .spending_unit
+                .clone()
+                .ok_or_else(|| anyhow!("spending-unit body missing"))?
+                .into_entity()?;
+            let (w, p) = entity
+                .derive_ownership_witness(&mut rng, &signer, binding)
+                .context("derive ownership witness")?;
+            (w, p, gen.nft_hash.clone())
+        }
+        "tribute-draft" => {
+            let entity = gen
+                .tribute_draft
+                .clone()
+                .ok_or_else(|| anyhow!("tribute-draft body missing"))?
+                .into_entity()?;
+            let (w, p) = entity
+                .derive_ownership_witness(&mut rng, &signer, binding)
+                .context("derive ownership witness")?;
+            (w, p, gen.nft_hash.clone())
+        }
+        other => return Err(anyhow!("Unknown NFT type: {}", other)),
     };
 
-    let serializable_proof = match mode {
-        ProofMode::Full => generate_full_proof(
-            &generated_output,
-            &grumpkin_key,
-            nonce,
-            &merkle_path,
-            circuit_bytecode,
-            redeemer,
-            chain_id,
-        )?,
-        ProofMode::Ownership => generate_ownership_proof(
-            &generated_output,
-            &grumpkin_key,
-            nonce,
-            circuit_bytecode,
-            redeemer,
-            chain_id,
-        )?,
-    };
+    let backend = Barretenberg::default();
+    let proof = ProofGenerator::<PsoV1, OwnershipProof>::generate(&backend, &witness, &public)
+        .context("generate ownership proof")?;
+    let public_inputs: Vec<String> = <OwnershipProof as Circuit<PsoV1>>::public_inputs(&public)
+        .iter()
+        .map(|f| format!("0x{}", hex::encode(PsoV1::field_to_be_bytes(f))))
+        .collect();
 
-    // 7. Write the proof to the output file.
-    let json = serde_json::to_string_pretty(&serializable_proof)
-        .context("Failed to serialize proof to JSON")?;
+    let serializable = SerializableProof {
+        proof: proof
+            .proof
+            .iter()
+            .map(|field| format!("0x{}", hex::encode(field)))
+            .collect(),
+        public_inputs,
+        mode: "ownership".to_string(),
+        circuit_hash,
+    };
+    let json = serde_json::to_string_pretty(&serializable).context("serialize proof")?;
     std::fs::write(output, &json)
         .with_context(|| format!("Failed to write proof file: {}", output.display()))?;
 
-    // 8. Print proof summary table.
     let rows = vec![
-        KeyValueRow {
-            field: "Proof Mode".to_string(),
-            value: mode_str.to_string(),
-        },
-        KeyValueRow {
-            field: "Circuit Hash".to_string(),
-            value: serializable_proof.circuit_hash.clone(),
-        },
-        KeyValueRow {
-            field: "Circuit Version".to_string(),
-            value: serializable_proof.circuit_version.clone(),
-        },
-        KeyValueRow {
-            field: "Public Inputs".to_string(),
-            value: serializable_proof.public_inputs.len().to_string(),
-        },
-        KeyValueRow {
-            field: "Output File".to_string(),
-            value: output.display().to_string(),
-        },
+        kv("Proof Mode", "ownership"),
+        kv(
+            "Public Inputs",
+            &serializable.public_inputs.len().to_string(),
+        ),
+        kv("Output File", &output.display().to_string()),
     ];
     println!("{}", build_table(&rows));
-
     Ok(())
 }
 
-/// Handle the `proof verify` command.
-///
-/// Reads the proof JSON file, reconstructs the `NoirProof`, loads the
-/// circuit, and verifies the proof. Prints the verification result as
-/// a table to stdout.
-pub fn handle_proof_verify(proof_path: &Path, circuit_path: &Path) -> Result<()> {
-    // 1. Read and parse the SerializableProof.
-    let proof_content = std::fs::read_to_string(proof_path)
+/// Handle the `proof verify` command. Reconstructs the public inputs
+/// from the proof JSON and verifies against the ownership circuit.
+pub fn handle_proof_verify(proof_path: &Path) -> Result<()> {
+    let content = std::fs::read_to_string(proof_path)
         .with_context(|| format!("Failed to read proof file: {}", proof_path.display()))?;
-    let serializable_proof: SerializableProof = serde_json::from_str(&proof_content)
-        .context("Failed to parse proof file as SerializableProof")?;
+    let sp: SerializableProof =
+        serde_json::from_str(&content).context("Failed to parse proof file")?;
+    if sp.mode != "ownership" {
+        return Err(anyhow!("Unknown proof mode: {}", sp.mode));
+    }
 
-    // 2. Reconstruct NoirProof (also validates mode).
-    let noir_proof = from_serializable_proof(&serializable_proof)
-        .context("Failed to reconstruct NoirProof from serialized form")?;
-
-    // 3. Load the circuit bytecode.
-    let circuit_bytecode = circuit_loader::load_circuit(circuit_path)
-        .with_context(|| format!("Failed to load circuit: {}", circuit_path.display()))?;
-
-    // 4. Verify based on proof mode.
-    let valid = match serializable_proof.mode.as_str() {
-        "full" => {
-            let config = NoirCircuitConfig {
-                circuit: circuit_bytecode,
-                version: CIRCUIT_VERSION,
-                low_memory: false,
-                scheme: ZKMode::UltraHonkKeccak,
-            };
-            let circuit = NoirFullProofCircuit::setup(config)
-                .context("Failed to setup full proof circuit")?;
-            circuit
-                .verify(noir_proof)
-                .context("Full proof verification failed")?
-        }
-        "ownership" => {
-            let config = NoirCircuitConfig {
-                circuit: circuit_bytecode,
-                version: CIRCUIT_VERSION,
-                low_memory: false,
-                scheme: ZKMode::UltraHonkKeccak,
-            };
-            let circuit =
-                NoirOwnershipCircuit::setup(config).context("Failed to setup ownership circuit")?;
-            circuit
-                .verify(noir_proof)
-                .context("Ownership proof verification failed")?
-        }
-        other => return Err(anyhow!("Unknown proof mode: {}", other)),
+    // Ownership public inputs are `[owner, nft_hash, binding_hash]`.
+    let pi = sp
+        .public_inputs
+        .iter()
+        .map(|s| {
+            let b: [u8; 32] = hex::decode(s.strip_prefix("0x").unwrap_or(s))
+                .context("decode public input")?
+                .try_into()
+                .map_err(|_| anyhow!("public input must be 32 bytes"))?;
+            Ok::<Fr, anyhow::Error>(PsoV1::field_from_be32(&b))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if pi.len() != 3 {
+        return Err(anyhow!(
+            "ownership proof expects 3 public inputs, got {}",
+            pi.len()
+        ));
+    }
+    let public = PublicInputs {
+        owner: pi[0],
+        nft_hash: pi[1],
+        binding_hash: pi[2],
     };
 
-    // 5. Print verification result table.
-    let result_str = if valid { "VALID" } else { "INVALID" };
+    let proof_fields = sp
+        .proof
+        .iter()
+        .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).context("decode proof field"))
+        .collect::<Result<Vec<_>>>()?;
+    let proof = pso_zk_backend::barretenberg::Proof {
+        proof: proof_fields,
+    };
+
+    let backend = Barretenberg::default();
+    let valid = ProofVerifier::<PsoV1, OwnershipProof>::verify(&backend, &public, &proof)
+        .context("verify ownership proof")?;
+
     let rows = vec![
-        KeyValueRow {
-            field: "Proof Mode".to_string(),
-            value: serializable_proof.mode.clone(),
-        },
-        KeyValueRow {
-            field: "Circuit Hash".to_string(),
-            value: serializable_proof.circuit_hash.clone(),
-        },
-        KeyValueRow {
-            field: "Verification Result".to_string(),
-            value: result_str.to_string(),
-        },
+        kv("Proof Mode", &sp.mode),
+        kv("Circuit Hash", &sp.circuit_hash),
+        kv(
+            "Verification Result",
+            if valid { "VALID" } else { "INVALID" },
+        ),
     ];
     println!("{}", build_table(&rows));
 
     if !valid {
         return Err(anyhow!("Proof verification returned INVALID"));
     }
-
     Ok(())
 }
 
-// -- Internal helpers --
-
-/// Redemption binding `compute_binding_hash(redeemer, commitmentId, chainId)`
-/// for a standalone ownership/full proof — folded into the signature and
-/// exposed as a public input so the L1 verifier can pin the proof to the
-/// `(redeemer, commitmentId, chainId)` tuple. `commitment_id` is the NFT id.
-fn redemption_binding(redeemer: &[u8; 20], commitment_id: Fr, chain_id: u64) -> Result<Fr> {
-    let commitment_be = pso_protocol::fr::fr_to_be_bytes(&commitment_id);
-    pso_protocol::binding::compute_binding_hash(redeemer, &commitment_be, chain_id)
-        .context("compute_binding_hash")
-}
-
-/// Generate a full proof (ownership + Merkle inclusion) for the given NFT data.
-fn generate_full_proof(
-    generated_output: &GeneratedOutput,
-    key: &GrumpkinKey,
-    nonce: Fr,
-    merkle_path: &[pso_protocol::merkle::MerklePathElement],
-    circuit_bytecode: pso_zk_circuit_noir::CircuitBytecode,
-    redeemer: &[u8; 20],
-    chain_id: u64,
-) -> Result<SerializableProof> {
-    // Deserialize the NFT based on nft_type.
-    let witness = match generated_output.nft_type.as_str() {
-        "tribute-draft" => {
-            let nft: TributeDraft = serde_json::from_value(generated_output.nft.clone())
-                .context("Failed to deserialize NFT as TributeDraft")?;
-            let ctx = FullProofWitnessCtx {
-                key,
-                nonce,
-                merkle_path,
-                binding_hash: redemption_binding(redeemer, nft.id, chain_id)?,
-            };
-            build_full_proof_witness(&nft, ctx)
-                .context("Failed to generate full proof witness for TributeDraft")?
-        }
-        "spending-unit" => {
-            let nft: SpendingUnit = serde_json::from_value(generated_output.nft.clone())
-                .context("Failed to deserialize NFT as SpendingUnit")?;
-            let ctx = FullProofWitnessCtx {
-                key,
-                nonce,
-                merkle_path,
-                binding_hash: redemption_binding(redeemer, nft.id, chain_id)?,
-            };
-            build_full_proof_witness(&nft, ctx)
-                .context("Failed to generate full proof witness for SpendingUnit")?
-        }
-        other => return Err(anyhow!("Unknown NFT type: {}", other)),
-    };
-
-    let config = NoirCircuitConfig {
-        circuit: circuit_bytecode,
-        version: CIRCUIT_VERSION,
-        low_memory: false,
-        scheme: ZKMode::UltraHonkKeccak,
-    };
-
-    let circuit =
-        NoirFullProofCircuit::setup(config).context("Failed to setup full proof circuit")?;
-    let version = circuit.version();
-    let proof: NoirProof = circuit
-        .prove(witness)
-        .context("Failed to generate full proof")?;
-
-    Ok(to_serializable_proof(&proof, "full", &version))
-}
-
-/// Generate an ownership-only proof for the given NFT data.
-fn generate_ownership_proof(
-    generated_output: &GeneratedOutput,
-    key: &GrumpkinKey,
-    nonce: Fr,
-    circuit_bytecode: pso_zk_circuit_noir::CircuitBytecode,
-    redeemer: &[u8; 20],
-    chain_id: u64,
-) -> Result<SerializableProof> {
-    // Deserialize the NFT based on nft_type.
-    let witness = match generated_output.nft_type.as_str() {
-        "tribute-draft" => {
-            let nft: TributeDraft = serde_json::from_value(generated_output.nft.clone())
-                .context("Failed to deserialize NFT as TributeDraft")?;
-            let nft_hash = HashableNFT::hash(&nft).context("td hash")?;
-            let ctx = OwnershipWitnessCtx {
-                key,
-                nonce,
-                nft_hash,
-                binding_hash: redemption_binding(redeemer, nft.id, chain_id)?,
-            };
-            build_ownership_witness(&nft, ctx)
-                .context("Failed to generate ownership witness for TributeDraft")?
-        }
-        "spending-unit" => {
-            let nft: SpendingUnit = serde_json::from_value(generated_output.nft.clone())
-                .context("Failed to deserialize NFT as SpendingUnit")?;
-            let nft_hash = HashableNFT::hash(&nft).context("su hash")?;
-            let ctx = OwnershipWitnessCtx {
-                key,
-                nonce,
-                nft_hash,
-                binding_hash: redemption_binding(redeemer, nft.id, chain_id)?,
-            };
-            build_ownership_witness(&nft, ctx)
-                .context("Failed to generate ownership witness for SpendingUnit")?
-        }
-        other => return Err(anyhow!("Unknown NFT type: {}", other)),
-    };
-
-    let config = NoirCircuitConfig {
-        circuit: circuit_bytecode,
-        version: CIRCUIT_VERSION,
-        low_memory: false,
-        scheme: ZKMode::UltraHonkKeccak,
-    };
-
-    let circuit =
-        NoirOwnershipCircuit::setup(config).context("Failed to setup ownership circuit")?;
-    let version = circuit.version();
-    let proof: NoirProof = circuit
-        .prove(witness)
-        .context("Failed to generate ownership proof")?;
-
-    Ok(to_serializable_proof(&proof, "ownership", &version))
+fn kv(field: &str, value: &str) -> KeyValueRow {
+    KeyValueRow {
+        field: field.to_string(),
+        value: value.to_string(),
+    }
 }

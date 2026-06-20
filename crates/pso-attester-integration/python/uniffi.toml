@@ -1,0 +1,7 @@
+# Python bindgen config for the attester. The generated module name is the
+# crate's UniFFI namespace (`pso_attester_integration`); it loads the native
+# lib `libpso_attester_integration.{so,dylib}` from its own directory, so the
+# wheel stages the lib next to the generated `.py` inside the package.
+[bindings.python]
+# (defaults are fine — kept explicit so the bindgen invocation has a config
+# file to point at, mirroring the kotlin subproject.)

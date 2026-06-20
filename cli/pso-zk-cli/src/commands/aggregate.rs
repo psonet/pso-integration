@@ -1,15 +1,12 @@
 //! Handler for the `proof aggregate` CLI command.
 //!
-//! Builds an aggregation proof for TributeDraft submission.
-//!
-//! The flat aggregation-witness API the previous version of this
-//! handler used has been replaced by a recursive-aggregation circuit
-//! family in pso-zk-circuits. The Rust wrapper around the
-//! `pso-recursive-aggregation-circuit-n*` family
-//! (`NoirRecursiveAggregationCircuit`) is still pending; see
-//! `crates/pso-zk-circuit-noir/src/lib.rs` "Recursive aggregation
-//! circuit (pending)" and `docs/aggregation-redesign.md`. Until the
-//! wrapper lands, this handler always fails fast with a clear error.
+//! Flat-aggregation proving (the `AggregationTier` family in
+//! `pso-zk-canonical`) is driven end-to-end by the wallet surface
+//! (`pso-mobile-integration`'s `Wallet::prove_ownership`, exercised by
+//! `pso-wallet-cli aggregate`), which owns the per-SU witness assembly.
+//! This offline ZK CLI doesn't carry that witness-assembly path, so the
+//! subcommand fails fast with a pointer to the supported route rather
+//! than half-implementing a parallel one.
 
 use std::path::Path;
 
@@ -19,8 +16,9 @@ use anyhow::{bail, Result};
 pub fn handle_proof_aggregate(input_path: &Path, output_path: &Path) -> Result<()> {
     let _ = (input_path, output_path);
     bail!(
-        "proof aggregate is temporarily disabled: the recursive-aggregation circuit wrapper \
-         (NoirRecursiveAggregationCircuit) is pending in pso-zk-circuits. See \
-         docs/aggregation-redesign.md."
+        "proof aggregate is not available in pso-zk-cli: flat-aggregation proving runs \
+         through the wallet surface (`pso-wallet-cli aggregate`, backed by \
+         pso-mobile-integration's `Wallet::prove_ownership`), which owns the per-SU \
+         witness assembly."
     );
 }

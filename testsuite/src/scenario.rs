@@ -9,7 +9,7 @@
 //! The trait is intentionally minimal: an id, a human-readable
 //! description, and an async `run(&TestEnv)`. The shared
 //! [`TestEnv`](crate::env::TestEnv) carries all the handles a
-//! scenario needs (SRA client, actor client, bridge). Scenarios MUST
+//! scenario needs (Attester client, actor client, bridge). Scenarios MUST
 //! NOT spawn extra global state — anything new should land on the env
 //! so the cleanup path stays uniform.
 
@@ -49,7 +49,7 @@ pub trait Scenario: Send + Sync {
     fn description(&self) -> &'static str;
 
     /// Optional setup. Default no-op. Override to register
-    /// auxiliary SRAs, allocate state, prime caches, etc. — any
+    /// auxiliary Attesters, allocate state, prime caches, etc. — any
     /// resource the scenario expects in place when [`Self::run`]
     /// starts. The env is the same handle [`Self::run`] receives;
     /// nothing magic is hidden between this and the body.
@@ -65,7 +65,7 @@ pub trait Scenario: Send + Sync {
 
     /// Optional teardown. Default no-op. Override to release
     /// state mutations that would interfere with subsequent
-    /// scenarios — e.g. revoke an SRA the scenario registered,
+    /// scenarios — e.g. revoke an Attester the scenario registered,
     /// drop nonces, etc. The harness calls this in **all** cases
     /// (success, failure, panic-after-await), so the body should
     /// be defensive about what may or may not actually be present.

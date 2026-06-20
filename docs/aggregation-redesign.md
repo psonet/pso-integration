@@ -168,9 +168,9 @@ Two phases — submission and post-mint L1-prep.
 Steps in `pso-l2-client::wallet`:
 
 1. **Setup (one-time per wallet):** generate `consent_sk`, send
-   `consent_pk` to the SRA. Persist `consent_sk` in keystore.
+   `consent_pk` to the Attester. Persist `consent_sk` in keystore.
 
-2. **Receive SU receipt from SRA** for each minted SU (off-chain
+2. **Receive SU receipt from Attester** for each minted SU (off-chain
    delivery — out of scope for this crate). Receipt contains
    `(pk_cu, report_nonce, encrypted_report)`.
 
@@ -180,7 +180,7 @@ Steps in `pso-l2-client::wallet`:
 4. **Derive shared key** via App. A:
    `derive_shared_key(consent_sk, pk_cu, su_nonce) -> SharedKey { secret, public }`.
 
-5. **Sanity check** the SRA produced the same owner:
+5. **Sanity check** the Attester produced the same owner:
    `compute_ownership(shared_pk, su_nonce) == su.derivedOwner`.
 
 6. **Prove SU ownership:**

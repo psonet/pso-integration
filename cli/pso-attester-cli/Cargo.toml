@@ -1,0 +1,29 @@
+[package]
+name        = "pso-attester-cli"
+version.workspace = true
+edition.workspace = true
+description = "CLI for PSO Attester-side L2 operations: register SR / amendment records, mint SpendingUnits."
+
+[[bin]]
+name = "pso-attester-cli"
+path = "src/main.rs"
+
+[dependencies]
+# SU issuance via the attester FFI; SR/AR/SU submits via the
+# pso-chain-abi interfaces on a local alloy RPC handle.
+pso-chain-abi.workspace            = true
+pso-attester-integration.workspace = true
+
+alloy-primitives.workspace     = true
+alloy-provider.workspace       = true
+alloy-contract.workspace       = true
+alloy-network.workspace        = true
+alloy-signer.workspace         = true
+alloy-signer-local.workspace   = true
+alloy-transport-http.workspace = true
+clap.workspace       = true
+tokio.workspace      = true
+eyre.workspace       = true
+hex.workspace        = true
+tracing.workspace            = true
+tracing-subscriber.workspace = true

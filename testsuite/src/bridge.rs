@@ -1,23 +1,27 @@
-//! In-process SRA bridge.
+//! In-process Attester bridge.
 //!
-//! Models the production SRA mint pipeline as a background task. The
+//! Models the production attester mint pipeline as a background task. The
 //! wallet (or, in the test suite, a scenario body) speaks to it via a
 //! [`Bridge`] handle that forwards [`SuMintRequest`]s over an `mpsc`
 //! channel and returns the typed receipt on a `oneshot`.
 //!
-//! For every request the loop:
+//! For every request the loop drives the **attester FFI**
+//! ([`pso_attester_integration::Attester`]):
 //!
-//! 1. Rolls a fresh `(sk_cu, pk_cu, su_nonce)` triple — the SRA's
-//!    ephemeral per-SU material.
-//! 2. Derives the App. A shared key from `(sk_cu, consent_pk, su_nonce)`,
-//!    reinterprets the secp256k1 output as a Grumpkin scalar
-//!    (HKDF output mod `q_Grumpkin`), and computes the matching
-//!    `derivedOwner` Poseidon commitment.
-//! 3. Calls `SpendingUnit.submit(...)` on the agents pool with that
-//!    `derivedOwner` (BE-encoded — the on-chain side reads BE per
-//!    the `0x0212` SU-hash precompile spec).
-//! 4. Waits for the receipt, then replies with `(su_id, pk_cu,
-//!    su_nonce, mint_tx)`.
+//! 1. [`Attester::generate_nft_header`] runs the consent box once for the
+//!    wallet's `consent_pk` (a 32-byte compressed PsoV1 point) — minting
+//!    the NFT id + `derivedOwner` + the wallet's reconstruction material.
+//! 2. [`Attester::issue_with_header`] folds in the body (amounts, day,
+//!    currency, sr/ar fingerprints) to produce the on-chain
+//!    [`SpendingUnit`](pso_attester_integration::SpendingUnit) + the
+//!    [`IssuanceReport`](pso_attester_integration::IssuanceReport) the
+//!    wallet stores.
+//! 3. The bridge submits `SpendingUnit.submit(...)` on the agents pool
+//!    with the FFI-computed `su_id` / `derivedOwner`.
+//! 4. Waits for the receipt, then replies with `(su_id, report,
+//!    mint_tx)`. The wallet later feeds `report` to
+//!    [`Consent::witness`](pso_mobile_integration::Consent) /
+//!    `Consent::prove_ownership` to prove ownership.
 //!
 //! Shutdown semantics: the loop holds an `mpsc::Receiver` and the
 //! [`Bridge`] holds the matching `Sender`. Dropping the `Bridge`
@@ -26,42 +30,40 @@
 //! awaits the join handle so the loop's `tracing` lines finish
 //! draining before the test process exits.
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use alloy::primitives::{Address, FixedBytes, TxHash, U256};
-use k256::{PublicKey, SecretKey};
+use alloy_primitives::{Address, FixedBytes, TxHash, U256};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use tokio::sync::{mpsc, oneshot};
 
-use pso_l2_client::sra::MintSpendingUnitArgs;
-use pso_sra_integration::generate_nft_ownership_with_nonce;
+use pso_attester_integration::{Attester, IssuanceReport};
 
-use crate::clients::sra::SraClient;
+use crate::clients::attester::{AttesterClient, MintSpendingUnitArgs};
 
 /// Inputs the caller supplies for a single SU mint.
 #[derive(Debug, Clone)]
 pub struct SuMintArgs {
-    /// SU id (chosen by the caller — the bridge does not roll one;
-    /// scenarios use [`crate::data::random_id`] when they want a
-    /// fresh random id).
-    pub su_id: U256,
-    /// Wallet's long-lived consent public key. The bridge uses this
-    /// to derive the same shared key the wallet will arrive at.
-    pub consent_pk: PublicKey,
+    /// Wallet's long-lived consent public key, as a 32-byte compressed
+    /// PsoV1 point (e.g. `Consent::public_key()` from the mobile FFI).
+    /// The attester runs the consent box against this to derive the
+    /// `derivedOwner` and the wallet's reconstruction material.
+    pub consent_pk: Vec<u8>,
     /// Wallet self-address captured at consent initiation. Stamped on
     /// every SU minted in this consent session as `referrerAddress`.
     /// `Address::ZERO` ⇒ no referrer.
     pub referrer_address: Address,
     /// ISO 4217 numeric currency code.
     pub currency: u16,
-    /// Worldwide-day count (days since 2021-01-01).
+    /// Worldwide-day count (compact YYYYMMDD).
     pub worldwide_day: u32,
     /// Amount integer part.
     pub amount_base: u64,
     /// Amount fractional part (atto).
     pub amount_atto: u128,
-    /// SR ids consumed by this SU.
+    /// SR ids consumed by this SU (each must be a canonical 32-byte
+    /// field element — the attester folds them into `nft_hash`).
     pub sr_ids: Vec<U256>,
     /// AR ids (amendments) consumed.
     pub amendment_sr_ids: Vec<U256>,
@@ -74,19 +76,19 @@ pub struct SuMintRequest {
     pub reply: oneshot::Sender<Result<SuMintReceipt, BridgeError>>,
 }
 
-/// Output the SRA hands back to the wallet after a successful mint.
-#[derive(Debug, Clone)]
+/// Output the attester hands back to the wallet after a successful mint.
+/// Not `Clone`: the FFI [`IssuanceReport`] it carries is move-only.
+#[derive(Debug)]
 pub struct SuMintReceipt {
-    /// Echo of the input id — handy for joins.
+    /// On-chain SU id (the attester's `nft_id`).
     pub su_id: U256,
-    /// Per-SU ephemeral public key. The wallet feeds this back into
-    /// `prepare_su_ownership_material` to reconstruct the same
-    /// Grumpkin signing scalar.
-    pub pk_cu: PublicKey,
-    /// 32-byte per-SU nonce; same role as `pk_cu`.
-    pub su_nonce: [u8; 32],
+    /// The issuance report the wallet feeds to
+    /// [`Consent::witness`](pso_mobile_integration::Consent) /
+    /// `Consent::prove_ownership` to reconstruct its signer and prove
+    /// ownership of this SU.
+    pub report: IssuanceReport,
     /// Hash of the `SpendingUnit.submit` tx. Wait on it via
-    /// `SraClient::wait_for_tx_success` before downstream calls if
+    /// `AttesterClient::wait_for_tx_success` before downstream calls if
     /// the test depends on `getData(su_id)` being live.
     pub mint_tx: TxHash,
 }
@@ -94,13 +96,13 @@ pub struct SuMintReceipt {
 /// Failure modes the bridge surfaces back.
 #[derive(Debug)]
 pub enum BridgeError {
-    /// Crypto step failed (App. A reduction, Grumpkin derive,
-    /// Poseidon ownership commit).
+    /// Crypto step failed (consent box / entity hashing inside the
+    /// attester FFI).
     Crypto(String),
     /// `SpendingUnit.submit` failed at the agents-pool / contract
-    /// layer. The inner string is whatever
-    /// `L2ClientError::Contract` surfaced — scenarios typically
-    /// pump this through `decode_text` to assert a typed variant.
+    /// layer. The inner string is whatever `RpcError::Contract`
+    /// surfaced — scenarios typically pump this through `decode_text`
+    /// to assert a typed variant.
     Mint(String),
     /// Receipt poll timed out.
     Receipt(String),
@@ -153,80 +155,110 @@ impl Bridge {
     }
 }
 
-/// Spawn the SRA bridge loop. The returned [`Bridge`] is the only
+/// Spawn the Attester bridge loop. The returned [`Bridge`] is the only
 /// handle into the background task; dropping it closes the mpsc
-/// channel and lets the loop exit.
-pub fn spawn_sra_loop(sra: SraClient) -> Bridge {
+/// channel and lets the loop exit. The attester FFI is bound to the
+/// `attester_client`'s on-chain address (it stamps every SU's `attesterAddress`).
+pub fn spawn_attester_loop(attester_client: AttesterClient) -> Bridge {
     let (tx, mut rx) = mpsc::channel::<SuMintRequest>(64);
+    let attester =
+        Attester::new(attester_client.address().to_vec()).expect("attester address is 20 bytes");
     let handle = tokio::spawn(async move {
-        tracing::debug!("SRA bridge loop started");
+        tracing::debug!("Attester bridge loop started");
         while let Some(req) = rx.recv().await {
             let SuMintRequest { args, reply } = req;
-            let res = handle_mint(&sra, args).await;
+            let res = handle_mint(&attester_client, &attester, args).await;
             // Reply may have been dropped if the caller went away
             // (cancelled future). That's not an error.
             let _ = reply.send(res);
         }
-        tracing::debug!("SRA bridge loop exiting (channel closed)");
+        tracing::debug!("Attester bridge loop exiting (channel closed)");
     });
     Bridge { tx, handle }
 }
 
-/// Run a single mint. Pulled out so the spawn closure stays small
-/// and the crypto path is unit-testable in principle.
-async fn handle_mint(sra: &SraClient, args: SuMintArgs) -> Result<SuMintReceipt, BridgeError> {
-    tracing::debug!(su_id = %args.su_id, "bridge: handle_mint start");
-    // ----- (1) Roll per-SU ephemeral material -----
-    let mut sk_cu_bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut sk_cu_bytes);
-    let sk_cu =
-        SecretKey::from_slice(&sk_cu_bytes).map_err(|e| BridgeError::Crypto(e.to_string()))?;
-    let pk_cu = sk_cu.public_key();
+/// Run a single mint through the attester FFI + the agents pool.
+async fn handle_mint(
+    attester_client: &AttesterClient,
+    attester: &Arc<Attester>,
+    args: SuMintArgs,
+) -> Result<SuMintReceipt, BridgeError> {
+    tracing::debug!("bridge: handle_mint start");
 
-    let mut su_nonce = [0u8; 32];
-    OsRng.fill_bytes(&mut su_nonce);
+    // ----- (1+2) Attester FFI: header + full SU issuance -----
+    //
+    // The same `Attester` surface real Kotlin/JVM attester clients hit
+    // via UniFFI. Routing the bridge through it means the e2e suite
+    // exercises the public attester surface — any change to the consent
+    // box, the owner derivation, or the entity hashing is caught here.
+    //
+    // The barretenberg-backed FFI can throw an uncatchable C++ exception
+    // if invoked from the wrong tokio worker thread; push the FFI work
+    // onto a blocking thread so the panic boundary is in a sync frame the
+    // runtime can isolate.
+    let consent_pk = args.consent_pk.clone();
+    let referrer = args.referrer_address;
+    let currency = args.currency;
+    let worldwide_day = args.worldwide_day;
+    let amount_base = args.amount_base;
+    let amount_atto = args.amount_atto;
+    let sr_ids = args.sr_ids.clone();
+    let ar_ids = args.amendment_sr_ids.clone();
+    let attester = attester.clone();
 
-    // ----- (2) derivedOwner via the SRA crate's public API -----
-    //
-    // The same `generate_nft_ownership_with_nonce` UniFFI-exported
-    // function Kotlin/JVM SRA clients call. Routing the bridge
-    // through it means the e2e suite exercises the public surface
-    // real clients hit — any change to the App. A reduction, the
-    // ECDH shape, or the Poseidon commitment is caught here without
-    // the bridge needing its own parallel implementation.
-    //
-    // bb 5.x throws an uncatchable C++ exception that aborts the
-    // process if invoked from the wrong tokio worker thread; push
-    // the FFI work onto a blocking thread so the panic boundary is
-    // in a sync frame the runtime can isolate.
-    let consent_pk_bytes = args.consent_pk.to_sec1_bytes().to_vec();
-    let sk_cu_vec = sk_cu_bytes.to_vec();
-    let su_nonce_vec = su_nonce.to_vec();
-    let ownership = tokio::task::spawn_blocking(move || {
-        generate_nft_ownership_with_nonce(sk_cu_vec, consent_pk_bytes, su_nonce_vec)
+    let issued = tokio::task::spawn_blocking(move || {
+        // Per-issuance entropy: 24 random bytes ‖ 8-byte counter is the
+        // reference binding, but a fresh 32-byte random seed per call is
+        // equally distinct (the suite never re-issues with the same seed).
+        let mut seed = [0u8; 32];
+        OsRng.fill_bytes(&mut seed);
+        let header = attester.generate_nft_header(seed.to_vec(), consent_pk)?;
+
+        // Record fingerprints are 32-byte big-endian field elements; the
+        // on-chain SR/AR ids are uint256. Use the same BE bytes for both,
+        // so the SU's `nft_hash` folds exactly what the chain stored.
+        let sr_fps: Vec<Vec<u8>> = sr_ids
+            .iter()
+            .map(|id| id.to_be_bytes::<32>().to_vec())
+            .collect();
+        let ar_fps: Vec<Vec<u8>> = ar_ids
+            .iter()
+            .map(|id| id.to_be_bytes::<32>().to_vec())
+            .collect();
+
+        attester.issue_with_header(
+            header,
+            worldwide_day,
+            currency,
+            amount_base,
+            amount_atto as u64,
+            referrer.to_vec(),
+            sr_fps,
+            ar_fps,
+        )
     })
     .await
-    .map_err(|e| BridgeError::Crypto(format!("ownership join: {e}")))?
-    .map_err(|e| BridgeError::Crypto(format!("generate_nft_ownership: {e}")))?;
+    .map_err(|e| BridgeError::Crypto(format!("issuance join: {e}")))?
+    .map_err(|e| BridgeError::Crypto(format!("attester issue: {e}")))?;
 
-    // `generate_nft_ownership_with_nonce` returns the ownership Fr
-    // as base58-encoded BE bytes (the unified PSO wire format —
-    // matches the `0x0212` SU-hash precompile and the aggregation
-    // proof's public-input prefix). Decode, ship straight to the
-    // contract.
-    let derived_owner_vec = bs58::decode(&ownership.ownership)
-        .into_vec()
-        .map_err(|e| BridgeError::Crypto(format!("decode ownership bs58: {e}")))?;
-    let derived_owner_bytes: [u8; 32] = derived_owner_vec.as_slice().try_into().map_err(|_| {
-        BridgeError::Crypto(format!(
-            "expected 32-byte ownership, got {}",
-            derived_owner_vec.len()
-        ))
-    })?;
+    // SU id + derivedOwner come straight from the FFI's SpendingUnit.
+    let su_id_bytes: [u8; 32] = issued
+        .spending_unit
+        .su_id
+        .as_slice()
+        .try_into()
+        .map_err(|_| BridgeError::Crypto("attester su_id not 32 bytes".into()))?;
+    let su_id = U256::from_be_bytes(su_id_bytes);
+    let derived_owner_bytes: [u8; 32] = issued
+        .spending_unit
+        .derived_owner
+        .as_slice()
+        .try_into()
+        .map_err(|_| BridgeError::Crypto("attester derived_owner not 32 bytes".into()))?;
 
     // ----- (3) On-chain mint via the agents pool -----
     let mint_args = MintSpendingUnitArgs {
-        su_id: args.su_id,
+        su_id,
         derived_owner: FixedBytes::from(derived_owner_bytes),
         referrer_address: args.referrer_address,
         currency: args.currency,
@@ -236,185 +268,96 @@ async fn handle_mint(sra: &SraClient, args: SuMintArgs) -> Result<SuMintReceipt,
         sr_ids: args.sr_ids,
         amendment_sr_ids: args.amendment_sr_ids,
     };
-    let mint_tx = sra
+    let mint_tx = attester_client
         .mint_spending_unit(mint_args)
         .await
         .map_err(|e| BridgeError::Mint(e.to_string()))?;
 
     // ----- (4) Wait for inclusion -----
-    sra.wait_for_tx_success(mint_tx, Duration::from_secs(30))
+    attester_client
+        .wait_for_tx_success(mint_tx, Duration::from_secs(30))
         .await
         .map_err(|e| BridgeError::Receipt(e.to_string()))?;
     tracing::debug!(?mint_tx, "bridge: mint receipt success");
 
-    // SRA "deletes" `sk_cu` — drop the binding (Rust frees it).
-    drop(sk_cu);
-
     Ok(SuMintReceipt {
-        su_id: args.su_id,
-        pk_cu,
-        su_nonce,
+        su_id,
+        report: issued.report,
         mint_tx,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    //! Regression guard for the App. A KDF unification.
+    //! Symmetry guard for the attester/wallet FFI round-trip.
     //!
-    //! App. A is symmetric. With the same `su_nonce`, the two sides
-    //! see:
+    //! The attester issues an NFT to a wallet's consent public key; the
+    //! wallet reconstructs its signer from the report and proves
+    //! ownership. The two sides must agree on the same `derivedOwner` /
+    //! `nft_hash` for the aggregation to verify.
     //!
-    //! - SRA holds:    (sra_sk_eph, consent_pk, su_nonce)
-    //! - Wallet holds: (consent_sk, sra_pk_eph,  su_nonce)
-    //!
-    //! ECDH gives `sra_sk · consent_pk == consent_sk · sra_pk`, so
-    //! both sides MUST land on the same shared_sk, Grumpkin keypair,
-    //! and derivedOwner Poseidon commitment. This test pins the
-    //! four-way agreement against fixed inputs:
-    //!
-    //! 1. Wallet path via `pso_l2_client::shared_key::derive_shared_key`
-    //! 2. SRA path via `pso_l2_client::shared_key::derive_shared_key_sra_side`
-    //! 3. SRA UniFFI via `pso_sra_integration::generate_nft_ownership_with_nonce`
-    //! 4. Mobile UniFFI via `pso_mobile_integration::api::derive_nft_keypair`
-    //!    plus the same Poseidon commitment.
-    //!
-    //! Any failure here means the App. A KDF has been re-split across
-    //! surfaces — re-unify before touching anything else.
-    use super::*;
+    //! NOTE: the pre-0.8 suite compared raw shared-key bytes across four
+    //! surfaces (wallet Rust, Attester Rust, Attester UniFFI, mobile UniFFI). The
+    //! new FFI **encapsulates** the keys — they never cross the boundary,
+    //! so a raw-bytes comparison is no longer expressible. We instead
+    //! assert the observable end-to-end property: an attester-issued
+    //! report + `Consent::witness` produce a witness whose `derivedOwner`
+    //! matches the issued SU, and a single-NFT `Consent::prove_ownership`
+    //! succeeds. That is the symmetry the old test was really protecting.
+    use pso_attester_integration::Attester as FfiAttester;
+    use pso_mobile_integration::Wallet;
 
-    use ark_bn254::Fr;
-    use ark_ff::PrimeField;
-
-    use pso_integrations_shared::witness::{
-        derive_grumpkin_public_key, fr_to_be32, reduce_to_grumpkin_sk,
-    };
-    use pso_l2_client::shared_key::{derive_shared_key, derive_shared_key_sra_side};
-
-    /// Compute derivedOwner starting from a Grumpkin keypair (pk_x,
-    /// pk_y) and the per-SU nonce. Used as the final-step convergence
-    /// point for every code path below.
-    fn poseidon_owner_be(pk_x: Fr, pk_y: Fr, su_nonce: &[u8; 32]) -> [u8; 32] {
-        let nonce_fr = Fr::from_be_bytes_mod_order(su_nonce);
-        let owner_fr = pso_protocol::ownership::compute_ownership_grumpkin(pk_x, pk_y, nonce_fr)
-            .expect("ownership compute");
-        fr_to_be32(&owner_fr)
-    }
-
-    /// Path 1 — wallet side via the Rust API.
-    fn wallet_l2_client_owner(
-        consent_sk: &SecretKey,
-        sra_pk_eph: &PublicKey,
-        su_nonce: &[u8; 32],
-    ) -> [u8; 32] {
-        let shared = derive_shared_key(consent_sk, sra_pk_eph, su_nonce).expect("wallet shared");
-        let raw: [u8; 32] = shared.secret.to_bytes().into();
-        let sk = reduce_to_grumpkin_sk(&raw);
-        let g = derive_grumpkin_public_key(&sk).expect("grumpkin pk");
-        poseidon_owner_be(g.pk_x, g.pk_y, su_nonce)
-    }
-
-    /// Path 2 — SRA side via the Rust API.
-    fn sra_l2_client_owner(
-        sra_sk_eph: &SecretKey,
-        consent_pk: &PublicKey,
-        su_nonce: &[u8; 32],
-    ) -> [u8; 32] {
-        let shared =
-            derive_shared_key_sra_side(sra_sk_eph, consent_pk, su_nonce).expect("sra shared");
-        let raw: [u8; 32] = shared.secret.to_bytes().into();
-        let sk = reduce_to_grumpkin_sk(&raw);
-        let g = derive_grumpkin_public_key(&sk).expect("grumpkin pk");
-        poseidon_owner_be(g.pk_x, g.pk_y, su_nonce)
-    }
-
-    /// Path 3 — SRA UniFFI surface (what Kotlin/JVM consumers hit).
-    fn sra_uniffi_owner(
-        sra_sk_eph_bytes: &[u8; 32],
-        consent_pk: &PublicKey,
-        su_nonce: &[u8; 32],
-    ) -> [u8; 32] {
-        let consent_pk_bytes = consent_pk.to_sec1_bytes().to_vec();
-        let res = generate_nft_ownership_with_nonce(
-            sra_sk_eph_bytes.to_vec(),
-            consent_pk_bytes,
-            su_nonce.to_vec(),
-        )
-        .expect("sra uniffi");
-        // SRA crate returns base58 of BE bytes (post-unification) — no
-        // re-interpretation needed.
-        let be = bs58::decode(&res.ownership)
-            .into_vec()
-            .expect("bs58 decode");
-        be.as_slice().try_into().expect("32-byte ownership")
-    }
-
-    /// Path 4 — mobile UniFFI surface (what the React Native wallet
-    /// hits). Returns the keypair; we run the same Poseidon
-    /// commitment over the returned Grumpkin pk.
-    fn mobile_uniffi_owner(
-        consent_sk_bytes: &[u8; 32],
-        sra_pk_eph: &PublicKey,
-        su_nonce: &[u8; 32],
-    ) -> [u8; 32] {
-        let sra_pk_bytes = sra_pk_eph.to_sec1_bytes().to_vec();
-        let kp = pso_mobile_integration::derive_nft_keypair(
-            consent_sk_bytes.to_vec(),
-            sra_pk_bytes,
-            su_nonce.to_vec(),
-        )
-        .expect("mobile uniffi");
-        // pk is pk_x_be || pk_y_be, each 32 bytes (PSO wire format).
-        assert_eq!(kp.pk.len(), 64, "mobile pk layout");
-        let pk_x_be: [u8; 32] = kp.pk[0..32].try_into().expect("pk_x slice");
-        let pk_y_be: [u8; 32] = kp.pk[32..64].try_into().expect("pk_y slice");
-        let pk_x = Fr::from_be_bytes_mod_order(&pk_x_be);
-        let pk_y = Fr::from_be_bytes_mod_order(&pk_y_be);
-        poseidon_owner_be(pk_x, pk_y, su_nonce)
+    fn seed(tag: u8) -> Vec<u8> {
+        vec![tag; 32]
     }
 
     #[test]
-    fn appa_symmetry_across_all_four_surfaces() {
-        // Fixed bytes so a failure is easy to bisect against this
-        // assertion's hex output rather than a per-run random value.
-        let consent_sk_bytes: [u8; 32] = [
-            0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6,
-            0xb7, 0xb8, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xd1, 0xd2, 0xd3, 0xd4,
-            0xd5, 0xd6, 0xd7, 0xd8,
-        ];
-        let sra_sk_eph_bytes: [u8; 32] = [
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee,
-            0xff, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
-            0x0e, 0x0f, 0x10, 0x20,
-        ];
+    fn attester_issue_and_wallet_witness_agree() {
+        // Wallet derives a consent keypair; hands the attester its pk.
+        let wallet = Wallet::new();
+        let consent = wallet.generate_consent(seed(0x11)).expect("consent");
+        let consent_pk = consent.public_key().expect("consent pk");
 
-        let consent_sk = SecretKey::from_slice(&consent_sk_bytes).expect("consent sk valid");
-        let sra_sk_eph = SecretKey::from_slice(&sra_sk_eph_bytes).expect("sra sk valid");
-        let consent_pk = consent_sk.public_key();
-        let sra_pk_eph = sra_sk_eph.public_key();
+        // Attester issues an NFT against that consent pk.
+        let attester = FfiAttester::new(vec![0xab; 20]).expect("attester");
+        let header = attester
+            .generate_nft_header(seed(0x22), consent_pk)
+            .expect("header");
+        // The on-chain `derivedOwner` the wallet will cross-check.
+        let issued = attester
+            .issue_with_header(
+                header,
+                20_250_101,
+                978,
+                100,
+                0,
+                vec![0u8; 20],
+                vec![[0x01u8; 32].to_vec()],
+                vec![],
+            )
+            .expect("issue");
 
-        let su_nonce: [u8; 32] = [0x42; 32];
+        // Wallet reconstructs the witness from the report over a binding.
+        let binding = vec![0x07u8; 32];
+        let report = pso_mobile_integration::IssuanceReport {
+            nft_id: issued.report.nft_id.clone(),
+            derived_owner: issued.report.derived_owner.clone(),
+            nft_hash: issued.report.nft_hash.clone(),
+            opaque_pk: issued.report.opaque_pk.clone(),
+            nonce: issued.report.nonce.clone(),
+        };
+        let witness = consent
+            .witness(seed(0x33), report, binding)
+            .expect("witness");
 
-        let p1_wallet_rust = wallet_l2_client_owner(&consent_sk, &sra_pk_eph, &su_nonce);
-        let p2_sra_rust = sra_l2_client_owner(&sra_sk_eph, &consent_pk, &su_nonce);
-        let p3_sra_uniffi = sra_uniffi_owner(&sra_sk_eph_bytes, &consent_pk, &su_nonce);
-        let p4_mobile_uniffi = mobile_uniffi_owner(&consent_sk_bytes, &sra_pk_eph, &su_nonce);
-
-        let h = hex::encode;
+        // The witness's derivedOwner / nft_hash must equal the issued SU's.
         assert_eq!(
-            h(p1_wallet_rust),
-            h(p2_sra_rust),
-            "L2-client wallet path vs SRA path: ECDH symmetry broke"
+            witness.derived_owner, issued.spending_unit.derived_owner,
+            "wallet witness derivedOwner must match the issued SU"
         );
         assert_eq!(
-            h(p2_sra_rust),
-            h(p3_sra_uniffi),
-            "SRA Rust path vs SRA UniFFI surface: KDF re-split"
-        );
-        assert_eq!(
-            h(p1_wallet_rust),
-            h(p4_mobile_uniffi),
-            "Wallet Rust path vs mobile UniFFI surface: KDF re-split"
+            witness.nft_hash, issued.report.nft_hash,
+            "wallet witness nft_hash must match the report"
         );
     }
 }

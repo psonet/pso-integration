@@ -2,18 +2,16 @@
 //! `ZeroAddress()`.
 //!
 //! Among the AttestersRegistry guards (`onlyAdmin` first), the body of
-//! `register` checks `sra == address(0)` and reverts before
+//! `register` checks `attester == address(0)` and reverts before
 //! `permissionMask == 0` (the InvalidMask check, see S029). So we
 //! call from the admin signer to clear the gate, supply
 //! `address(0)`, and expect `ZeroAddress`.
 
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 use async_trait::async_trait;
 
-use pso_l2_client::PsoContractError;
-
-use crate::clients::sra::into_pso_error;
-use crate::{Scenario, TestEnv};
+use crate::clients::attester::into_pso_error;
+use crate::{PsoContractError, Scenario, TestEnv};
 
 pub struct S028;
 
@@ -33,12 +31,12 @@ impl Scenario for S028 {
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let err = env
         .admin
-        .register_sra(
+        .register_attester(
             Address::ZERO,
             u32::MAX,
             false,
-            alloy::primitives::B256::ZERO,
-            alloy::primitives::U256::ZERO,
+            alloy_primitives::B256::ZERO,
+            alloy_primitives::U256::ZERO,
         )
         .await
         .err()

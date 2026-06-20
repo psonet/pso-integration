@@ -1,20 +1,18 @@
-//! S009 — SRA#2 cannot mint an SU referencing SRA#1's SR.
+//! S009 — Attester#2 cannot mint an SU referencing Attester#1's SR.
 //!
-//! Two distinct SRAs are active simultaneously. SRA#1 (the env's
-//! primary SRA) registers an SR; admin promotes a freshly rolled
-//! second SRA via [`TestEnv::register_random_sra`]. SRA#2 then tries
-//! to mint an SU referencing SRA#1's SR. The on-chain
+//! Two distinct Attesters are active simultaneously. Attester#1 (the env's
+//! primary Attester) registers an SR; admin promotes a freshly rolled
+//! second Attester via [`TestEnv::register_random_attester`]. Attester#2 then tries
+//! to mint an SU referencing Attester#1's SR. The on-chain
 //! `_validateSenderOwnership` step compares `srSubmittedBy == sender`
 //! and reverts with `InvalidSpendingRecords (bad-owner SR)(...)`.
 
 use std::time::Duration;
 
-use alloy::primitives::FixedBytes;
+use alloy_primitives::FixedBytes;
 use async_trait::async_trait;
 
-use pso_l2_client::sra::MintSpendingUnitArgs;
-
-use crate::clients::sra::into_pso_error;
+use crate::clients::attester::{into_pso_error, MintSpendingUnitArgs};
 use crate::data::{random_id, random_su_args};
 use crate::{PsoContractError, Scenario, TestEnv};
 
@@ -26,7 +24,7 @@ impl Scenario for S009 {
         "S009"
     }
     fn description(&self) -> &'static str {
-        "SU.submit referencing another SRA's SR reverts with InvalidSpendingRecords (bad-owner SR)"
+        "SU.submit referencing another Attester's SR reverts with InvalidSpendingRecords (bad-owner SR)"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -34,25 +32,25 @@ impl Scenario for S009 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    // SRA#1 (the default `env.sra_zero`) registers an SR.
+    // Attester#1 (the default `env.attester_zero`) registers an SR.
     let sr_id = random_id();
-    let tx = env.sra_zero.register_spending_record(sr_id).await?;
-    env.sra_zero
+    let tx = env.attester_zero.register_spending_record(sr_id).await?;
+    env.attester_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
-    env.sra_zero
+    env.attester_zero
         .wait_for_sr_existence(&[sr_id], &[], Duration::from_secs(30))
         .await?;
 
-    // Admin promotes a fresh secret-key address to active SRA, then
-    // SRA#2 attempts to mint an SU referencing SRA#1's SR.
-    let sra2 = env.new_sra().await?;
+    // Admin promotes a fresh secret-key address to active Attester, then
+    // Attester#2 attempts to mint an SU referencing Attester#1's SR.
+    let attester2 = env.new_attester().await?;
     let shape = random_su_args();
-    let err = sra2
+    let err = attester2
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: random_id(),
             derived_owner: FixedBytes::from([0u8; 32]),
-            referrer_address: alloy::primitives::Address::ZERO,
+            referrer_address: alloy_primitives::Address::ZERO,
             currency: shape.currency,
             worldwide_day: shape.worldwide_day,
             amount_base: shape.amount_base,
@@ -68,7 +66,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
     let typed = into_pso_error(err);
     match &typed {
-        // Foreign SR exists but is owned by a different SRA → lands in
+        // Foreign SR exists but is owned by a different Attester → lands in
         // the bad-owner SR arm (first field).
         PsoContractError::InvalidSpendingRecords(bad_srs, _, _, _) => {
             if !bad_srs.contains(&sr_id) {
