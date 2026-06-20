@@ -44,13 +44,20 @@ cargo test  -p pso-mobile-integration
 Links C++ barretenberg (via `pso-zk-backend`), so it needs a C++ toolchain
 (cmake/clang) + network access (noir git deps + first-run SRS).
 
-**Mobile slices** (release CI):
+**Mobile slices** (release CI) are built with the max-optimization `mobile`
+profile (`opt-level = 3`, fat LTO, `codegen-units = 1`, `strip`) — proving runs
+on-device. The profile keeps the default `unwind` (not `panic = "abort"`) so
+UniFFI's `catch_unwind` can turn a Rust panic into a catchable binding-side
+error instead of aborting the host app.
 
 - **iOS** — `aarch64-apple-ios` (+ sim) staticlib.
 - **Android** — `aarch64-linux-android` + `x86_64-linux-android` cdylib via
   `cargo-ndk`. barretenberg is **built from source against the Android NDK** (not
   the upstream prebuilt) so the lib links the NDK libc++ (`std::__ndk1::`) and
   loads cleanly against `libc++_shared.so` on device.
+
+A failed cross-build on any slice blocks the entire release (the `github-release`
+job requires every build job to succeed) — releases are all-or-nothing.
 
 Generate the foreign bindings (Kotlin / Swift) with `uniffi-bindgen-mobile`.
 
