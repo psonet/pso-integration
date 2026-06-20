@@ -200,7 +200,14 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // 5. The tx must EXECUTE, not just admit: status == 1 proves the
     //    envelope dispatcher stripped the header and dispatched the
     //    inner call.
-    let deadline = Instant::now() + Duration::from_secs(30);
+    //
+    // Generous deadline: a lone users-lane tx is only mined on the next block
+    // tick, and a `--dev` node produces blocks burstily when otherwise idle
+    // (measured ~16s gaps between empty blocks vs ~1s under load). Inclusion
+    // latency is therefore bimodal — usually ~1s, but up to ~tens of seconds if
+    // the tx lands in an idle gap. The proof stays valid for PSO_PROOF_MAX_AGE
+    // blocks regardless; we just need to wait long enough to observe inclusion.
+    let deadline = Instant::now() + Duration::from_secs(120);
     loop {
         let receipt = rpc(&url, "eth_getTransactionReceipt", json!([tx_hash])).await?;
         if !receipt.is_null() {
