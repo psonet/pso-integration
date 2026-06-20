@@ -24,130 +24,26 @@
 //! the testsuite now owns its client layer.
 
 use alloy_primitives::{Address, U256};
-use alloy_sol_types::sol;
 use alloy_sol_types::SolError;
 
 use crate::clients::rpc::RpcError;
 
-// -----------------------------------------------------------------
-// Solidity error declarations — one per chain-side `error ...(...)`.
-//
-// `alloy_sol_types::sol!` generates a `SolError` impl giving us `SELECTOR` and
-// `abi_decode_raw`. We try each in turn in `decode_from_bytes`. The
-// argument types must match the contract definitions byte-for-byte;
-// mismatches surface as `Other(...)` (the decode call fails) rather
-// than a silently-wrong variant.
-// -----------------------------------------------------------------
+// Contract error types come from `pso-chain-abi` — the single source, generated
+// (via `sol!`) from the vendored interface ABIs. We do NOT re-declare them here;
+// we import the generated types and match their `SELECTOR` / decode their bodies
+// in `decode_from_bytes`. A given `error` may appear in several interfaces with
+// the same 4-byte selector, so each name is imported from exactly one interface.
+use pso_chain_abi::interfaces::{
+    IAttesterGated::AttesterNotActive,
+    IAttestersRegistry::{AlreadyRegistered, InvalidMask, NotAdmin, NotRegistered, ZeroAddress},
+    ISpendingRecord::{AlreadyExists, InvalidTokenId},
+    ISpendingUnit::{InvalidAmount, InvalidSpendingRecords, NoSpendingRecords, TooManySpendingRecords},
+    ITributeDraft::{
+        AggregationTierUnavailable, EmptyArray, InvalidAggregationProof, MalformedAggregationProof,
+        NotFound, NotSameCurrency, NotSameWorldwideDay,
+    },
+};
 
-sol! {
-    /// `IAttesterAware.AttesterNotActive()` — agents-pool-side guard on every
-    /// SR/AR/SU/TD submit entry point, fires when the EVM-side check
-    /// `attesterRegistry.isActive(_msgSender())` returns false.
-    #[allow(missing_docs)]
-    error AttesterNotActive();
-
-    /// `SoulBoundTokenBase.AlreadyExists()` — `_mint`/`_commit` invoked
-    /// with an id that already exists.
-    #[allow(missing_docs)]
-    error AlreadyExists();
-
-    /// `SoulBoundTokenBase.InvalidTokenId()` — `_mint` rejecting `id == 0`.
-    #[allow(missing_docs)]
-    error InvalidTokenId();
-
-    /// `TributeDraft.EmptyArray()` — `submit(_, _, [], _)` with no SU
-    /// ids.
-    #[allow(missing_docs)]
-    error EmptyArray();
-
-    /// `TributeDraft.NotFound(uint256)` — `getData(suId)` returned a
-    /// zero `attesterAddress`, i.e. the SU referenced by the TD doesn't
-    /// exist.
-    #[allow(missing_docs)]
-    error NotFound(uint256 spendingUnitIds);
-
-    /// `TributeDraft.MalformedAggregationProof()` — proof body too
-    /// short or `numInputs != tier_k`.
-    #[allow(missing_docs)]
-    error MalformedAggregationProof();
-
-    /// `TributeDraft.InvalidAggregationProof()` — `zk_verify`
-    /// precompile rejected the proof, or the public-input prefix did
-    /// not match the on-chain reconstruction.
-    #[allow(missing_docs)]
-    error InvalidAggregationProof();
-
-    /// `TributeDraft.NotSameWorldwideDay()` — SUs in a single TD
-    /// straddle two worldwide-day buckets.
-    #[allow(missing_docs)]
-    error NotSameWorldwideDay();
-
-    /// `TributeDraft.NotSameCurrency()` — SUs in a
-    /// single TD use different currencies.
-    #[allow(missing_docs)]
-    error NotSameCurrency();
-
-    /// `TributeDraft.AggregationTierUnavailable(uint256)` — no
-    /// flat-aggregation tier covers `n_su` (must be 1..=64).
-    #[allow(missing_docs)]
-    error AggregationTierUnavailable(uint256 suCount);
-
-    /// `SpendingUnit.InvalidSpendingRecords(uint256[], uint256[],
-    /// uint256[], uint256[])` — consolidated revert for SR / AR
-    /// fingerprint validation. Fields are
-    /// `(badOwnerSRs, badOwnerARs, duplicateSRs, duplicateARs)`:
-    /// the first two list fingerprints whose owner is not
-    /// `_msgSender()` (or that don't exist); the last two list
-    /// fingerprints already consumed by a prior SU mint or repeated
-    /// within the same batch.
-    #[allow(missing_docs)]
-    error InvalidSpendingRecords(
-        uint256[] badOwnerSRs,
-        uint256[] badOwnerARs,
-        uint256[] duplicateSRs,
-        uint256[] duplicateARs,
-    );
-
-    /// `SpendingUnit.NoSpendingRecords()` — `submit` called with both
-    /// SR and AR arrays empty.
-    #[allow(missing_docs)]
-    error NoSpendingRecords();
-
-    /// `SpendingUnit.TooManySpendingRecords()` — either array exceeds
-    /// `MAX_BATCH_SIZE`.
-    #[allow(missing_docs)]
-    error TooManySpendingRecords();
-
-    /// `SpendingUnit.InvalidAmount()` — amount_atto >= 1e18
-    /// or base + atto sum overflows the bounded range.
-    #[allow(missing_docs)]
-    error InvalidAmount();
-
-    /// `SpendingUnit.SpendingRecordAlreadyExists()` — single-shot
-    /// duplicate guard (distinct from the array variant above).
-    #[allow(missing_docs)]
-    error SpendingRecordAlreadyExists();
-
-    /// `AttestersRegistry.NotAdmin()`.
-    #[allow(missing_docs)]
-    error NotAdmin();
-
-    /// `AttestersRegistry.AlreadyRegistered(address)`.
-    #[allow(missing_docs)]
-    error AlreadyRegistered(address attester);
-
-    /// `AttestersRegistry.NotRegistered(address)`.
-    #[allow(missing_docs)]
-    error NotRegistered(address attester);
-
-    /// `AttestersRegistry.ZeroAddress()`.
-    #[allow(missing_docs)]
-    error ZeroAddress();
-
-    /// `AttestersRegistry.InvalidMask()` — bad permission bitmask.
-    #[allow(missing_docs)]
-    error InvalidMask();
-}
 
 /// Flat, scenario-facing classification of every revert / pool
 /// rejection the suite cares about.
@@ -187,8 +83,6 @@ pub enum PsoContractError {
     TooManySpendingRecords,
     /// `SpendingUnit.InvalidAmount`.
     InvalidAmount,
-    /// `SpendingUnit.SpendingRecordAlreadyExists` (single-shot variant).
-    SpendingRecordAlreadyExists,
     /// `AttestersRegistry.NotAdmin`.
     NotAdmin,
     /// `AttestersRegistry.AlreadyRegistered(address)`.
@@ -252,9 +146,6 @@ impl std::fmt::Display for PsoContractError {
             PsoContractError::NoSpendingRecords => write!(f, "NoSpendingRecords"),
             PsoContractError::TooManySpendingRecords => write!(f, "TooManySpendingRecords"),
             PsoContractError::InvalidAmount => write!(f, "InvalidAmount"),
-            PsoContractError::SpendingRecordAlreadyExists => {
-                write!(f, "SpendingRecordAlreadyExists")
-            }
             PsoContractError::NotAdmin => write!(f, "NotAdmin"),
             PsoContractError::AlreadyRegistered(a) => write!(f, "AlreadyRegistered({a})"),
             PsoContractError::NotRegistered(a) => write!(f, "NotRegistered({a})"),
@@ -383,9 +274,6 @@ pub fn decode_from_bytes(data: &[u8]) -> PsoContractError {
     }
     if selector == TooManySpendingRecords::SELECTOR {
         return PsoContractError::TooManySpendingRecords;
-    }
-    if selector == SpendingRecordAlreadyExists::SELECTOR {
-        return PsoContractError::SpendingRecordAlreadyExists;
     }
     if selector == NotAdmin::SELECTOR {
         return PsoContractError::NotAdmin;
