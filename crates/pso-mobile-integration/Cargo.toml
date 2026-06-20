@@ -2,84 +2,39 @@
 name = "pso-mobile-integration"
 version.workspace = true
 edition = "2021"
-description = "Mobile-friendly UniFFI wrapper for PSO ZK proof generation"
+description = "Mobile-friendly UniFFI wrapper for PSO ZK proof generation (wallet side)"
 
 [lib]
 crate-type = [
     "staticlib", # for iOS
     "cdylib",    # for Android
-    # rlib so in-workspace Rust consumers (notably the e2e testsuite's
-    # `appa_symmetry_across_all_four_surfaces` regression test) can
-    # link against the mobile UniFFI surface to assert it stays in
-    # lockstep with the SRA UniFFI + wallet Rust paths. Both `cargo ndk
-    # build` (cdylib) and the iOS `cargo build` (staticlib) keep
-    # producing their own artifacts unchanged.
+    # rlib so in-workspace Rust consumers (the e2e testsuite's cross-surface
+    # regression test) can link against the mobile UniFFI surface.
     "rlib",
 ]
 name = "pso_mobile_integration"
 
 [dependencies]
-# Workspace dependencies
+# The generic 0.8/0.9 stack: protocol formulas + canonical circuits + the
+# barretenberg proving backend (UltraHonkKeccak via FFI; the wallet proves
+# on-device).
 pso-protocol.workspace = true
-pso-zk-circuit-noir.workspace = true
 pso-zk-canonical.workspace = true
-pso-nft.workspace = true
-pso-integrations-shared.workspace = true
-pso-poseidon.workspace = true
-# MinRoot VDF — Users-pool transaction gating. Wrapped by the `vdf`
-# module behind UniFFI; the slow path runs on a wallet background
-# thread before broadcasting the tx.
+pso-zk-backend.workspace = true
+ark-std.workspace = true
+# MinRoot VDF (BLS12-381) — the proof-of-personhood challenge the wallet
+# attaches to Users-pool txs. Slow `eval` runs on a background thread.
 pso-vdf = { workspace = true, features = ["std"] }
 
-# UniFFI for React Native bindings
+# Mozilla UniFFI — generates the C-ABI scaffolding + foreign-language bindings
+# (Kotlin/Swift/Python) from `#[uniffi::export]`.
 uniffi = { version = "0.31", features = ["cli"] }
-
-# Error handling
-anyhow.workspace = true
 thiserror = "2"
+# Domain-separated per-purpose RNG derivation from the wallet seed.
+sha2.workspace = true
 
-# Field element types (Fr conversions)
-ark-ff = { workspace = true }
-ark-bn254 = { workspace = true }
-
-# secp256k1 key operations (used only by `derive_nft_keypair` for the
-# App. A ECDH step; in-circuit signing is on Grumpkin).
-k256.workspace = true
-
-# Flat-aggregation prove path goes through pso-zk-circuit-noir's
-# re-exported `barretenberg::prove::prove_ultra_honk_keccak`
-# directly (its N-parameterised witness shape doesn't fit the
-# trait wrappers used for the standalone ownership / full-proof
-# circuits).
-
-# Direct dep on barretenberg-rs for the standalone Schnorr-on-Grumpkin
-# verify FFI exposed in `mod schnorr` — sign re-uses
-# `pso_zk_circuit_noir::schnorr_grumpkin::schnorr_sign_be`, but the
-# verify side has no public wrapper in pso-zk-circuit-noir yet, so we
-# call `schnorr_verify_signature` here directly. Version pinned to
-# match the transitive copy pulled in via pso-zk-circuit-noir so cargo
-# resolves a single bb backend across the workspace.
-barretenberg-rs = "=5.0.0-nightly.20260512"
-
-# Date parsing
-chrono.workspace = true
-
-# ISO 4217 currency lookup
-iso_currency.workspace = true
-
-# Byte array conversions
-generic-array.workspace = true
-
-# Random nonce generation
-rand.workspace = true
-
-# Stable get_or_try_init for lazy circuit singletons
-once_cell.workspace = true
-
-[features]
-default = []
-dev-tools = []
-
+# Generates the foreign bindings, e.g. `cargo run --bin uniffi-bindgen-mobile
+# -- generate --library <dylib> --language kotlin --out-dir <dir>`.
 [[bin]]
 name = "uniffi-bindgen-mobile"
 path = "uniffi-bindgen.rs"

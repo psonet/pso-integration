@@ -2,23 +2,24 @@
 name = "pso-sra-integration"
 version.workspace = true
 edition = "2021"
-description = "FFI bindings for Secp256K1-based ECDH and Poseidon5 ownership computation"
+description = "UniFFI bindings for the PSO attester (SRA): consent-box NFT issuance + SpendingUnit hashing"
 license = "MIT"
 
 [lib]
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-pso-protocol.workspace = true
-pso-integrations-shared.workspace = true
+# Consent box + entity hashing (alloy feature = FieldEncode impls for the
+# pso-chain-abi entity's ABI field types).
+pso-protocol = { workspace = true, features = ["alloy"] }
+# Typed SpendingUnit entity (the on-chain hash preimage).
+pso-chain-abi.workspace = true
+alloy-primitives.workspace = true
+ark-std.workspace = true
+sha2.workspace = true
 
-k256.workspace = true
-ark-ff = { workspace = true }
-ark-bn254 = { workspace = true }
-bs58.workspace = true
-rand.workspace = true
-thiserror.workspace = true
-uniffi = { version = "0.28.0", features = ["cli"] }
+uniffi = { version = "0.31", features = ["cli"] }
+thiserror = "2"
 
 [[bin]]
 name = "uniffi-bindgen-sra"

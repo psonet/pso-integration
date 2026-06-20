@@ -15,7 +15,7 @@ path = "src/lib.rs"
 [dependencies]
 # Workspace crates
 pso-protocol.workspace = true
-pso-zk-circuit-noir.workspace = true
+pso-zk-backend.workspace = true
 pso-zk-canonical.workspace = true
 pso-nft.workspace = true
 pso-integrations-shared.workspace = true

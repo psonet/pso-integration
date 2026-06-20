@@ -5,51 +5,56 @@ edition = "2021"
 [workspace]
 members = [
     "crates/pso-mobile-integration",
-    "crates/pso-integrations-shared",
     "crates/pso-sra-integration",
-    "crates/pso-l2-client",
-    "cli/pso-zk-cli",
-    "cli/pso-sra-cli",
-    "cli/pso-wallet-cli",
-    "domain/pso-nft",
-    "testsuite",
+    # --- FOLLOW-UP pass (testsuite rework). Temporarily out of the workspace so
+    # the FFI crates above build standalone; these still use the old 0.7 surface.
+    # `pso-l2-client` is slated for removal: its sol! ABI is superseded by
+    # `pso-chain-abi` and the e2e testsuite will stand up its own two eth-style
+    # clients (SRA + wallet) directly on alloy + pso-protocol + the FFI crates.
+    # ("pso-nft" and "pso-integrations-shared" were already deleted — their
+    # functions moved to pso-chain-abi / pso-protocol / pso-zk-canonical.)
+    # "crates/pso-l2-client",
+    # "cli/pso-zk-cli",
+    # "cli/pso-sra-cli",
+    # "cli/pso-wallet-cli",
+    # "testsuite",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-# Sibling-repo crates.
-# - `pso-protocol` and `pso-zk-canonical` are published to crates.io
-#   and consumed from the registry.
-# - `pso-zk-circuit-noir` is not on crates.io (it vendors `noir_rs`
-#   which transitively depends on git-only `noir-lang/noir` crates);
-#   consumed via git+tag. It re-exports the noir_rs proving glue
-#   downstream consumers in this workspace need, so we no longer
-#   carry a separate `noir_rs` dep or the `[patch.zkpassport/noir_rs]`
-#   override here.
-pso-protocol         = "0.7"
-pso-zk-canonical     = "0.7"
-# Pinned to v0.7.0 — the binding-hash revision: the ownership/aggregation
-# circuits fold `binding_hash` into the per-SU Schnorr pre-hash and expose it
-# as the trailing public input (2N+1), and pso-protocol 0.7 renamed the binding
-# id to the generic `commitment_id`. The whole stack stays on the 0.7 line so
-# witness types + circuit hashes match across the proof-path boundary.
-pso-zk-circuit-noir  = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.7.0" }
+# Sibling-repo crates — the generic pso-protocol 0.8 / zk 0.9 stack.
+# - `pso-protocol` (0.8, generic `Suite`/`PsoV1` rewrite, Poseidon2, ark 0.6)
+#   and `pso-zk-canonical` (0.9, registry circuit descriptors) are on crates.io.
+# - `pso-zk-backend` (renamed from `pso-zk-circuit-noir`) holds the toolchain
+#   coupling (acvm solve + barretenberg FFI); not on crates.io (git-only noir
+#   deps), so consumed via git+tag. It's generic over the core circuit seams.
+# - `pso-chain-abi` provides the typed SpendingUnit/TributeDraft entity structs;
+#   consumed from pso-chain-next via git until it's published to crates.io.
+pso-protocol         = "0.8"
+pso-zk-canonical     = "0.9"
+pso-zk-backend       = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.9.0" }
+pso-chain-abi        = { git = "ssh://git@github.com/psonet/pso-chain-next.git", branch = "feat/protocol-0.8" }
 
-# Crates internal to this workspace
-pso-nft                  = { path = "domain/pso-nft" }
-pso-integrations-shared  = { path = "crates/pso-integrations-shared" }
+# Crates internal to this workspace. (pso-nft + pso-integrations-shared deleted —
+# entities now come from pso-chain-abi, witness/crypto from pso-protocol +
+# pso-zk-canonical. The l2-client path dep is retained only for the deferred
+# testsuite, and is slated for removal in that rework.)
 pso-l2-client            = { path = "crates/pso-l2-client" }
 
 # External
-pso-poseidon = "0.3"
+pso-poseidon = "0.4"
 # MinRoot VDF over BLS12-381. Used by `pso-mobile-integration::vdf` for
 # the proof-of-personhood challenge wallets attach to Users-pool txs.
 pso-vdf      = "0.2"
 k256         = { version = "0.14.0-rc.8", features = ["std"] }
-ark-ff       = { version = "0.5", features = ["asm", "parallel"] }
-ark-bn254    = { version = "0.5", features = ["default"] }
+ark-ff       = { version = "0.6", features = ["asm", "parallel"] }
+ark-bn254    = { version = "0.6", features = ["default"] }
+ark-std      = { version = "0.6", default-features = false }
 bs58 = "0.5"
 rand = "0.8"
+# Standalone alloy ABI primitives (Address/B256/Uint) for the attester's
+# entity construction — lighter than the full `alloy` umbrella below.
+alloy-primitives = { version = "1", default-features = false, features = ["std"] }
 thiserror = "1.0"
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }

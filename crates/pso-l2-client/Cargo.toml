@@ -10,7 +10,7 @@ pso-protocol.workspace = true
 # k256-bound witness builders (ownership, signature, aggregation).
 pso-integrations-shared.workspace = true
 # Prover wrapper for ownership / aggregation / full proofs.
-pso-zk-circuit-noir.workspace = true
+pso-zk-backend.workspace = true
 # Canonical descriptors (circuit_hash + VK bytes per tier).
 pso-zk-canonical.workspace = true
 # Flat-aggregation prove path uses pso-zk-circuit-noir's re-exported
