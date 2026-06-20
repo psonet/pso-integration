@@ -111,7 +111,6 @@ opt-level = 3
 overflow-checks = false
 debug = false
 
-# Size-optimized profile for mobile builds (iOS/Android).
 # Max-optimization profile for the mobile/wallet native libs (iOS staticlib +
 # Android cdylib). Proving runs on-device, so optimize for speed: opt-level 3 +
 # fat LTO + a single codegen unit, then `strip` for a lean artifact.

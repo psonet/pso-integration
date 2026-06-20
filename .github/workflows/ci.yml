@@ -365,6 +365,13 @@ jobs:
       # Built with the max-optimization `mobile` profile (fat LTO,
       # codegen-units=1, opt-level 3) — proving runs on-device.
       - name: cargo build -p pso-mobile-integration
+        env:
+          # rustc defaults aarch64-apple-ios to a 10.0 minimum deployment
+          # target, but `aws-lc-sys` references `___chkstk_darwin` (only in
+          # iOS >= 13 libSystem) and barretenberg's objects are built for
+          # 15.0. Pin 15.0 so the cdylib links cleanly (no undefined
+          # `___chkstk_darwin`) and the "built for newer iOS" warnings clear.
+          IPHONEOS_DEPLOYMENT_TARGET: "15.0"
         run: cargo build --profile mobile -p pso-mobile-integration --target ${{ matrix.target }}
 
       - name: Stage static lib
