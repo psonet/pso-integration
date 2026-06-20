@@ -11,16 +11,15 @@
 
 use std::time::Duration;
 
-use alloy::primitives::{Bytes, FixedBytes, U256};
+use alloy_primitives::{Bytes, FixedBytes, U256};
 use async_trait::async_trait;
-use k256::SecretKey;
 
-use pso_l2_client::abi::{ITributeDraft, TRIBUTE_DRAFT};
+use pso_chain_abi::addresses::TRIBUTE_DRAFT;
+use pso_chain_abi::interfaces::ITributeDraft;
 
 use crate::bridge::SuMintArgs;
-use crate::clients::sra::into_pso_error;
-use crate::data::{random_id, random_secret_key, random_su_args};
-use crate::{PsoContractError, Scenario, TestEnv};
+use crate::data::{random_id, random_su_args};
+use crate::{decode_text, PsoContractError, Scenario, TestEnv};
 
 const EUR: u16 = 978;
 const USD: u16 = 840;
@@ -65,7 +64,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .err()
         .ok_or_else(|| eyre::eyre!("S023: expected NotSameCurrency revert, got success"))?;
 
-    let typed = into_pso_error(pso_l2_client::L2ClientError::Contract(format!("{err}")));
+    let typed = decode_text(&format!("{err}"));
     match &typed {
         PsoContractError::NotSameCurrency => Ok(()),
         other => Err(eyre::eyre!("S023: expected NotSameCurrency, got {other}")),
@@ -87,13 +86,21 @@ async fn mint_su_with(
         .wait_for_sr_existence(&[sr_id], &[], Duration::from_secs(30))
         .await?;
 
-    let consent_sk = SecretKey::from_slice(&random_secret_key())?;
+    // Fresh consent per SU (distinct owners).
+    let wallet = pso_mobile_integration::Wallet::new();
+    let mut seed = [0u8; 32];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+    let consent = wallet
+        .generate_consent(seed.to_vec())
+        .map_err(|e| eyre::eyre!("consent: {e:?}"))?;
+    let consent_pk = consent
+        .public_key()
+        .map_err(|e| eyre::eyre!("consent pk: {e:?}"))?;
     let receipt = env
         .bridge
         .mint_su(SuMintArgs {
-            su_id: random_id(),
-            consent_pk: consent_sk.public_key(),
-            referrer_address: alloy::primitives::Address::ZERO,
+            consent_pk,
+            referrer_address: alloy_primitives::Address::ZERO,
             currency,
             worldwide_day,
             amount_base: base,

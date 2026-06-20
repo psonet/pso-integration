@@ -2,7 +2,8 @@
 
 use clap::Args as ClapArgs;
 use eyre::Result;
-use pso_l2_client::L2Client;
+
+use crate::client::SraRpc;
 
 #[derive(ClapArgs, Debug)]
 pub struct Args {
@@ -11,10 +12,9 @@ pub struct Args {
     pub sr_id: String,
 }
 
-pub async fn run(client: &L2Client, args: Args) -> Result<()> {
+pub async fn run(client: &SraRpc, args: Args) -> Result<()> {
     let sr_id = super::parse_uint256(&args.sr_id)?;
-
-    let tx_hash = pso_l2_client::sra::register_spending_record(client, sr_id).await?;
-    println!("{{\"tx_hash\":\"{:?}\"}}", tx_hash);
+    let tx_hash = client.register_spending_record(sr_id).await?;
+    println!("{{\"tx_hash\":\"{tx_hash:?}\"}}");
     Ok(())
 }

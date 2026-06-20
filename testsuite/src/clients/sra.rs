@@ -1,10 +1,11 @@
 //! Agents-pool client.
 //!
-//! Wraps a signing [`L2Client`] pointed at the standard EL JSON-RPC
-//! (`:19545`) and re-exports the existing `pso-l2-client::sra` flow
-//! functions as methods. The pool validator admits a tx iff
+//! Wraps a signing [`RpcHandle`] pointed at the standard EL JSON-RPC
+//! (`:19545`) and exposes the SRA flow functions (SR/AR/SU submit) as
+//! methods, built directly on the `pso-chain-abi` interfaces. The pool
+//! validator admits a tx iff
 //!
-//! - `from` is in `SRARegistry` (`isActive(sender) == true`), AND
+//! - `from` is in `AttestersRegistry` (`isActive(sender) == true`), AND
 //! - `(to, selector)` is in the agents-pool allowlist
 //!   (`SR.submit`, `AR.submit`, `SU.submit`).
 //!
@@ -13,28 +14,60 @@
 
 use std::time::{Duration, Instant};
 
-use alloy::primitives::{Address, TxHash, U256};
-use alloy::providers::Provider;
+use alloy_primitives::{Address, FixedBytes, TxHash, U256};
+use alloy_provider::Provider;
 
-use pso_l2_client::abi::{IAmendmentRecord, ISpendingRecord, ISpendingUnit};
-use pso_l2_client::{sra, L2Client, L2ClientError};
+use pso_chain_abi::addresses::{AMENDMENT_RECORD, SPENDING_RECORD, SPENDING_UNIT};
+use pso_chain_abi::interfaces::{IAmendmentRecord, ISpendingRecord, ISpendingUnit};
 
-/// Agents-pool RPC client. Cheap to clone (`L2Client` is `Arc`-backed).
+use crate::clients::rpc::{RpcError, RpcHandle};
+
+/// All fields for `SpendingUnit.submit`. Bundled into a struct so the
+/// CLI's 8 args don't degrade into positional spaghetti.
+#[derive(Debug, Clone)]
+pub struct MintSpendingUnitArgs {
+    /// SU id (uint256). Random — the wallet must store this off-chain
+    /// so it can later reference the SU when assembling a TributeDraft.
+    pub su_id: U256,
+    /// Wallet-supplied Poseidon ownership commitment for this SU.
+    pub derived_owner: FixedBytes<32>,
+    /// Wallet self-address captured at consent initiation. The SRA holds
+    /// it for the consent session and stamps every SU minted in that
+    /// session with it (the on-chain `referrerAddress`). `Address::ZERO`
+    /// means "no referrer". TributeDraft aggregation later collects the
+    /// deduplicated referrer set from the SUs.
+    pub referrer_address: Address,
+    /// ISO 4217 numeric currency code.
+    pub currency: u16,
+    /// Worldwide-day count (days since 2021-01-01) — `uint32` slot.
+    pub worldwide_day: u32,
+    /// Amount integer part.
+    pub amount_base: u64,
+    /// Amount fractional part (atto). On-chain the SU stores this in a
+    /// `uint64` slot (atto < 1e18 always fits); we keep the wider
+    /// `u128` here for caller convenience and narrow at submit time.
+    pub amount_atto: u128,
+    /// Spending record IDs included in this SU.
+    pub sr_ids: Vec<U256>,
+    /// Amendment-record IDs.
+    pub amendment_sr_ids: Vec<U256>,
+}
+
+/// Agents-pool RPC client. Cheap to clone ([`RpcHandle`] is `Arc`-backed).
 #[derive(Clone)]
 pub struct SraClient {
     /// Underlying alloy + signer handle. Exposed via accessors when a
     /// caller needs to drop down to read-only Provider operations.
-    inner: L2Client,
+    inner: RpcHandle,
     rpc_url: String,
 }
 
 impl SraClient {
     /// Build from an RPC URL, chain id, and a 32-byte secp256k1 secret
     /// key. The signer is gas-free — every helper here pins
-    /// `max_fee_per_gas = max_priority_fee_per_gas = 0` via the
-    /// underlying `pso-l2-client::sra` functions.
+    /// `max_fee_per_gas = max_priority_fee_per_gas = 0`.
     pub fn new(rpc_url: &str, chain_id: u64, secret_key: &[u8; 32]) -> eyre::Result<Self> {
-        let inner = L2Client::connect_with_signer(rpc_url, chain_id, secret_key)
+        let inner = RpcHandle::connect_with_signer(rpc_url, chain_id, secret_key)
             .map_err(|e| eyre::eyre!("SraClient connect: {e}"))?;
         Ok(Self {
             inner,
@@ -42,14 +75,15 @@ impl SraClient {
         })
     }
 
-    /// Underlying `L2Client`. Use when calling a `pso-l2-client::*`
-    /// free function that takes `&L2Client`.
-    pub fn inner(&self) -> &L2Client {
+    /// Underlying [`RpcHandle`]. Use when a scenario needs to drop down
+    /// to a raw `Provider` (read-only state, custom calldata).
+    pub fn inner(&self) -> &RpcHandle {
         &self.inner
     }
 
     /// RPC URL this client was built against — handy for spawning a
-    /// fresh read-only `L2Client` for tx-wait polling.
+    /// fresh read-only handle for tx-wait polling.
+    #[allow(dead_code)]
     pub fn rpc_url(&self) -> &str {
         &self.rpc_url
     }
@@ -65,32 +99,74 @@ impl SraClient {
     }
 
     // -----------------------------------------------------------------
-    // Flow methods — thin re-exports of `pso-l2-client::sra::*` keyed
-    // off `self.inner`. Returning `L2ClientError` keeps the helper
+    // Flow methods — direct alloy `.submit(...)` calls on the
+    // `pso-chain-abi` interfaces. Returning `RpcError` keeps the helper
     // surface honest; scenarios map into `PsoContractError` via
     // `into_pso_error`.
     // -----------------------------------------------------------------
 
     /// `SpendingRecord.submit(srId)`.
-    pub async fn register_spending_record(&self, sr_id: U256) -> Result<TxHash, L2ClientError> {
-        sra::register_spending_record(&self.inner, sr_id).await
+    pub async fn register_spending_record(&self, sr_id: U256) -> Result<TxHash, RpcError> {
+        let provider = self.inner.write_provider()?;
+        let inst = ISpendingRecord::new(SPENDING_RECORD, provider);
+        let pending = inst
+            .submit(sr_id)
+            .max_fee_per_gas(0)
+            .max_priority_fee_per_gas(0)
+            .send()
+            .await
+            .map_err(|e| RpcError::Contract(format!("SR submit: {e}")))?;
+        Ok(*pending.tx_hash())
     }
 
     /// `AmendmentRecord.submit(arId)`.
-    pub async fn register_amendment_record(&self, ar_id: U256) -> Result<TxHash, L2ClientError> {
-        sra::register_amendment_record(&self.inner, ar_id).await
+    pub async fn register_amendment_record(&self, ar_id: U256) -> Result<TxHash, RpcError> {
+        let provider = self.inner.write_provider()?;
+        let inst = IAmendmentRecord::new(AMENDMENT_RECORD, provider);
+        let pending = inst
+            .submit(ar_id)
+            .max_fee_per_gas(0)
+            .max_priority_fee_per_gas(0)
+            .send()
+            .await
+            .map_err(|e| RpcError::Contract(format!("AR submit: {e}")))?;
+        Ok(*pending.tx_hash())
     }
 
-    /// `SpendingUnit.submit(...)`.
+    /// `SpendingUnit.submit(...)`. The SRA is the on-chain submitter;
+    /// the wallet supplied the `derivedOwner` commitment off-line so the
+    /// chain can later verify a ZK ownership proof against it.
     pub async fn mint_spending_unit(
         &self,
-        args: sra::MintSpendingUnitArgs,
-    ) -> Result<TxHash, L2ClientError> {
-        sra::mint_spending_unit(&self.inner, args).await
+        args: MintSpendingUnitArgs,
+    ) -> Result<TxHash, RpcError> {
+        let provider = self.inner.write_provider()?;
+        let inst = ISpendingUnit::new(SPENDING_UNIT, provider);
+        let pending = inst
+            .submit(
+                args.su_id,
+                args.derived_owner,
+                // `referrerAddress` — the wallet self-address from the consent
+                // session (`Address::ZERO` if none).
+                args.referrer_address,
+                args.currency,
+                args.worldwide_day,
+                args.amount_base,
+                // SU stores atto in a `uint64` slot; atto < 1e18 always fits.
+                args.amount_atto as u64,
+                args.sr_ids,
+                args.amendment_sr_ids,
+            )
+            .max_fee_per_gas(0)
+            .max_priority_fee_per_gas(0)
+            .send()
+            .await
+            .map_err(|e| RpcError::Contract(format!("SU submit: {e}")))?;
+        Ok(*pending.tx_hash())
     }
 
     // -----------------------------------------------------------------
-    // Wait helpers (migrated from the old `tests/full_flow.rs`).
+    // Wait helpers.
     // -----------------------------------------------------------------
 
     /// Poll `eth_getTransactionReceipt(tx)` until success/failure or
@@ -125,14 +201,14 @@ impl SraClient {
         timeout: Duration,
     ) -> eyre::Result<()> {
         let provider = self.inner.read_provider();
-        let sr = ISpendingRecord::new(pso_l2_client::abi::SPENDING_RECORD, &provider);
-        let ar = IAmendmentRecord::new(pso_l2_client::abi::AMENDMENT_RECORD, &provider);
+        let sr = ISpendingRecord::new(SPENDING_RECORD, &provider);
+        let ar = IAmendmentRecord::new(AMENDMENT_RECORD, &provider);
         let deadline = Instant::now() + timeout;
         let mut last_missing: Option<U256> = None;
         loop {
             let mut all = true;
             for id in sr_ids {
-                if !sr_exists(&sr, *id).await? {
+                if !sr.exists(*id).call().await? {
                     all = false;
                     last_missing = Some(*id);
                     break;
@@ -140,7 +216,7 @@ impl SraClient {
             }
             if all {
                 for id in ar_ids {
-                    if !ar_exists(&ar, *id).await? {
+                    if !ar.exists(*id).call().await? {
                         all = false;
                         last_missing = Some(*id);
                         break;
@@ -171,12 +247,12 @@ impl SraClient {
         timeout: Duration,
     ) -> eyre::Result<()> {
         let provider = self.inner.read_provider();
-        let su = ISpendingUnit::new(pso_l2_client::abi::SPENDING_UNIT, &provider);
+        let su = ISpendingUnit::new(SPENDING_UNIT, &provider);
         let deadline = Instant::now() + timeout;
         loop {
             let mut all = true;
             for id in su_ids {
-                if !su_exists(&su, *id).await? {
+                if !su.exists(*id).call().await? {
                     all = false;
                     break;
                 }
@@ -195,52 +271,6 @@ impl SraClient {
     }
 }
 
-// `into_pso_error` and `decode_text` moved to
-// `pso_l2_client::contract_errors`. Scenarios import them as
-// `pso_l2_client::into_pso_error` (re-exported from lib.rs); we
-// also re-export at `crate::clients::sra::into_pso_error` to keep
-// the prior import path stable.
-pub use pso_l2_client::into_pso_error;
-
-// =====================================================================
-// Inline ABI views — `exists(uint256)` isn't on the standard interface
-// declared in pso-l2-client; mirror it here so we can wait on it.
-// =====================================================================
-
-alloy::sol! {
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    interface IExistsLike {
-        function exists(uint256 tokenId) external view returns (bool);
-    }
-}
-
-async fn sr_exists<P: Provider + Clone>(
-    sr: &ISpendingRecord::ISpendingRecordInstance<&P>,
-    id: U256,
-) -> eyre::Result<bool> {
-    // We don't have `exists` in `ISpendingRecord`; reinterpret the
-    // contract through the local `IExistsLike` view at the same
-    // address.
-    let provider = sr.provider();
-    let view = IExistsLike::new(*sr.address(), provider);
-    Ok(view.exists(id).call().await?)
-}
-
-async fn ar_exists<P: Provider + Clone>(
-    ar: &IAmendmentRecord::IAmendmentRecordInstance<&P>,
-    id: U256,
-) -> eyre::Result<bool> {
-    let provider = ar.provider();
-    let view = IExistsLike::new(*ar.address(), provider);
-    Ok(view.exists(id).call().await?)
-}
-
-async fn su_exists<P: Provider + Clone>(
-    su: &ISpendingUnit::ISpendingUnitInstance<&P>,
-    id: U256,
-) -> eyre::Result<bool> {
-    let provider = su.provider();
-    let view = IExistsLike::new(*su.address(), provider);
-    Ok(view.exists(id).call().await?)
-}
+// Re-export the typed-error helpers so scenarios can keep importing
+// `crate::clients::sra::into_pso_error` (the prior path).
+pub use crate::clients::contract_errors::into_pso_error;

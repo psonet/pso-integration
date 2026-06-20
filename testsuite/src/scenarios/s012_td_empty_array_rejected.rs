@@ -14,13 +14,13 @@
 //! pso-chain later admits TD.submit through the agents pool (or via
 //! a new TD-only lane), this test will switch to a real broadcast.
 
-use alloy::primitives::{Bytes, U256};
+use alloy_primitives::{Bytes, U256};
 use async_trait::async_trait;
 
-use pso_l2_client::abi::{ITributeDraft, TRIBUTE_DRAFT};
+use pso_chain_abi::addresses::TRIBUTE_DRAFT;
+use pso_chain_abi::interfaces::ITributeDraft;
 
-use crate::{PsoContractError, Scenario, TestEnv};
-use pso_l2_client::contract_errors::decode_text;
+use crate::{decode_text, PsoContractError, Scenario, TestEnv};
 
 pub struct S012;
 

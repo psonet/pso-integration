@@ -11,7 +11,7 @@
 
 use std::time::Duration;
 
-use alloy::primitives::{B256, U256};
+use alloy_primitives::{B256, U256};
 use async_trait::async_trait;
 
 use crate::{Scenario, TestEnv};

@@ -20,11 +20,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use pso_l2_client::PsoContractError;
-
 use crate::clients::sra::into_pso_error;
 use crate::data::random_id;
-use crate::{Scenario, TestEnv};
+use crate::{PsoContractError, Scenario, TestEnv};
 
 pub struct S033;
 

@@ -19,9 +19,9 @@
 
 use std::time::{Duration, Instant};
 
-use alloy::providers::ProviderBuilder;
-use alloy::sol;
-use alloy::transports::http::reqwest::Url;
+use alloy_provider::ProviderBuilder;
+use alloy_sol_types::sol;
+use alloy_transport_http::reqwest::Url;
 use async_trait::async_trait;
 
 use crate::{Scenario, TestEnv};

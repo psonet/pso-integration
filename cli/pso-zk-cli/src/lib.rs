@@ -57,43 +57,33 @@ pub enum NftCommands {
 /// Subcommands for proof operations.
 #[derive(Subcommand)]
 pub enum ProofCommands {
-    /// Generate a zero-knowledge proof from NFT data
+    /// Generate an ownership ZK proof from NFT data (the canonical
+    /// `OwnershipProof` circuit; no separate circuit file is needed —
+    /// the registry-frozen ACIR/VK are embedded in `pso-zk-canonical`).
     Generate {
         /// Path to the NFT JSON file (from `nft generate`)
         #[arg(short, long)]
         nft: PathBuf,
 
-        /// Path to the compiled circuit JSON file
-        #[arg(short, long)]
-        circuit: PathBuf,
-
-        /// Proof mode: "full" (ownership + Merkle) or "ownership" (ownership only)
-        #[arg(short, long, default_value = "full")]
-        mode: ProofMode,
-
         /// Output JSON file path for the generated proof
         #[arg(short, long)]
         output: PathBuf,
 
-        /// Redeemer EOA as 20-byte hex (`0x...`). The proof's binding_hash
-        /// commits to `(redeemer, commitmentId, chainId)` so an L1 verifier
-        /// can pin redemption to this address.
+        /// Redeemer EOA as 20-byte hex (`0x...`). The proof's binding
+        /// commits to `(redeemer, commitmentId, chainId)` so an L1
+        /// verifier can pin redemption to this address.
         #[arg(long)]
         redeemer: String,
 
-        /// Chain id for the binding_hash.
+        /// Chain id for the binding.
         #[arg(long)]
         chain_id: u64,
     },
-    /// Verify a previously generated proof
+    /// Verify a previously generated ownership proof
     Verify {
         /// Path to the proof JSON file (from `proof generate`)
         #[arg(short, long)]
         proof: PathBuf,
-
-        /// Path to the compiled circuit JSON file
-        #[arg(short, long)]
-        circuit: PathBuf,
     },
     /// Generate an SU-ownership aggregation proof for TributeDraft
     /// submission. Reads an input JSON describing the wallet's
@@ -119,13 +109,4 @@ pub enum NftType {
     TributeDraft,
     /// Generate a SpendingUnit NFT
     SpendingUnit,
-}
-
-/// Proof mode selector.
-#[derive(Clone, ValueEnum)]
-pub enum ProofMode {
-    /// Full proof: ownership + Merkle inclusion
-    Full,
-    /// Ownership-only proof
-    Ownership,
 }

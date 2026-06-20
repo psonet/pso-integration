@@ -25,8 +25,8 @@
 //! - `1` — Primary SRA signer (Hardhat #1, `0x7099…`).
 //! - `2..=9` — General-purpose wallets.
 
-use alloy::primitives::Address;
-use alloy::signers::local::PrivateKeySigner;
+use alloy_primitives::Address;
+use alloy_signer_local::PrivateKeySigner;
 
 /// The 10 canonical Hardhat-mnemonic secret keys, in index order.
 ///

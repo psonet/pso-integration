@@ -5,11 +5,12 @@
 
 use std::time::Duration;
 
-use alloy::primitives::{Address, Bytes, FixedBytes};
-use alloy::sol_types::SolCall;
+use alloy_primitives::{Address, Bytes, FixedBytes};
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 
-use pso_l2_client::abi::{ISpendingUnit, SPENDING_UNIT};
+use pso_chain_abi::addresses::SPENDING_UNIT;
+use pso_chain_abi::interfaces::ISpendingUnit;
 
 use crate::clients::actor::ActorClientError;
 use crate::data::{random_id, random_su_args};

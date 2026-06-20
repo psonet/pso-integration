@@ -9,9 +9,19 @@ name = "pso-wallet-cli"
 path = "src/main.rs"
 
 [dependencies]
-pso-l2-client.workspace = true
+# Wallet flows (witness + aggregation) via the mobile FFI; TD submit via
+# the pso-chain-abi interface on a local alloy RPC handle.
+pso-chain-abi.workspace          = true
+pso-mobile-integration.workspace = true
+pso-protocol.workspace           = true
 
-alloy.workspace      = true
+alloy-primitives.workspace     = true
+alloy-provider.workspace       = true
+alloy-contract.workspace       = true
+alloy-network.workspace        = true
+alloy-signer.workspace         = true
+alloy-signer-local.workspace   = true
+alloy-transport-http.workspace = true
 clap.workspace       = true
 tokio.workspace      = true
 eyre.workspace       = true
@@ -20,9 +30,3 @@ serde.workspace      = true
 serde_json.workspace = true
 tracing.workspace            = true
 tracing-subscriber.workspace = true
-
-# Fr / k256 are needed because the wallet flows accept hex-encoded
-# field elements and SEC1-encoded keys on the CLI surface.
-ark-bn254.workspace = true
-ark-ff.workspace    = true
-k256.workspace      = true

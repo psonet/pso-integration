@@ -5,7 +5,7 @@ pub mod prepare_su;
 pub mod prove_td_full;
 pub mod submit_td;
 
-use alloy::primitives::U256;
+use alloy_primitives::{FixedBytes, U256};
 use eyre::Result;
 
 pub(crate) fn parse_uint256(s: &str) -> Result<U256> {
@@ -17,4 +17,13 @@ pub(crate) fn parse_uint256(s: &str) -> Result<U256> {
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&bytes);
     Ok(U256::from_be_bytes(arr))
+}
+
+pub(crate) fn parse_b32(s: &str) -> Result<FixedBytes<32>> {
+    let s = s.strip_prefix("0x").unwrap_or(s);
+    let bytes = hex::decode(s)?;
+    if bytes.len() != 32 {
+        eyre::bail!("bytes32 hex must be 32 bytes, got {}", bytes.len());
+    }
+    Ok(FixedBytes::from_slice(&bytes))
 }

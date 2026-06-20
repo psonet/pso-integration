@@ -20,10 +20,11 @@
 use crate::clients::actor::ActorClientError;
 use crate::data::random_id;
 use crate::{Scenario, TestEnv};
-use alloy::primitives::Bytes;
-use alloy::sol_types::SolCall;
+use alloy_primitives::Bytes;
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
-use pso_l2_client::abi::{ISpendingRecord, SPENDING_RECORD};
+use pso_chain_abi::addresses::SPENDING_RECORD;
+use pso_chain_abi::interfaces::ISpendingRecord;
 use std::sync::{Arc, Mutex};
 pub struct S014;
 #[async_trait]

@@ -6,6 +6,7 @@
 //! Here the proof clears the structural checks:
 //! - `combinedProof.length >= 100` (exactly headerLen for tier 1, k=3).
 //! - `num_inputs` prefix BE-decodes to 3 (= 2N+1), matching `k`.
+//!
 //! But the three declared public inputs are zero — they can't match
 //! the reconstructed `(derived_owner, su_hash, binding_hash)` triple.
 //! The contract reverts at the first mismatch with
@@ -17,16 +18,15 @@
 
 use std::time::Duration;
 
-use alloy::primitives::{Bytes, FixedBytes, U256};
+use alloy_primitives::{Bytes, FixedBytes, U256};
 use async_trait::async_trait;
-use k256::SecretKey;
 
-use pso_l2_client::abi::{ITributeDraft, TRIBUTE_DRAFT};
+use pso_chain_abi::addresses::TRIBUTE_DRAFT;
+use pso_chain_abi::interfaces::ITributeDraft;
 
 use crate::bridge::SuMintArgs;
-use crate::clients::sra::into_pso_error;
-use crate::data::{random_id, random_secret_key, random_su_args};
-use crate::{PsoContractError, Scenario, TestEnv};
+use crate::data::{random_id, random_su_args};
+use crate::{decode_text, PsoContractError, Scenario, TestEnv};
 
 pub struct S019;
 
@@ -75,7 +75,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .err()
         .ok_or_else(|| eyre::eyre!("S019: expected revert on mismatched proof, got success"))?;
 
-    let typed = into_pso_error(pso_l2_client::L2ClientError::Contract(format!("{err}")));
+    let typed = decode_text(&format!("{err}"));
     match &typed {
         PsoContractError::InvalidAggregationProof => Ok(()),
         other => Err(eyre::eyre!(
@@ -94,14 +94,17 @@ async fn mint_one_su(env: &TestEnv) -> eyre::Result<U256> {
         .wait_for_sr_existence(&[sr_id], &[], Duration::from_secs(30))
         .await?;
 
-    let consent_sk_bytes = random_secret_key();
-    let consent_sk = SecretKey::from_slice(&consent_sk_bytes)?;
-    let consent_pk = consent_sk.public_key();
+    let wallet = pso_mobile_integration::Wallet::new();
+    let consent = wallet
+        .generate_consent(vec![0x19; 32])
+        .map_err(|e| eyre::eyre!("consent: {e:?}"))?;
+    let consent_pk = consent
+        .public_key()
+        .map_err(|e| eyre::eyre!("consent pk: {e:?}"))?;
     let shape = random_su_args();
     let args = SuMintArgs {
-        su_id: random_id(),
         consent_pk,
-        referrer_address: alloy::primitives::Address::ZERO,
+        referrer_address: alloy_primitives::Address::ZERO,
         currency: shape.currency,
         worldwide_day: shape.worldwide_day,
         amount_base: shape.amount_base,

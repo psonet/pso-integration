@@ -6,13 +6,11 @@
 //! `permissionMask == 0` reverts with `InvalidMask`. We call as
 //! admin with a fresh non-zero address but `mask = 0`.
 
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 use async_trait::async_trait;
 
-use pso_l2_client::PsoContractError;
-
 use crate::clients::sra::into_pso_error;
-use crate::{Scenario, TestEnv};
+use crate::{PsoContractError, Scenario, TestEnv};
 
 pub struct S029;
 
@@ -37,8 +35,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             fake,
             0u32,
             false,
-            alloy::primitives::B256::ZERO,
-            alloy::primitives::U256::ZERO,
+            alloy_primitives::B256::ZERO,
+            alloy_primitives::U256::ZERO,
         )
         .await
         .err()

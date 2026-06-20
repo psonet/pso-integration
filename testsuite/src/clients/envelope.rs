@@ -27,7 +27,7 @@
 
 use std::ops::Range;
 
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use sha2::{Digest, Sha256};

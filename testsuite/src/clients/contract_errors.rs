@@ -1,17 +1,17 @@
 //! Typed Solidity custom-error decoder for the PSO L2 contracts.
 //!
 //! The contracts revert with named custom errors (`error AttesterNotActive();`
-//! etc.); alloy surfaces them as `alloy::contract::Error::TransportError`
+//! etc.); alloy surfaces them as `alloy_contract::Error::TransportError`
 //! with the 4-byte selector + ABI-encoded args in the inner JSON-RPC
 //! reply's `data` field. This module centralises:
 //!
 //! 1. Solidity error definitions matching every variant exposed by the
-//!    pso-chain contracts under test (`alloy::sol!`-derived
+//!    pso-chain contracts under test (`alloy_sol_types::sol!`-derived
 //!    `SolError`s with the right argument types).
 //! 2. A flat enum [`PsoContractError`] each scenario asserts against —
 //!    `matches!(err, PsoContractError::AttesterNotActive)` etc.
 //! 3. Two entry points the rest of the crate goes through:
-//!    [`decode`] from an `alloy::contract::Error`, and
+//!    [`decode`] from an `alloy_contract::Error`, and
 //!    [`decode_from_bytes`] when only the raw revert bytes are
 //!    available (the actor RPC path).
 //!
@@ -19,17 +19,20 @@
 //! [`PsoContractError::Other`] with the original error text — that's
 //! the gate that catches drift between contract definitions and this
 //! decoder.
+//!
+//! This module was vendored out of the (removed) `pso-l2-client` crate;
+//! the testsuite now owns its client layer.
 
-use alloy::primitives::{Address, U256};
-use alloy::sol;
-use alloy::sol_types::SolError;
+use alloy_primitives::{Address, U256};
+use alloy_sol_types::sol;
+use alloy_sol_types::SolError;
 
-use crate::L2ClientError;
+use crate::clients::rpc::RpcError;
 
 // -----------------------------------------------------------------
 // Solidity error declarations — one per chain-side `error ...(...)`.
 //
-// `alloy::sol!` generates a `SolError` impl giving us `SELECTOR` and
+// `alloy_sol_types::sol!` generates a `SolError` impl giving us `SELECTOR` and
 // `abi_decode_raw`. We try each in turn in `decode_from_bytes`. The
 // argument types must match the contract definitions byte-for-byte;
 // mismatches surface as `Other(...)` (the decode call fails) rather
@@ -276,20 +279,19 @@ impl std::error::Error for PsoContractError {}
 // Decoders
 // -----------------------------------------------------------------
 
-/// Try to extract revert-data bytes from an `alloy::contract::Error`
+/// Try to extract revert-data bytes from an `alloy_contract::Error`
 /// and decode them. Falls back to the textual error if no `data` is
 /// present.
-pub fn decode(err: alloy::contract::Error) -> PsoContractError {
+pub fn decode(err: alloy_contract::Error) -> PsoContractError {
     decode_text(&err.to_string())
 }
 
-/// Convert an `L2ClientError` (the top-level pso-l2-client error
+/// Convert an [`RpcError`] (the testsuite's top-level client error
 /// wrapping alloy + everything else) into a typed
 /// [`PsoContractError`]. The common path is
-/// `L2ClientError::Contract(String)` — alloy's Display output
-/// carries the hex-encoded revert data plus any framing the JSON-RPC
-/// layer added. Everything else collapses into
-/// [`PsoContractError::Other`].
+/// [`RpcError::Contract`] — alloy's Display output carries the
+/// hex-encoded revert data plus any framing the JSON-RPC layer added.
+/// Everything else collapses into [`PsoContractError::Other`].
 ///
 /// Typical scenario / client-side usage:
 ///
@@ -301,20 +303,20 @@ pub fn decode(err: alloy::contract::Error) -> PsoContractError {
 ///     other => Err(other),
 /// }
 /// ```
-pub fn into_pso_error(err: L2ClientError) -> PsoContractError {
+pub fn into_pso_error(err: RpcError) -> PsoContractError {
     match err {
-        L2ClientError::Contract(s) => decode_text(&s),
+        RpcError::Contract(s) => decode_text(&s),
         other => PsoContractError::Other(other.to_string()),
     }
 }
 
 /// Same decoder, starting from the textual error rendition. Useful
 /// when the error has already been collapsed into a `String` by an
-/// upstream wrapper (e.g. `L2ClientError::Contract(String)`).
+/// upstream wrapper (e.g. `RpcError::Contract(String)`).
 pub fn decode_text(msg: &str) -> PsoContractError {
     // First: did the inner JSON-RPC error carry hex `data`? alloy
     // surfaces it inline in the Display impl as `data: "0x..."`. We
-    // can also try `as_revert_data()` on `alloy::contract::Error`
+    // can also try `as_revert_data()` on `alloy_contract::Error`
     // when available, but the textual path is uniform across the
     // alloy versions in this workspace.
     if let Some(bytes) = extract_revert_bytes(msg) {

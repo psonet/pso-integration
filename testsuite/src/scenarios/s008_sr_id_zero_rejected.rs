@@ -4,7 +4,7 @@
 //! InvalidTokenId())`. Hits agents pool, EVM execution, reverts on
 //! the first storage write.
 
-use alloy::primitives::U256;
+use alloy_primitives::U256;
 use async_trait::async_trait;
 
 use crate::clients::sra::into_pso_error;

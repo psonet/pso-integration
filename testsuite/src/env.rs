@@ -38,17 +38,16 @@
 //! - **`env.bridge`** — the long-lived SRA bridge background task
 //!   used by SU-mint scenarios.
 
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 use k256::SecretKey;
 use rand::rngs::OsRng;
 use rand::RngCore;
-
-use pso_l2_client::{L2Client, L2ClientError};
 
 use crate::bridge::{spawn_sra_loop, Bridge};
 use crate::cli::Cli;
 use crate::clients::actor::ActorClient;
 use crate::clients::admin::{AdminClient, SRA_REGISTRY};
+use crate::clients::rpc::{RpcError, RpcHandle};
 use crate::clients::sra::SraClient;
 
 /// Permission mask SRAs are registered with: bits 0–3 = SU.submit,
@@ -166,8 +165,8 @@ impl TestEnv {
         // would require a non-zero `consensus_key`, which this SRA doesn't need
         // — it only submits records).
         let is_rotation_candidate = false;
-        let consensus_key = alloy::primitives::B256::ZERO;
-        let p2p_addr = alloy::primitives::U256::ZERO;
+        let consensus_key = alloy_primitives::B256::ZERO;
+        let p2p_addr = alloy_primitives::U256::ZERO;
         self.admin
             .register_sra(
                 target_addr,
@@ -228,7 +227,7 @@ impl TestEnv {
     /// Returns the `(current, previous, epoch_start_block)` triple the
     /// server reports back so the caller can assert on the rollover.
     pub async fn advance_epoch(&self, new_difficulty: u64) -> eyre::Result<(u64, u64, u64)> {
-        use alloy::transports::http::reqwest::{Client, Url};
+        use alloy_transport_http::reqwest::{Client, Url};
         use serde_json::{json, Value};
         let url: Url = self
             .actor_rpc_url
@@ -279,7 +278,7 @@ pub(crate) fn roll_random_key() -> [u8; 32] {
 /// `k256::SecretKey` so we surface a typed error if the bytes don't
 /// land in a valid scalar.
 fn derive_address(secret: &[u8; 32]) -> eyre::Result<Address> {
-    use alloy::signers::local::PrivateKeySigner;
+    use alloy_signer_local::PrivateKeySigner;
     let _ = SecretKey::from_slice(secret).map_err(|e| eyre::eyre!("secret key invalid: {e}"))?;
     let signer = PrivateKeySigner::from_slice(secret)
         .map_err(|e| eyre::eyre!("secret key signer build: {e}"))?;
@@ -310,25 +309,12 @@ async fn wait_for_active(
 }
 
 // -----------------------------------------------------------------
-// SRA registry bootstrap — minimal SOL ABI inline. We can't share
-// `pso-l2-client::abi` because the registry interface isn't in that
-// crate's surface; mirroring it here matches the layout of the
-// original `tests/full_flow.rs::bootstrap_register_sra`.
+// SRA registry bootstrap — uses the `pso-chain-abi` registry interface
+// directly (register + isActive). Kept as a standalone entry point so
+// the env construction can run it *before* the `AdminClient` is built.
 // -----------------------------------------------------------------
 
-alloy::sol! {
-    #[sol(rpc)]
-    interface IAttestersRegistryBootstrap {
-        function isActive(address attester) external view returns (bool);
-        function register(
-            address attester,
-            uint32 permissionMask,
-            bool isRotationCandidate,
-            bytes32 consensusKey,
-            uint256 p2pAddr
-        ) external;
-    }
-}
+use pso_chain_abi::interfaces::IAttestersRegistry;
 
 /// Register `target_secret_key`'s address with the SRA registry,
 /// signing with `admin_secret_key` (the registry admin's secret key
@@ -348,25 +334,25 @@ pub async fn bootstrap_register_sra(
     admin_secret_key: &[u8; 32],
 ) -> eyre::Result<()> {
     let target_client =
-        L2Client::connect_with_signer(rpc, chain_id, target_secret_key).map_err(map_l2_err)?;
+        RpcHandle::connect_with_signer(rpc, chain_id, target_secret_key).map_err(map_rpc_err)?;
     let target_addr = target_client
         .signer_address()
         .ok_or_else(|| eyre::eyre!("SRA signer missing"))?;
 
     let read_provider = target_client.read_provider();
-    let registry = IAttestersRegistryBootstrap::new(SRA_REGISTRY, &read_provider);
+    let registry = IAttestersRegistry::new(SRA_REGISTRY, &read_provider);
     if registry.isActive(target_addr).call().await? {
         return Ok(());
     }
 
     let admin_client =
-        L2Client::connect_with_signer(rpc, chain_id, admin_secret_key).map_err(map_l2_err)?;
-    let write_provider = admin_client.write_provider().map_err(map_l2_err)?;
-    let registry_w = IAttestersRegistryBootstrap::new(SRA_REGISTRY, &write_provider);
+        RpcHandle::connect_with_signer(rpc, chain_id, admin_secret_key).map_err(map_rpc_err)?;
+    let write_provider = admin_client.write_provider().map_err(map_rpc_err)?;
+    let registry_w = IAttestersRegistry::new(SRA_REGISTRY, &write_provider);
     // Active-only attester with a zero consensus identity (see `new_sra`).
     let is_rotation_candidate = false;
-    let consensus_key = alloy::primitives::B256::ZERO;
-    let p2p_addr = alloy::primitives::U256::ZERO;
+    let consensus_key = alloy_primitives::B256::ZERO;
+    let p2p_addr = alloy_primitives::U256::ZERO;
     let pending = registry_w
         .register(
             target_addr,
@@ -383,6 +369,6 @@ pub async fn bootstrap_register_sra(
     Ok(())
 }
 
-fn map_l2_err(e: L2ClientError) -> eyre::Report {
-    eyre::eyre!("l2 client: {e}")
+fn map_rpc_err(e: RpcError) -> eyre::Report {
+    eyre::eyre!("rpc client: {e}")
 }

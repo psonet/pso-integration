@@ -86,7 +86,7 @@ pub struct Cli {
     /// the harness that brings up the devnet deploys the inbox and
     /// passes its address here.
     #[arg(long, value_parser = parse_address)]
-    pub da_inbox: Option<alloy::primitives::Address>,
+    pub da_inbox: Option<alloy_primitives::Address>,
 
     /// Print one row per compiled-in scenario (id + description) on
     /// stdout, then exit 0 without touching the chain. Combine with
@@ -129,7 +129,7 @@ pub struct Cli {
 /// Thin wrapper over alloy's `Address` parser so `--da-inbox` carries a
 /// typed `Address` rather than a stringly-typed field; the error message
 /// is CLI-end-user readable.
-pub fn parse_address(input: &str) -> Result<alloy::primitives::Address, String> {
+pub fn parse_address(input: &str) -> Result<alloy_primitives::Address, String> {
     input
         .trim()
         .parse()

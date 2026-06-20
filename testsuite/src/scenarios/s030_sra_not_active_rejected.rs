@@ -13,9 +13,7 @@ use async_trait::async_trait;
 
 use crate::clients::sra::SraClient;
 use crate::data::{random_id, random_secret_key};
-use crate::{PsoContractError, Scenario, TestEnv};
-
-use pso_l2_client::into_pso_error;
+use crate::{into_pso_error, PsoContractError, Scenario, TestEnv};
 
 pub struct S030;
 

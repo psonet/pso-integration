@@ -8,15 +8,13 @@
 //! admin think they've revoked an address that was actually
 //! never bound — leaving a live SRA assumed dead.
 
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 use async_trait::async_trait;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
-use pso_l2_client::PsoContractError;
-
 use crate::clients::sra::into_pso_error;
-use crate::{Scenario, TestEnv};
+use crate::{PsoContractError, Scenario, TestEnv};
 
 pub struct S037;
 

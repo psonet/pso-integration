@@ -15,11 +15,11 @@
 
 use std::time::{Duration, Instant};
 
-use alloy::primitives::{Bytes, U256};
-use alloy::sol_types::SolCall;
+use alloy_primitives::{Bytes, U256};
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 
-use pso_l2_client::abi::TRIBUTE_DRAFT;
+use pso_chain_abi::addresses::TRIBUTE_DRAFT;
 
 use crate::{Scenario, TestEnv};
 
@@ -43,7 +43,7 @@ impl Scenario for S043 {
     }
 }
 
-alloy::sol! {
+alloy_sol_types::sol! {
     interface ITdViewS043 {
         function getData(uint256 tdId) external;
     }

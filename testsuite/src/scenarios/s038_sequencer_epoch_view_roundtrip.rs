@@ -17,9 +17,9 @@
 //! the right shape, and the rank-0 entry agrees between the two
 //! query paths.
 
-use alloy::primitives::{Address, FixedBytes};
+use alloy_primitives::{Address, FixedBytes};
 use async_trait::async_trait;
-use pso_l2_client::abi::{ISequencerEpoch, SEQUENCER_EPOCH};
+use crate::clients::contracts::{ISequencerEpoch, SEQUENCER_EPOCH};
 
 use crate::{Scenario, TestEnv};
 

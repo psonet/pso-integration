@@ -1,21 +1,26 @@
 //! `pso-sra-cli` — command-line frontend for SRA-side L2 operations.
 //!
 //! ```text
-//! pso-sra-cli register-sr  --sr-id 0x... --keys "k1,k2" --values "0x..,0x.."
-//! pso-sra-cli register-ar  --sr-id 0x... --keys "k1,k2" --values "0x..,0x.."
+//! pso-sra-cli register-sr  --sr-id 0x...
+//! pso-sra-cli register-ar  --ar-id 0x...
 //! pso-sra-cli mint-su      --su-id 0x... --derived-owner 0x... --currency 978 \
-//!                          --worldwide-day 1825 --amount-base 100 --amount-atto 0 \
+//!                          --worldwide-day 20250923 --amount-base 100 --amount-atto 0 \
 //!                          --sr-ids 0x..,0x.. --amendment-sr-ids
 //! ```
 //!
 //! Every command requires `--rpc <URL>` and `--key <HEX>` (or
-//! `PSO_L2_RPC` / `PSO_SRA_KEY` env vars). All flows are thin wrappers
-//! over `pso_l2_client::sra::*`.
+//! `PSO_L2_RPC` / `PSO_SRA_KEY` env vars). SR/AR/SU submits go directly
+//! through the `pso-chain-abi` interfaces on a thin local alloy RPC
+//! handle; `mint-su` derives the SU id / owner / hash via the attester
+//! FFI before submitting.
 
 use clap::Parser;
 use eyre::Result;
 
+mod client;
 mod commands;
+
+use client::SraRpc;
 
 #[derive(Parser, Debug)]
 #[command(name = "pso-sra-cli", version, about = "PSO SRA-side L2 operations")]
@@ -57,8 +62,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let key = parse_key_hex(&cli.key)?;
-    let client = pso_l2_client::L2Client::connect_with_signer(&cli.rpc, cli.chain_id, &key)
-        .map_err(|e| eyre::eyre!("connect: {e}"))?;
+    let client = SraRpc::connect(&cli.rpc, cli.chain_id, &key)?;
 
     match cli.command {
         Command::RegisterSr(args) => commands::register_sr::run(&client, args).await,

@@ -18,34 +18,36 @@ name = "pso-e2e"
 path = "src/main.rs"
 
 [dependencies]
-# In-workspace dependency tree mirroring the legacy
-# `crates/pso-l2-e2e-tests` crate. `pso-mobile-integration` stays as a
-# path dep so the wider workspace can iterate the VDF helper in lockstep.
-pso-l2-client.workspace            = true
-pso-integrations-shared.workspace  = true
+# The testsuite owns its client layer (a thin alloy RPC handle + the
+# typed contract-error decoder), built directly on these. The two FFI
+# crates are the surfaces real Kotlin/JVM + React-Native clients consume
+# via UniFFI; driving the bridge through them exercises the same public
+# surface real clients hit.
+pso-chain-abi.workspace            = true
 pso-protocol.workspace             = true
 pso-vdf.workspace                  = true
-pso-nft.workspace                  = true
-pso-mobile-integration             = { path = "../crates/pso-mobile-integration" }
-# The SRA crate is the one Kotlin/JVM SRA clients consume via UniFFI.
-# The bridge calls it directly so the bridge's e2e path exercises the
-# same public surface real clients hit.
-pso-sra-integration                = { path = "../crates/pso-sra-integration" }
+pso-mobile-integration.workspace   = true
+pso-attester-integration.workspace = true
 
-# Bs58 decode for the `GeneratedOwnership.ownership` field the SRA
-# crate returns. The bridge re-interprets those LE-encoded bytes as
-# the BE bytes the `0x0212` SU-hash precompile expects.
-bs58.workspace                     = true
+# RPC / signing / ABI — standalone alloy sub-crates, version-matched to
+# pso-chain-abi (a single alloy_provider/alloy_contract in the graph).
+alloy-primitives.workspace         = true
+alloy-sol-types.workspace          = true
+alloy-provider.workspace           = true
+alloy-contract.workspace           = true
+alloy-network.workspace            = true
+alloy-signer.workspace             = true
+alloy-signer-local.workspace       = true
+alloy-consensus.workspace          = true
+alloy-eips.workspace               = true
+alloy-rpc-types-eth.workspace      = true
+alloy-transport-http.workspace     = true
 
-# RPC / signing / ABI.
-alloy.workspace                    = true
-
-# BN254 / Grumpkin scalar math (Fr <-> bytes conversions in S001).
-ark-bn254.workspace                = true
-ark-ff.workspace                   = true
-
-# secp256k1 key material for the wallet path.
+# secp256k1 key material for address derivation in the env bootstrap.
 k256.workspace                     = true
+
+# Local error glue for the RPC handle.
+thiserror.workspace                = true
 
 # Random generators (su_nonce, nullifier, test ids).
 rand.workspace                     = true

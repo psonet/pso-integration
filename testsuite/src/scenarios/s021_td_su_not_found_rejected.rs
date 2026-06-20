@@ -11,14 +11,14 @@
 //! `derivedOwner` so the early `EmptyArray` / `AlreadyExists`
 //! checks pass.
 
-use alloy::primitives::{Bytes, FixedBytes};
+use alloy_primitives::{Bytes, FixedBytes};
 use async_trait::async_trait;
 
-use pso_l2_client::abi::{ITributeDraft, TRIBUTE_DRAFT};
+use pso_chain_abi::addresses::TRIBUTE_DRAFT;
+use pso_chain_abi::interfaces::ITributeDraft;
 
-use crate::clients::sra::into_pso_error;
 use crate::data::random_id;
-use crate::{PsoContractError, Scenario, TestEnv};
+use crate::{decode_text, PsoContractError, Scenario, TestEnv};
 
 pub struct S021;
 
@@ -54,7 +54,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .err()
         .ok_or_else(|| eyre::eyre!("S021: expected revert on phantom suId, got success"))?;
 
-    let typed = into_pso_error(pso_l2_client::L2ClientError::Contract(format!("{err}")));
+    let typed = decode_text(&format!("{err}"));
     match &typed {
         PsoContractError::NotFound(id) => {
             if *id != phantom_su {

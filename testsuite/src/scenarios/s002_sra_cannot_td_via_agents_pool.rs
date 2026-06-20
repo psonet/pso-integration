@@ -14,15 +14,15 @@
 //! via the agents pool"; the layer that enforces it is an
 //! implementation detail of the chain build under test.
 
-use alloy::primitives::{Bytes, FixedBytes, U256};
-use alloy::providers::Provider;
-use alloy::sol_types::SolCall;
+use alloy_primitives::{Bytes, FixedBytes, U256};
+use alloy_provider::Provider;
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 
-use pso_l2_client::abi::{ITributeDraft, TRIBUTE_DRAFT};
+use pso_chain_abi::addresses::TRIBUTE_DRAFT;
+use pso_chain_abi::interfaces::ITributeDraft;
 
-use crate::{Scenario, TestEnv};
-use pso_l2_client::contract_errors::decode_text;
+use crate::{decode_text, Scenario, TestEnv};
 
 pub struct S002;
 
@@ -56,9 +56,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // checks the `(to, selector)` allowlist — that's where
     // `TributeDraft.submit` falls through.
     let provider = env.sra_zero.inner().write_provider()?;
-    let tx_req = alloy::rpc::types::TransactionRequest::default()
+    let tx_req = alloy_rpc_types_eth::TransactionRequest::default()
         .to(TRIBUTE_DRAFT)
-        .input(alloy::rpc::types::TransactionInput::new(Bytes::from(data)))
+        .input(alloy_rpc_types_eth::TransactionInput::new(Bytes::from(data)))
         .max_fee_per_gas(0)
         .max_priority_fee_per_gas(0);
     let result = provider.send_transaction(tx_req).await;

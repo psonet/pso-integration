@@ -6,18 +6,16 @@ edition = "2021"
 members = [
     "crates/pso-mobile-integration",
     "crates/pso-attester-integration",
-    # --- FOLLOW-UP pass (testsuite rework). Temporarily out of the workspace so
-    # the FFI crates above build standalone; these still use the old 0.7 surface.
-    # `pso-l2-client` is slated for removal: its sol! ABI is superseded by
-    # `pso-chain-abi` and the e2e testsuite will stand up its own two eth-style
-    # clients (SRA + wallet) directly on alloy + pso-protocol + the FFI crates.
-    # ("pso-nft" and "pso-integrations-shared" were already deleted — their
-    # functions moved to pso-chain-abi / pso-protocol / pso-zk-canonical.)
-    # "crates/pso-l2-client",
-    # "cli/pso-zk-cli",
-    # "cli/pso-sra-cli",
-    # "cli/pso-wallet-cli",
-    # "testsuite",
+    # The e2e testsuite owns its own client layer (alloy RPC handle + typed
+    # contract-error decoder), built directly on alloy + pso-chain-abi +
+    # pso-protocol + the FFI crates. The three CLIs consume the same deps
+    # directly. (`pso-l2-client`, `pso-nft`, and `pso-integrations-shared`
+    # were removed — their surface moved to pso-chain-abi / pso-protocol /
+    # pso-zk-canonical and the testsuite's own modules.)
+    "cli/pso-zk-cli",
+    "cli/pso-sra-cli",
+    "cli/pso-wallet-cli",
+    "testsuite",
 ]
 resolver = "2"
 
@@ -35,11 +33,11 @@ pso-zk-canonical     = "0.9"
 pso-zk-backend       = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.9.0" }
 pso-chain-abi        = { git = "ssh://git@github.com/psonet/pso-chain-next.git", branch = "feat/protocol-0.8" }
 
-# Crates internal to this workspace. (pso-nft + pso-integrations-shared deleted —
-# entities now come from pso-chain-abi, witness/crypto from pso-protocol +
-# pso-zk-canonical. The l2-client path dep is retained only for the deferred
-# testsuite, and is slated for removal in that rework.)
-pso-l2-client            = { path = "crates/pso-l2-client" }
+# In-workspace FFI path deps. The testsuite + CLIs consume these directly
+# (alongside pso-chain-abi / pso-protocol) — there is no shared "l2-client"
+# library crate anymore; each consumer wires its own thin alloy RPC handle.
+pso-mobile-integration   = { path = "crates/pso-mobile-integration" }
+pso-attester-integration = { path = "crates/pso-attester-integration" }
 
 # External
 pso-poseidon = "0.4"
@@ -52,9 +50,24 @@ ark-bn254    = { version = "0.6", features = ["default"] }
 ark-std      = { version = "0.6", default-features = false }
 bs58 = "0.5"
 rand = "0.8"
-# Standalone alloy ABI primitives (Address/B256/Uint) for the attester's
-# entity construction — lighter than the full `alloy` umbrella below.
-alloy-primitives = { version = "1", default-features = false, features = ["std"] }
+# Standalone alloy sub-crates, version-matched to `pso-chain-abi`
+# (provider/contract/network/signer/consensus/eips/rpc-types = "2",
+# primitives/sol-types = "1"). The `alloy` umbrella v1.x re-exports the
+# 1.x provider/contract sub-crates, which are ABI-incompatible with the
+# 2.x `Provider`/contract instances `pso-chain-abi`'s `sol!` bindings
+# generate — so the testsuite + CLIs consume the sub-crates directly to
+# keep a single `alloy_provider`/`alloy_contract` in the graph.
+alloy-primitives    = { version = "1", default-features = false, features = ["std"] }
+alloy-sol-types     = { version = "1", features = ["json"] }
+alloy-provider      = { version = "2", default-features = false, features = ["reqwest"] }
+alloy-contract      = { version = "2", default-features = false }
+alloy-network       = "2"
+alloy-signer        = "2"
+alloy-signer-local  = "2"
+alloy-consensus     = { version = "2", features = ["serde"] }
+alloy-eips          = { version = "2", features = ["serde"] }
+alloy-rpc-types-eth = "2"
+alloy-transport-http = { version = "2", features = ["reqwest"] }
 thiserror = "1.0"
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -62,24 +75,11 @@ serde_json = "1.0"
 generic-array = "0.14"
 chrono = "0.4"
 iso_currency = "0.5"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 hmac = "0.12"
 sha2 = "0.10"
 once_cell = "1"
 hex = "0.4"
-
-# Alloy umbrella — used by `pso-l2-client` for L2 RPC interaction.
-# The umbrella crate bundles every alloy submodule with version-aligned
-# pinning, sparing us a multi-crate dependency matrix.
-alloy = { version = "1.0", features = [
-    "sol-types",
-    "contract",
-    "providers",
-    "signer-local",
-    "network",
-    "rpc-types-eth",
-    "reqwest",
-] }
 
 # Async runtime — needed by the L2 client + CLIs + e2e tests.
 tokio = { version = "1", features = ["full"] }

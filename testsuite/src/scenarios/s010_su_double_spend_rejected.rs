@@ -7,12 +7,10 @@
 
 use std::time::Duration;
 
-use alloy::primitives::{FixedBytes, U256};
+use alloy_primitives::{FixedBytes, U256};
 use async_trait::async_trait;
 
-use pso_l2_client::sra::MintSpendingUnitArgs;
-
-use crate::clients::sra::into_pso_error;
+use crate::clients::sra::{into_pso_error, MintSpendingUnitArgs};
 use crate::data::{random_id, random_su_args};
 use crate::{PsoContractError, Scenario, TestEnv};
 
@@ -50,7 +48,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: su1_id,
             derived_owner: FixedBytes::from([0u8; 32]),
-            referrer_address: alloy::primitives::Address::ZERO,
+            referrer_address: alloy_primitives::Address::ZERO,
             currency: shape.currency,
             worldwide_day: shape.worldwide_day,
             amount_base: shape.amount_base,
@@ -72,7 +70,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: su2_id,
             derived_owner: FixedBytes::from([0u8; 32]),
-            referrer_address: alloy::primitives::Address::ZERO,
+            referrer_address: alloy_primitives::Address::ZERO,
             currency: shape.currency,
             worldwide_day: shape.worldwide_day,
             amount_base: shape.amount_base,

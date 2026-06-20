@@ -24,11 +24,12 @@
 //!
 //!   admission(valid envelope, unregistered sender) != "SRA not registered"
 
-use alloy::primitives::{Bytes, FixedBytes, U256};
-use alloy::sol_types::SolCall;
+use alloy_primitives::{Bytes, FixedBytes, U256};
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 
-use pso_l2_client::abi::{ITributeDraft, TRIBUTE_DRAFT};
+use pso_chain_abi::addresses::TRIBUTE_DRAFT;
+use pso_chain_abi::interfaces::ITributeDraft;
 
 use crate::clients::actor::ActorClientError;
 use crate::data::random_id;

@@ -31,19 +31,19 @@
 
 use std::time::{Duration, Instant};
 
-use alloy::consensus::{SignableTransaction, TxEip1559, TxEnvelope};
-use alloy::eips::eip2930::AccessList;
-use alloy::network::TxSignerSync;
-use alloy::primitives::{Bytes, TxKind, U256};
-use alloy::signers::local::PrivateKeySigner;
-use alloy::signers::Signer;
-use alloy::sol_types::SolCall;
-use alloy::transports::http::reqwest::{Client as HttpClient, Url};
+use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
+use alloy_eips::eip2930::AccessList;
+use alloy_network::TxSignerSync;
+use alloy_primitives::{Bytes, TxKind, U256};
+use alloy_signer_local::PrivateKeySigner;
+use alloy_signer::Signer;
+use alloy_sol_types::SolCall;
+use alloy_transport_http::reqwest::{Client as HttpClient, Url};
 use async_trait::async_trait;
 use rand::RngCore;
 use serde_json::{json, Value};
 
-use pso_l2_client::abi::TRIBUTE_DRAFT;
+use pso_chain_abi::addresses::TRIBUTE_DRAFT;
 
 use crate::{Scenario, TestEnv};
 
@@ -62,7 +62,7 @@ impl Scenario for S042 {
     }
 }
 
-alloy::sol! {
+alloy_sol_types::sol! {
     /// Benign inner call — selector only; return data is ignored.
     interface ITdViewS042 {
         function getData(uint256 tdId) external;
@@ -126,24 +126,23 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .await?,
     )?;
 
-    // 2. VDF through the MOBILE API — the exact functions the UniFFI
-    //    bindings export to React Native.
-    let vdf_input = pso_mobile_integration::derive_vdf_input(
-        wallet_addr.0 .0.to_vec(),
-        nonce,
-        head,
-        env.chain_id,
-    )
-    .map_err(|e| eyre::eyre!("mobile derive_vdf_input: {e:?}"))?;
-    let vdf = pso_mobile_integration::compute_vdf(vdf_input.clone(), difficulty)
+    // 2. VDF through the MOBILE API — the exact `Wallet` methods the
+    //    UniFFI bindings export to React Native.
+    let mobile = pso_mobile_integration::Wallet::new();
+    let vdf_input = mobile
+        .derive_vdf_input(wallet_addr.0 .0.to_vec(), nonce, head, env.chain_id)
+        .map_err(|e| eyre::eyre!("mobile derive_vdf_input: {e:?}"))?;
+    let vdf = mobile
+        .compute_vdf(vdf_input.clone(), difficulty)
         .map_err(|e| eyre::eyre!("mobile compute_vdf: {e:?}"))?;
-    let verified = pso_mobile_integration::verify_vdf(
-        vdf_input.clone(),
-        vdf.output.clone(),
-        vdf.proof.clone(),
-        difficulty,
-    )
-    .map_err(|e| eyre::eyre!("mobile verify_vdf: {e:?}"))?;
+    let verified = mobile
+        .verify_vdf(
+            vdf_input.clone(),
+            vdf.output.clone(),
+            vdf.proof.clone(),
+            difficulty,
+        )
+        .map_err(|e| eyre::eyre!("mobile verify_vdf: {e:?}"))?;
     if !verified {
         return Err(eyre::eyre!("S042: mobile verify_vdf failed on own output"));
     }
@@ -174,7 +173,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let sig = signer.sign_transaction_sync(&mut tx)?;
     let inner_envelope: TxEnvelope = tx.into_signed(sig).into();
     let mut inner_2718 = Vec::with_capacity(512);
-    alloy::eips::eip2718::Encodable2718::encode_2718(&inner_envelope, &mut inner_2718);
+    alloy_eips::eip2718::Encodable2718::encode_2718(&inner_envelope, &mut inner_2718);
 
     // 5. Wrap the inner 2718 bytes in the 0x76 VdfProtectedTransaction wire
     //    envelope, assembled inline per the node's wire spec.

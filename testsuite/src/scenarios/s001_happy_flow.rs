@@ -1,44 +1,46 @@
 //! S001 — full happy-path flow.
 //!
-//! 1. Wallet rolls a `consent_sk` (long-lived) and ships `consent_pk`
-//!    out-of-band to the SRA bridge.
+//! 1. Wallet derives a `consent` keypair (long-lived) via the mobile FFI
+//!    and ships its `consent_pk` (a 32-byte PsoV1 point) out-of-band to
+//!    the attester bridge.
 //! 2. SRA registers two SRs and one AR per SU it intends to mint.
-//! 3. Bridge mints the SUs, deriving the matching `derivedOwner`
-//!    server-side from `(sk_cu, consent_pk, su_nonce)`.
-//! 4. Wallet reconstructs every `SuOwnershipWitness` via App. A and
-//!    confirms its `derivedOwner` matches the on-chain SU's value
-//!    (read back through `SpendingUnit.getData(suId)`).
-//! 5. Wallet rolls a per-TD Grumpkin keypair, produces a flat
-//!    aggregation proof over the SUs, and submits
-//!    `TributeDraft.submit(...)` **itself** through the actor pool —
-//!    a fresh non-SRA key, PSO envelope with a real VDF, executed via
-//!    TributeDraft's `PsoEnvelopeDispatcher` fallback. This is the
-//!    real-topology wallet path; the previous SRA-relayed agents-pool
-//!    submission only worked through the `ADMIN_MASK` backdoor
-//!    (`TD.submit` is not in the agents-lane `(to, selector)` table).
+//! 3. Bridge mints the SUs through the attester FFI, which derives the
+//!    matching `derivedOwner` + the wallet's reconstruction material
+//!    (the [`IssuanceReport`](pso_mobile_integration::IssuanceReport)).
+//! 4. Wallet builds one ownership witness per SU
+//!    ([`Consent::witness`](pso_mobile_integration::Consent)) over the
+//!    submission `binding`, and confirms each witness's `derivedOwner`
+//!    matches the on-chain SU's value (read via `SpendingUnit.getData`).
+//! 5. Wallet rolls a per-TD header, aggregates the witnesses into a
+//!    flat-aggregation proof ([`Wallet::prove_ownership`]), and submits
+//!    `TributeDraft.submit(...)` **itself** through the actor pool — a
+//!    fresh non-SRA key, PSO envelope with a real VDF, executed via
+//!    TributeDraft's `PsoEnvelopeDispatcher` fallback.
 //! 6. Asserts the TD's stored `derivedOwner` matches the wallet's
 //!    computation.
 //!
-//! This is the spec-correct §4 + §5 round-trip; the previous
-//! `tests/full_flow.rs` covered the same path inline.
+//! NOTE: the pre-0.8 suite reconstructed per-SU Grumpkin signing
+//! material by hand (App. A ECDH/HKDF) and recomputed the SU hash with
+//! `pso_protocol::nft::compute_spending_unit_hash`. The new FFI
+//! encapsulates the signer (it never crosses the boundary) and computes
+//! the owner / nft_hash internally, so the flow drives the FFI directly
+//! rather than recomputing those values by hand.
 
 use std::time::Duration;
 
-use alloy::primitives::{Bytes, FixedBytes, U256};
-use alloy::sol_types::SolCall;
-use ark_bn254::Fr;
-use ark_ff::PrimeField;
+use alloy_primitives::{Address, Bytes, FixedBytes, U256};
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
-use k256::SecretKey;
 
-use pso_l2_client::abi::ITributeDraft;
-use pso_l2_client::wallet::{
-    prepare_su_ownership_material, prepare_td_keypair, SuAggregationInput,
-};
+use pso_chain_abi::addresses::{SPENDING_UNIT, TRIBUTE_DRAFT};
+use pso_chain_abi::interfaces::ITributeDraft;
+use pso_protocol::{Codec, PsoV1, Suite};
 
 use crate::bridge::SuMintArgs;
-use crate::data::{random_id, random_secret_key, random_su_args};
+use crate::data::{random_id, random_su_args};
 use crate::{Scenario, TestEnv};
+
+type Fr = <PsoV1 as Suite>::Field;
 
 /// Unit struct implementing [`Scenario`]; the binary boxes it via
 /// `scenarios::all`.
@@ -57,64 +59,23 @@ impl Scenario for S001 {
     }
 }
 
-// `SpendingUnit.getData(suId)` / `TributeDraft.getData(tdId)` return
-// the canonical fields the wallet needs to cross-check the SRA's
-// computation. `pso-l2-client::abi` only exposes `submit`; we declare
-// the view slice we need inline.
-alloy::sol! {
-    /// Mirrors `ISpendingUnit.SpendingUnitEntity` exactly — field order
-    /// and types must match the Solidity struct or alloy's ABI decode
-    /// rejects with a `type check failed for offset (usize)` because
-    /// it interprets a misaligned slot as a dynamic-data offset.
-    struct SpendingUnitEntity {
-        uint256 suId;
-        bytes32 derivedOwner;
-        address attesterAddress;
-        address referrerAddress;
-        uint32  worldwideDay;
-        uint64  amountBase;
-        uint64  amountAtto;
-        uint16  currency;
-        uint256[] srIds;
-        uint256[] arIds;
-    }
-
-    #[sol(rpc)]
-    interface ISpendingUnitView {
-        function getData(uint256 suId) external view returns (SpendingUnitEntity memory);
-    }
-
-    /// Mirrors `ITributeDraft.TributeDraftEntity`. Field order matches
-    /// the Solidity struct; see the SU view above for why this matters.
-    struct TributeDraftEntity {
-        uint256 tdId;
-        bytes32 derivedOwner;
-        uint16  currency;
-        uint32  worldwideDay;
-        uint64  amountBase;
-        uint64  amountAtto;
-        uint256[] suIds;
-        address[] referrers;
-        address[] attesters;
-    }
-
-    #[sol(rpc)]
-    interface ITributeDraftView {
-        function getData(uint256 tdId) external view returns (TributeDraftEntity memory);
-    }
-}
-
-const SPENDING_UNIT_ADDR: alloy::primitives::Address = pso_l2_client::abi::SPENDING_UNIT;
-const TRIBUTE_DRAFT_ADDR: alloy::primitives::Address = pso_l2_client::abi::TRIBUTE_DRAFT;
-
+// `SpendingUnit.getData(suId)` / `TributeDraft.getData(tdId)` return the
+// canonical fields the wallet cross-checks. The `pso-chain-abi`
+// interfaces carry `getData`, but the `*Entity` return structs are the
+// shape we read below.
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     // -----------------------------------------------------------------
     // 1. Wallet setup. The wallet's consent key is long-lived; the
     //    bridge ingests `consent_pk` per SU mint.
     // -----------------------------------------------------------------
-    let consent_sk_bytes = random_secret_key();
-    let consent_sk = SecretKey::from_slice(&consent_sk_bytes)?;
-    let consent_pk = consent_sk.public_key();
+    let wallet_ffi = pso_mobile_integration::Wallet::new();
+    let consent_seed = vec![0x01u8; 32];
+    let consent = wallet_ffi
+        .generate_consent(consent_seed.clone())
+        .map_err(|e| eyre::eyre!("generate_consent: {e:?}"))?;
+    let consent_pk = consent
+        .public_key()
+        .map_err(|e| eyre::eyre!("consent public_key: {e:?}"))?;
 
     // -----------------------------------------------------------------
     // 2. SRA registers two SRs + one AR per SU. Each SU consumes a
@@ -128,9 +89,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let mut all_ar: Vec<U256> = Vec::new();
 
     for _ in 0..N_SUS {
-        let sr1 = random_id();
-        let sr2 = random_id();
-        let ar1 = random_id();
+        let sr1 = field_id();
+        let sr2 = field_id();
+        let ar1 = field_id();
 
         let tx = env.sra_zero.register_spending_record(sr1).await?;
         env.sra_zero
@@ -157,34 +118,25 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .await?;
 
     // -----------------------------------------------------------------
-    // 3. Bridge mints each SU. The bridge handles the `(sk_cu,
-    //    pk_cu, su_nonce)` ceremony + derivedOwner commit + on-chain
-    //    `SpendingUnit.submit`; tests just hand it shapes.
+    // 3. Bridge mints each SU through the attester FFI. The bridge
+    //    handles the consent box + derivedOwner + on-chain
+    //    `SpendingUnit.submit`; tests just hand it shapes and get back
+    //    the SU id + the issuance report.
     // -----------------------------------------------------------------
     struct LocalReceipt {
         su_id: U256,
-        pk_cu: k256::PublicKey,
-        su_nonce: [u8; 32],
-        currency: u16,
-        worldwide_day: u32,
-        amount_base: u64,
-        amount_atto: u128,
-        sr_ids: Vec<U256>,
-        amendment_sr_ids: Vec<U256>,
+        report: pso_attester_integration::IssuanceReport,
     }
     let mut receipts: Vec<LocalReceipt> = Vec::with_capacity(N_SUS);
 
     // Pin currency + worldwide_day across the two SUs — TD.submit
-    // enforces uniformity (`NotSameWorldwideDay` /
-    // `NotSameCurrency` otherwise).
+    // enforces uniformity (`NotSameWorldwideDay` / `NotSameCurrency`).
     let shared_shape = random_su_args();
     for i in 0..N_SUS {
-        let su_id = random_id();
         let args = SuMintArgs {
-            su_id,
             consent_pk: consent_pk.clone(),
             // No wallet EVM address in this harness ⇒ no referrer.
-            referrer_address: alloy::primitives::Address::ZERO,
+            referrer_address: Address::ZERO,
             currency: shared_shape.currency,
             worldwide_day: shared_shape.worldwide_day,
             amount_base: 100 + (i as u64 * 10),
@@ -192,17 +144,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             sr_ids: sr_ids_per_su[i].clone(),
             amendment_sr_ids: ar_ids_per_su[i].clone(),
         };
-        let r = env.bridge.mint_su(args.clone()).await?;
+        let r = env.bridge.mint_su(args).await?;
         receipts.push(LocalReceipt {
             su_id: r.su_id,
-            pk_cu: r.pk_cu,
-            su_nonce: r.su_nonce,
-            currency: args.currency,
-            worldwide_day: args.worldwide_day,
-            amount_base: args.amount_base,
-            amount_atto: args.amount_atto,
-            sr_ids: args.sr_ids,
-            amendment_sr_ids: args.amendment_sr_ids,
+            report: r.report,
         });
     }
 
@@ -212,144 +157,90 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .await?;
 
     // -----------------------------------------------------------------
-    // 4. Wallet reconstructs every `SuOwnershipWitness` from the
-    //    receipts; cross-checks against on-chain `derivedOwner`.
+    // 4. The TD is submitted by a fresh, never-registered per-tx opaque
+    //    key whose EOA is `msg.sender` on-chain. Create it BEFORE
+    //    proving: the aggregation proof's `binding = Poseidon(sender,
+    //    tdId, chainId)` commits to this exact submitter, so it must be
+    //    fixed up front and the SAME key must sign the submit below.
     // -----------------------------------------------------------------
-    let read_provider = env.sra_zero.inner().read_provider();
-    let su_view = ISpendingUnitView::new(SPENDING_UNIT_ADDR, &read_provider);
-    let mut su_inputs: Vec<SuAggregationInput> = Vec::with_capacity(receipts.len());
-    for r in &receipts {
-        let witness = prepare_su_ownership_material(&consent_sk, &r.pk_cu, r.su_nonce, r.su_id)?;
-
-        // Read the on-chain SU back and verify the stored
-        // `derivedOwner` equals what the wallet's witness asserts.
-        // Both are BE — no byte-swap.
-        let on_chain = su_view.getData(r.su_id).call().await?;
-        let wallet_owner_be_hex = witness.derived_owner_be_hex.trim_start_matches("0x");
-        let wallet_owner_be = hex::decode(wallet_owner_be_hex)?;
-        if on_chain.derivedOwner.as_slice() != wallet_owner_be.as_slice() {
-            return Err(eyre::eyre!(
-                "S001: on-chain derivedOwner {:?} != wallet-derived {:?} for SU {:#x}",
-                on_chain.derivedOwner,
-                wallet_owner_be,
-                r.su_id
-            ));
-        }
-
-        // Recompute the SU entity hash off-chain; matches the
-        // chain's `0x0212` precompile reconstruction.
-        let su_id_fr = Fr::from_be_bytes_mod_order(&r.su_id.to_be_bytes::<32>());
-        let owner_fr = Fr::from_be_bytes_mod_order(&wallet_owner_be);
-        // Consent addresses are bound into the SU hash — read them back
-        // from the on-chain SU (uint160 right-aligned in a 32-byte word,
-        // matching the `0x0212` precompile's address→Fr conversion).
-        let attester_fr =
-            Fr::from_be_bytes_mod_order(on_chain.attesterAddress.into_word().as_slice());
-        let referrer_fr =
-            Fr::from_be_bytes_mod_order(on_chain.referrerAddress.into_word().as_slice());
-        let sr_fps: Vec<Fr> = r
-            .sr_ids
-            .iter()
-            .map(|id| Fr::from_be_bytes_mod_order(&id.to_be_bytes::<32>()))
-            .collect();
-        let ar_fps: Vec<Fr> = r
-            .amendment_sr_ids
-            .iter()
-            .map(|id| Fr::from_be_bytes_mod_order(&id.to_be_bytes::<32>()))
-            .collect();
-        let nft_hash = pso_protocol::nft::compute_spending_unit_hash(
-            &su_id_fr,
-            &owner_fr,
-            &attester_fr,
-            &referrer_fr,
-            u64::from(r.worldwide_day),
-            r.currency,
-            r.amount_base,
-            r.amount_atto as u64,
-            &sr_fps,
-            &ar_fps,
-        )
-        .map_err(|e| eyre::eyre!("compute_spending_unit_hash: {e}"))?;
-
-        let nonce_arr = r.su_nonce;
-        let sk_bytes = hex::decode(witness.shared_sk_hex.trim_start_matches("0x"))?;
-        let mut sk_arr = [0u8; 32];
-        sk_arr.copy_from_slice(&sk_bytes);
-        su_inputs.push(SuAggregationInput {
-            su_id: format!("0x{:064x}", r.su_id),
-            grumpkin_sk: sk_arr,
-            nonce: Fr::from_be_bytes_mod_order(&nonce_arr),
-            derived_owner: owner_fr,
-            nft_hash,
-        });
-    }
-
-    // -----------------------------------------------------------------
-    // 5. Wallet rolls TD keypair, runs the flat-aggregation prover,
-    //    submits the TributeDraft.
-    // -----------------------------------------------------------------
-    let td_material = prepare_td_keypair()?;
-    let td_owner_be_hex = td_material.td_derived_owner_be_hex.trim_start_matches("0x");
-    let td_owner_be = hex::decode(td_owner_be_hex)?;
-    let td_owner_fr = Fr::from_be_bytes_mod_order(&td_owner_be);
-
-    // TD id derivation: the protocol's `compute_tribute_draft_id` is
-    // `Poseidon2(owner, wwd)` — out of scope for S001 (we only need a
-    // unique id the wallet controls). Pick a random one.
-    let td_id = random_id();
-
-    // The TD is submitted by a fresh, never-registered per-tx opaque key
-    // whose EOA is `msg.sender` on-chain. Create it BEFORE proving: the
-    // aggregation proof's `binding_hash = Poseidon4(sender, tdId, chainId)`
-    // commits to this exact submitter, so it must be fixed up front and the
-    // SAME key must sign the submit below.
     let wallet = env.new_actor()?;
     let sender = wallet.address();
     let chain_id = wallet.chain_id();
+    let td_id = random_id();
+    let binding =
+        PsoV1::binding(&sender.into_array(), &td_id.to_be_bytes::<32>(), chain_id)
+            .map_err(|e| eyre::eyre!("compute binding: {e}"))?;
+    let binding_bytes = PsoV1::field_to_be_bytes(&binding);
 
-    // The flat-aggregation prover wraps `noir_rs` which spins up its
-    // own tokio runtime; push the synchronous work onto a blocking
-    // thread to avoid runtime-in-runtime panics.
-    let bundle = {
-        let su_inputs_owned = su_inputs.clone();
-        tokio::task::spawn_blocking(move || {
-            pso_l2_client::wallet::prove_su_aggregation(
-                &su_inputs_owned,
-                td_id,
-                td_owner_fr,
-                sender,
-                chain_id,
-            )
-        })
-        .await
-        .map_err(|e| eyre::eyre!("prove join: {e}"))??
+    // -----------------------------------------------------------------
+    // 5. Wallet builds one ownership witness per SU over the shared
+    //    binding; cross-checks against the on-chain `derivedOwner`.
+    // -----------------------------------------------------------------
+    let read_provider = env.sra_zero.inner().read_provider();
+    let su_view = pso_chain_abi::interfaces::ISpendingUnit::new(SPENDING_UNIT, &read_provider);
+    let mut witnesses: Vec<pso_mobile_integration::NftOwnershipWitness> =
+        Vec::with_capacity(receipts.len());
+    for r in &receipts {
+        // Re-shape the attester report into the mobile FFI's report.
+        let report = pso_mobile_integration::IssuanceReport {
+            nft_id: r.report.nft_id.clone(),
+            derived_owner: r.report.derived_owner.clone(),
+            nft_hash: r.report.nft_hash.clone(),
+            opaque_pk: r.report.opaque_pk.clone(),
+            nonce: r.report.nonce.clone(),
+        };
+        let witness = consent
+            .witness(consent_seed.clone(), report, binding_bytes.clone())
+            .map_err(|e| eyre::eyre!("consent witness: {e:?}"))?;
+
+        // Read the on-chain SU back and verify the stored `derivedOwner`
+        // equals what the wallet's witness asserts. Both are BE.
+        let on_chain = su_view.getData(r.su_id).call().await?;
+        if on_chain.derivedOwner.as_slice() != witness.derived_owner.as_slice() {
+            return Err(eyre::eyre!(
+                "S001: on-chain derivedOwner {:?} != wallet-derived {:?} for SU {:#x}",
+                on_chain.derivedOwner,
+                witness.derived_owner,
+                r.su_id
+            ));
+        }
+        witnesses.push(witness);
+    }
+
+    // -----------------------------------------------------------------
+    // 6. Wallet rolls a TD header (its own owner), aggregates the
+    //    witnesses, and submits the TributeDraft via the actor pool.
+    // -----------------------------------------------------------------
+    let td_header = wallet_ffi
+        .generate_nft_header(consent_seed.clone())
+        .map_err(|e| eyre::eyre!("td header: {e:?}"))?;
+    let td_owner_be = td_header.derived_owner.clone();
+
+    // The flat-aggregation prover wraps barretenberg's FFI; push the
+    // synchronous work onto a blocking thread to avoid runtime-in-runtime
+    // panics.
+    let agg = {
+        // `witnesses` is consumed here (not needed afterwards).
+        let binding = binding_bytes.clone();
+        let seed = consent_seed.clone();
+        let wallet_ffi = wallet_ffi.clone();
+        tokio::task::spawn_blocking(move || wallet_ffi.prove_ownership(seed, binding, witnesses))
+            .await
+            .map_err(|e| eyre::eyre!("prove join: {e}"))?
+            .map_err(|e| eyre::eyre!("prove_ownership: {e:?}"))?
     };
 
-    // Wallet-direct submission: `wallet` (created above, the key the proof's
-    // binding_hash commits to) signs the TD tx itself and broadcasts through
-    // the actor pool. The client wraps the inner calldata in the PSO envelope
-    // (real MinRoot VDF at the chain's reported difficulty); on-chain,
-    // TributeDraft sees `msg.sender = wallet` and recomputes the same binding.
-    let su_ids_ordered: Vec<U256> = bundle
-        .su_ids
-        .iter()
-        .map(|s| {
-            U256::from_str_radix(s.trim_start_matches("0x"), 16)
-                .map_err(|e| eyre::eyre!("bundle su_id parse: {e}"))
-        })
-        .collect::<eyre::Result<_>>()?;
-    let proof_bytes = hex::decode(bundle.proof_bytes_hex.trim_start_matches("0x"))?;
+    let su_ids_ordered: Vec<U256> = su_ids_minted.clone();
     let inner = ITributeDraft::submitCall {
         tributeDraftId: td_id,
         derivedOwner: FixedBytes::<32>::from_slice(&td_owner_be),
         suIds: su_ids_ordered,
-        aggregationProof: Bytes::from(proof_bytes),
+        aggregationProof: Bytes::from(agg.proof),
     }
     .abi_encode();
 
-    // `wallet` was created above (the submitter the proof binds to).
     let tx = wallet
-        .submit_tx(TRIBUTE_DRAFT_ADDR, Bytes::from(inner))
+        .submit_tx(TRIBUTE_DRAFT, Bytes::from(inner))
         .await
         .map_err(|e| eyre::eyre!("wallet-direct TD submit: {e:?}"))?;
     let receipt = wallet.wait_for_receipt(tx, Duration::from_secs(60)).await?;
@@ -361,12 +252,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     }
 
     // -----------------------------------------------------------------
-    // 6. Read the TD back, assert the stored `derivedOwner` matches
-    //    the wallet's computation. Unified BE wire format across SU
-    //    and TD now, so the on-chain slot is BE and matches the
-    //    wallet's bytes verbatim.
+    // 7. Read the TD back, assert the stored `derivedOwner` matches
+    //    the wallet's computation (unified BE wire format).
     // -----------------------------------------------------------------
-    let td_view = ITributeDraftView::new(TRIBUTE_DRAFT_ADDR, &read_provider);
+    let td_view = ITributeDraft::new(TRIBUTE_DRAFT, &read_provider);
     let td_on_chain = td_view.getData(td_id).call().await?;
     if td_on_chain.derivedOwner.as_slice() != td_owner_be.as_slice() {
         return Err(eyre::eyre!(
@@ -377,4 +266,14 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     }
 
     Ok(())
+}
+
+/// A random SR/AR id that is a **canonical field element** — the
+/// attester FFI folds these ids into the SU `nft_hash` and rejects any
+/// non-canonical (`>=` field modulus) fingerprint. A random `u128`
+/// lifted into the field stays safely below the BN254 modulus while
+/// remaining collision-free across a session.
+fn field_id() -> U256 {
+    let f = Fr::from(rand::random::<u128>());
+    U256::from_be_slice(&PsoV1::field_to_be_bytes(&f))
 }

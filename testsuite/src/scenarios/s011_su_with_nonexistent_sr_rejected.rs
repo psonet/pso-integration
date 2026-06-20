@@ -6,12 +6,10 @@
 //! check; the revert fires with the same arm as S009's wrong-owner
 //! case (first field of `InvalidSpendingRecords`).
 
-use alloy::primitives::FixedBytes;
+use alloy_primitives::FixedBytes;
 use async_trait::async_trait;
 
-use pso_l2_client::sra::MintSpendingUnitArgs;
-
-use crate::clients::sra::into_pso_error;
+use crate::clients::sra::{into_pso_error, MintSpendingUnitArgs};
 use crate::data::{random_id, random_su_args};
 use crate::{PsoContractError, Scenario, TestEnv};
 
@@ -38,7 +36,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: random_id(),
             derived_owner: FixedBytes::from([0u8; 32]),
-            referrer_address: alloy::primitives::Address::ZERO,
+            referrer_address: alloy_primitives::Address::ZERO,
             currency: shape.currency,
             worldwide_day: shape.worldwide_day,
             amount_base: shape.amount_base,

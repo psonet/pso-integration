@@ -2,13 +2,15 @@
 //!
 //! Powers the `pso-e2e` binary. Two client surfaces drive the chain:
 //!
-//! - [`SraClient`](clients::sra::SraClient) — agents-pool side. Wraps
-//!   `pso-l2-client::sra` and posts via the standard EL JSON-RPC at
-//!   `:19545`. The pool admits a tx iff `from` is in the SRA registry
-//!   AND `(to, selector)` is in the agents-pool allowlist.
+//! - [`SraClient`](clients::sra::SraClient) — agents-pool side. Submits
+//!   SR/AR/SU calls (built directly on the `pso-chain-abi` interfaces +
+//!   the testsuite's own [`RpcHandle`](clients::rpc::RpcHandle)) via the
+//!   standard EL JSON-RPC at `:19545`. The pool admits a tx iff `from`
+//!   is in the attesters registry AND `(to, selector)` is in the
+//!   agents-pool allowlist.
 //! - [`ActorClient`](clients::actor::ActorClient) — users-pool side.
-//!   Posts PSO-magic-prefixed (`0xCAFED00D`) calldata to the actor
-//!   RPC at `:8546` with a real MinRoot VDF proof bound to
+//!   Posts `0x76`-enveloped calldata to the actor RPC at `:8546` with a
+//!   real MinRoot VDF proof bound to
 //!   `SHA-256(signer || nonce || submitted_block || chain_id)`.
 //!
 //! Each scenario implements [`Scenario`](scenario::Scenario), reads a
@@ -36,15 +38,13 @@ pub mod scenarios;
 pub use bridge::{spawn_sra_loop, Bridge, BridgeError, SuMintArgs, SuMintReceipt, SuMintRequest};
 pub use cli::{init_tracing, parse_hex32, Cli, ReportFormat};
 pub use clients::actor::{ActorClient, ActorClientError};
-pub use clients::sra::{into_pso_error, SraClient};
+pub use clients::contract_errors::{decode_text, into_pso_error, PsoContractError};
+pub use clients::sra::SraClient;
 pub use env::TestEnv;
-// `PsoContractError` + the decoder primitives now live in
-// `pso-l2-client::contract_errors` so non-test clients (mobile FFI,
-// future Rust integrators) can decode contract reverts with the
-// same typed enum. Re-export at the testsuite root to keep
-// scenarios' `use crate::PsoContractError` style stable.
+// `PsoContractError` + the decoder primitives are owned by the
+// testsuite's `clients::contract_errors` module. Re-export at the crate
+// root to keep scenarios' `use crate::PsoContractError` style stable.
 pub use hardhat::{signer_address, signer_key, HARDHAT_KEYS};
-pub use pso_l2_client::contract_errors::{decode_text, PsoContractError};
 pub use scenario::{Outcome, Report, Scenario, ScenarioResult};
 
 // -----------------------------------------------------------------

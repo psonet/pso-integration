@@ -17,12 +17,12 @@
 //! `docs/design/sra-sequencer-rotation.md`); landing the event tail
 //! is enough to lock the contract surface in regression.
 
-use alloy::primitives::{Bytes, FixedBytes};
-use alloy::signers::local::PrivateKeySigner;
-use alloy::signers::SignerSync;
-use alloy::sol_types::SolEvent;
+use alloy_primitives::{Bytes, FixedBytes};
+use alloy_signer_local::PrivateKeySigner;
+use alloy_signer::SignerSync;
+use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
-use pso_l2_client::abi::{ISlashingVerifier, SLASHING_VERIFIER};
+use crate::clients::contracts::{ISlashingVerifier, SLASHING_VERIFIER};
 
 use crate::{Scenario, TestEnv};
 

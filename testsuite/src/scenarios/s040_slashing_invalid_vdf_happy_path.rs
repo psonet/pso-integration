@@ -20,11 +20,11 @@
 //!   2. staticcall VDF precompile, require result == false
 //!   3. emit events; mark `proofHash` as submitted to block double-slash
 
-use alloy::primitives::{Address, Bytes, FixedBytes};
-use alloy::signers::local::PrivateKeySigner;
-use alloy::sol_types::SolEvent;
+use alloy_primitives::{Address, Bytes, FixedBytes};
+use alloy_signer_local::PrivateKeySigner;
+use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
-use pso_l2_client::abi::{ISlashingVerifier, SLASHING_VERIFIER};
+use crate::clients::contracts::{ISlashingVerifier, SLASHING_VERIFIER};
 
 use crate::{Scenario, TestEnv};
 

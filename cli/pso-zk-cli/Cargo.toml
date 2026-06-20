@@ -13,13 +13,16 @@ name = "pso_zk_cli"
 path = "src/lib.rs"
 
 [dependencies]
-# Workspace crates
+# Workspace crates: keys/hashes via pso-protocol (Suite/PsoV1/Codec),
+# proving via pso-zk-canonical (circuit descriptors) + pso-zk-backend
+# (Barretenberg), entities from pso-chain-abi.
 pso-protocol.workspace = true
 pso-zk-backend.workspace = true
 pso-zk-canonical.workspace = true
-pso-nft.workspace = true
-pso-integrations-shared.workspace = true
-pso-poseidon.workspace = true
+pso-chain-abi.workspace = true
+
+# alloy ABI primitives (Address/B256/U16/U64) for the entity fields.
+alloy-primitives.workspace = true
 
 # CLI argument parsing
 clap.workspace = true
@@ -35,16 +38,10 @@ serde_json.workspace = true
 anyhow.workspace = true
 
 # Encoding
-bs58.workspace = true
 hex.workspace = true
 
-# Crypto (for SecretKey reconstruction)
-k256.workspace = true
-ark-ff = { workspace = true }
-ark-bn254 = { workspace = true }
-generic-array.workspace = true
-
-# Random number generation
+# Field/curve RNG for entity + nonce generation.
+ark-std.workspace = true
 rand.workspace = true
 
 [dev-dependencies]
