@@ -317,11 +317,11 @@ jobs:
   # Mobile + bindgen + Kotlin artifacts.
   #
   # Same `release_tag` / `tag.outputs.tag` gating as `release-binaries`
-  # — these all attach to the GH Release. Mobile cross-builds run
-  # `continue-on-error: true` because `barretenberg-rs` links a C++
-  # static lib whose CMake config can drift on iOS / Android seams;
-  # the bindgen + Kotlin JAR jobs hard-fail because they have no
-  # such excuse.
+  # — these all attach to the GH Release. Every build job hard-fails:
+  # a failed slice (mobile cross-build, bindgen, Kotlin JAR, Python
+  # wheel) blocks the release entirely (`github-release` requires every
+  # build `result == 'success'`). We ship a complete artifact set or
+  # none — no best-effort/partial releases.
   # ----------------------------------------------------------------
 
   build-mobile-ios:
@@ -332,7 +332,6 @@ jobs:
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
        needs.resolve.outputs.release_tag != '')
     runs-on: macos-latest
-    continue-on-error: true
     strategy:
       # `barretenberg-rs`'s build.rs ships prebuilt FFI for
       # aarch64-apple-ios + aarch64-apple-ios-sim only — there is no
@@ -363,51 +362,26 @@ jobs:
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
-      # Two slices per target: the default-feature build and a
-      # `--features dev-tools` build. They share the same target dir,
-      # so each `cargo build` overwrites the previous .a — we stage
-      # the default archive out BEFORE kicking off the dev-tools build.
-      # Running both in one job (rather than a matrix axis) keeps the
-      # second build incremental and avoids doubling the 10x-cost
-      # macOS runners.
-      - name: cargo build --release -p pso-mobile-integration (default)
-        run: cargo build --release -p pso-mobile-integration --target ${{ matrix.target }}
+      # Built with the max-optimization `mobile` profile (fat LTO,
+      # codegen-units=1, opt-level 3) — proving runs on-device.
+      - name: cargo build -p pso-mobile-integration
+        run: cargo build --profile mobile -p pso-mobile-integration --target ${{ matrix.target }}
 
-      - name: Stage static lib (default)
+      - name: Stage static lib
         env:
           TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/libpso_mobile_integration.a" \
+          cp "target/${{ matrix.target }}/mobile/libpso_mobile_integration.a" \
              "dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration-${TAG}.a"
           ls -lh dist/
 
-      - name: cargo build --release -p pso-mobile-integration (dev-tools)
-        run: cargo build --release -p pso-mobile-integration --features dev-tools --target ${{ matrix.target }}
-
-      - name: Stage static lib (dev-tools)
-        env:
-          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
-        run: |
-          set -euo pipefail
-          cp "target/${{ matrix.target }}/release/libpso_mobile_integration.a" \
-             "dist/pso-mobile-integration-${{ matrix.label }}-dev-tools-libpso_mobile_integration-${TAG}.a"
-          ls -lh dist/
-
-      - name: Upload iOS static lib (default)
+      - name: Upload iOS static lib
         uses: actions/upload-artifact@v4
         with:
           name: pso-mobile-integration-${{ matrix.label }}
           path: dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}.a
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Upload iOS static lib (dev-tools)
-        uses: actions/upload-artifact@v4
-        with:
-          name: pso-mobile-integration-${{ matrix.label }}-dev-tools
-          path: dist/pso-mobile-integration-${{ matrix.label }}-dev-tools-libpso_mobile_integration-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}.a
           if-no-files-found: error
           retention-days: 7
 
@@ -419,7 +393,6 @@ jobs:
       (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
        needs.resolve.outputs.release_tag != '')
     runs-on: ubuntu-latest
-    continue-on-error: true
     strategy:
       # barretenberg-rs ships prebuilt FFI for the 64-bit Android
       # ABIs only — 32-bit (armeabi-v7a / x86) hard-fail in the
@@ -545,12 +518,10 @@ jobs:
           cmake --build "$build" --target bb-external --parallel
           test -f "$build/lib/libbb-external.a"
 
-      # Default + dev-tools slices, same rationale as the iOS job:
-      # cargo ndk writes both builds to the same jniLibs/<abi> path,
-      # so stage the default .so out before the dev-tools build
-      # overwrites it. libbb-external.a is a shared dependency built
-      # once above, so the second cargo ndk build is incremental.
-      - name: cargo ndk build -p pso-mobile-integration (default)
+      # libbb-external.a (built above) is fed to barretenberg-rs via
+      # BB_LIB_DIR; the wallet lib is built with the max-optimization
+      # `mobile` profile (fat LTO, codegen-units=1, opt-level 3).
+      - name: cargo ndk build -p pso-mobile-integration
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -562,9 +533,9 @@ jobs:
             --target ${{ matrix.abi }} \
             --platform ${{ env.ANDROID_PLATFORM }} \
             --output-dir ./jniLibs \
-            build --release -p pso-mobile-integration
+            build --profile mobile -p pso-mobile-integration
 
-      - name: Stage shared lib (default)
+      - name: Stage shared lib
         env:
           TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
         run: |
@@ -574,40 +545,11 @@ jobs:
              "dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration-${TAG}.so"
           ls -lh dist/
 
-      - name: cargo ndk build -p pso-mobile-integration (dev-tools)
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-          BB_LIB_DIR: ${{ runner.temp }}/bb-build/${{ matrix.abi }}/lib
-        run: |
-          cargo ndk \
-            --target ${{ matrix.abi }} \
-            --platform ${{ env.ANDROID_PLATFORM }} \
-            --output-dir ./jniLibs \
-            build --release -p pso-mobile-integration --features dev-tools
-
-      - name: Stage shared lib (dev-tools)
-        env:
-          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
-        run: |
-          set -euo pipefail
-          cp "jniLibs/${{ matrix.abi }}/libpso_mobile_integration.so" \
-             "dist/pso-mobile-integration-${{ matrix.label }}-dev-tools-libpso_mobile_integration-${TAG}.so"
-          ls -lh dist/
-
-      - name: Upload Android shared lib (default)
+      - name: Upload Android shared lib
         uses: actions/upload-artifact@v4
         with:
           name: pso-mobile-integration-${{ matrix.label }}
           path: dist/pso-mobile-integration-${{ matrix.label }}-libpso_mobile_integration-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}.so
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Upload Android shared lib (dev-tools)
-        uses: actions/upload-artifact@v4
-        with:
-          name: pso-mobile-integration-${{ matrix.label }}-dev-tools
-          path: dist/pso-mobile-integration-${{ matrix.label }}-dev-tools-libpso_mobile_integration-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}.so
           if-no-files-found: error
           retention-days: 7
 
@@ -1058,11 +1000,17 @@ jobs:
       - build-bindgen
       - build-attester-kotlin-jar
       - build-attester-python
+    # always() so the tag/resolve gating below is the only release trigger,
+    # but EVERY build job must succeed — one failed slice blocks the release.
     if: |
       always() &&
+      needs.release-binaries.result == 'success' &&
       needs.release-image.result == 'success' &&
+      needs.build-mobile-ios.result == 'success' &&
+      needs.build-mobile-android.result == 'success' &&
       needs.build-bindgen.result == 'success' &&
       needs.build-attester-kotlin-jar.result == 'success' &&
+      needs.build-attester-python.result == 'success' &&
       (needs.tag.outputs.tag != '' || needs.resolve.outputs.release_tag != '')
     runs-on: ubuntu-latest
     # id-token + attestations widen this job's scope so cosign keyless +
@@ -1159,8 +1107,9 @@ jobs:
           cp artifacts/attester-kotlin/pso-attester-integration-kotlin-*.jar \
              release/
 
-          # Attester Python wheels — one per platform slice (nullglob: a flaky
-          # cross-built wheel just won't be staged, like the mobile slices).
+          # Attester Python wheels — one per platform slice. Every wheel job
+          # hard-fails, so the full set is always present (the release gate
+          # would have blocked otherwise).
           for f in artifacts/attester-python/*.whl; do
             cp "$f" "release/$(basename "$f")"
           done
@@ -1177,9 +1126,10 @@ jobs:
         uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # pin-target: v3
 
       # Matrix-aware signing over every staged artifact: the e2e
-      # binaries + the 4 mobile slices (whichever subset built —
-      # build-mobile-* jobs are continue-on-error: true) + 2 bindgen
-      # binaries + the Attester Kotlin JAR + SHA256SUMS. The JAR is signed
+      # binaries + the 4 mobile slices + 2 bindgen binaries + the
+      # Attester Kotlin JAR + Python wheels + SHA256SUMS (the full set
+      # is guaranteed present — the release gate blocks on any failed
+      # build). The JAR is signed
       # as the unit (its bundled native libs are verified transitively
       # via the JAR's SHA-256, per spec 2026-05-20 implementation
       # finding). Skips pre-existing .sig/.pem so re-runs are idempotent.
@@ -1198,8 +1148,8 @@ jobs:
           done
           ls -la
 
-      # SLSA build provenance for the release set. Glob patterns pick
-      # up whichever subset of mobile slices made it through the matrix.
+      # SLSA build provenance for the full release set (every build job
+      # succeeded — the release gate blocks on any failure).
       - name: Generate SLSA build provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # pin-target: v2
         with:
@@ -1235,21 +1185,14 @@ jobs:
             echo
             echo "### Mobile (pso-mobile-integration)"
             echo
-            echo "Default-feature slices:"
+            echo "Built with the max-optimization \`mobile\` profile (opt-level 3, fat LTO, codegen-units 1):"
             echo
             echo "- \`pso-mobile-integration-ios-arm64-libpso_mobile_integration-${TAG}.a\` — iOS device static lib (\`aarch64-apple-ios\`)"
             echo "- \`pso-mobile-integration-ios-sim-arm64-libpso_mobile_integration-${TAG}.a\` — iOS Apple-Silicon simulator static lib (\`aarch64-apple-ios-sim\`)"
             echo "- \`pso-mobile-integration-android-arm64-v8a-libpso_mobile_integration-${TAG}.so\` — Android arm64-v8a shared lib (\`aarch64-linux-android\`)"
             echo "- \`pso-mobile-integration-android-x86_64-libpso_mobile_integration-${TAG}.so\` — Android x86_64 shared lib (\`x86_64-linux-android\`)"
             echo
-            echo "\`dev-tools\`-feature slices (same targets, built with \`--features dev-tools\`):"
-            echo
-            echo "- \`pso-mobile-integration-ios-arm64-dev-tools-libpso_mobile_integration-${TAG}.a\`"
-            echo "- \`pso-mobile-integration-ios-sim-arm64-dev-tools-libpso_mobile_integration-${TAG}.a\`"
-            echo "- \`pso-mobile-integration-android-arm64-v8a-dev-tools-libpso_mobile_integration-${TAG}.so\`"
-            echo "- \`pso-mobile-integration-android-x86_64-dev-tools-libpso_mobile_integration-${TAG}.so\`"
-            echo
-            echo "Mobile slices are best-effort cross-builds. Missing slices indicate a barretenberg-rs cross-toolchain failure on that target — see workflow logs."
+            echo "All four mobile slices are required — a cross-build failure on any target blocks the release."
             echo
             echo "### Bindgen (uniffi-bindgen-mobile)"
             echo

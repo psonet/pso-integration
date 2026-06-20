@@ -112,10 +112,14 @@ overflow-checks = false
 debug = false
 
 # Size-optimized profile for mobile builds (iOS/Android).
+# Max-optimization profile for the mobile/wallet native libs (iOS staticlib +
+# Android cdylib). Proving runs on-device, so optimize for speed: opt-level 3 +
+# fat LTO + a single codegen unit. `strip` keeps the artifact lean; `panic =
+# "abort"` is fine — the slices are standalone staticlib/cdylib.
 [profile.mobile]
 inherits = "release"
-opt-level = 'z'
-lto = true
+opt-level = 3
+lto = "fat"
 codegen-units = 1
 panic = 'abort'
 strip = true
