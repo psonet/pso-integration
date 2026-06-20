@@ -2,7 +2,7 @@ package net.pso.integration.agent
 
 import kotlin.test.Test
 
-class SraIntegrationTest {
+class AttesterIntegrationTest {
 
     @Test
     fun `NativeLoader loads the bundled host slice`() {

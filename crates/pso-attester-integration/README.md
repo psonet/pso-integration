@@ -95,14 +95,14 @@ cargo xtask build-kotlin -t aarch64-apple-darwin -t x86_64-unknown-linux-gnu
 
 The command performs these steps automatically:
 
-1. Builds the native cdylib (`libpso_sra_integration.dylib` / `.so`)
+1. Builds the native cdylib (`libpso_attester_integration.dylib` / `.so`)
    for each target via `cargo build` (native) or `cargo zigbuild` (cross)
-2. Builds the `uniffi-bindgen-sra` tool
+2. Builds the `uniffi-bindgen-attester` tool
 3. Generates Kotlin bindings from the compiled library
 4. Copies native libraries into the Gradle project resources
 5. Runs `gradle jar` to produce the final JAR
 
-Output JAR: `integrations/pso-sra-integration/kotlin/build/libs/pso-sra-integration-0.1.0.jar`
+Output JAR: `crates/pso-attester-integration/kotlin/build/libs/pso-attester-integration-0.1.0.jar`
 
 ### Manual Steps
 
@@ -110,29 +110,29 @@ If you prefer to run each step individually:
 
 ```bash
 # 1. Build native library (use cargo zigbuild for cross-compilation)
-cargo build -p pso-sra-integration --release --target aarch64-apple-darwin
-cargo zigbuild -p pso-sra-integration --release --target x86_64-unknown-linux-gnu
+cargo build -p pso-attester-integration --release --target aarch64-apple-darwin
+cargo zigbuild -p pso-attester-integration --release --target x86_64-unknown-linux-gnu
 
-# 2. Build uniffi-bindgen-sra
-cargo build -p pso-sra-integration --bin uniffi-bindgen-sra
+# 2. Build uniffi-bindgen-attester
+cargo build -p pso-attester-integration --bin uniffi-bindgen-attester
 
 # 3. Generate Kotlin bindings
-target/debug/uniffi-bindgen-sra generate \
-  --library target/aarch64-apple-darwin/release/libpso_sra_integration.dylib \
+target/debug/uniffi-bindgen-attester generate \
+  --library target/aarch64-apple-darwin/release/libpso_attester_integration.dylib \
   --language kotlin \
-  --out-dir integrations/pso-sra-integration/kotlin/src/main/kotlin
+  --out-dir crates/pso-attester-integration/kotlin/src/main/kotlin
 
 # 4. Copy native libraries to Gradle resources
-mkdir -p integrations/pso-sra-integration/kotlin/src/main/resources/native/darwin-aarch64
-cp target/aarch64-apple-darwin/release/libpso_sra_integration.dylib \
-   integrations/pso-sra-integration/kotlin/src/main/resources/native/darwin-aarch64/
+mkdir -p crates/pso-attester-integration/kotlin/src/main/resources/native/darwin-aarch64
+cp target/aarch64-apple-darwin/release/libpso_attester_integration.dylib \
+   crates/pso-attester-integration/kotlin/src/main/resources/native/darwin-aarch64/
 
-mkdir -p integrations/pso-sra-integration/kotlin/src/main/resources/native/linux-x86-64
-cp target/x86_64-unknown-linux-gnu/release/libpso_sra_integration.so \
-   integrations/pso-sra-integration/kotlin/src/main/resources/native/linux-x86-64/
+mkdir -p crates/pso-attester-integration/kotlin/src/main/resources/native/linux-x86-64
+cp target/x86_64-unknown-linux-gnu/release/libpso_attester_integration.so \
+   crates/pso-attester-integration/kotlin/src/main/resources/native/linux-x86-64/
 
 # 5. Build JAR
-cd integrations/pso-sra-integration/kotlin && gradle jar
+cd crates/pso-attester-integration/kotlin && gradle jar
 ```
 
 ## Using the Kotlin Library
@@ -185,15 +185,15 @@ try {
 ## JAR Contents
 
 ```
-pso-sra-integration-0.1.0.jar
+pso-attester-integration-0.1.0.jar
 ├── net/pso/integration/agent/
 │   ├── NativeLoader.class          # Platform-aware library loader
-│   └── pso_sra_integration.class   # UniFFI-generated bindings
+│   └── pso_attester_integration.class   # UniFFI-generated bindings
 └── native/
     ├── darwin-aarch64/
-    │   └── libpso_sra_integration.dylib
+    │   └── libpso_attester_integration.dylib
     └── linux-x86-64/
-        └── libpso_sra_integration.so
+        └── libpso_attester_integration.so
 ```
 
 ## Development
@@ -201,7 +201,7 @@ pso-sra-integration-0.1.0.jar
 ### Running Rust Tests
 
 ```bash
-cargo test -p pso-sra-integration
+cargo test -p pso-attester-integration
 ```
 
 ### Running CI Clippy Checks
@@ -223,7 +223,7 @@ JAR to be built first (native library must be present in resources).
 cargo xtask build-kotlin
 
 # 2. Run the Kotlin tests
-cd integrations/pso-sra-integration/kotlin && gradle test
+cd crates/pso-attester-integration/kotlin && gradle test
 ```
 
 The integration test suite covers:
@@ -241,7 +241,7 @@ The integration test suite covers:
 ### Project Structure
 
 ```
-integrations/pso-sra-integration/
+crates/pso-attester-integration/
 ├── src/
 │   ├── lib.rs              # FFI entry point + generate_nft_ownership()
 │   ├── crypto.rs           # ECDH, KDF, key parsing, nonce generation
@@ -264,8 +264,8 @@ integrations/pso-sra-integration/
 
 | Platform | Rust Target | Native Library |
 |----------|-------------|----------------|
-| macOS ARM64 | `aarch64-apple-darwin` | `libpso_sra_integration.dylib` |
-| Linux x86_64 | `x86_64-unknown-linux-gnu` | `libpso_sra_integration.so` |
+| macOS ARM64 | `aarch64-apple-darwin` | `libpso_attester_integration.dylib` |
+| Linux x86_64 | `x86_64-unknown-linux-gnu` | `libpso_attester_integration.so` |
 
 ## Security
 

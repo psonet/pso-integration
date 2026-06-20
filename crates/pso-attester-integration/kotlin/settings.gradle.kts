@@ -1,1 +1,1 @@
-rootProject.name = "pso-sra-integration"
+rootProject.name = "pso-attester-integration"

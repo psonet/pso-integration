@@ -6,10 +6,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Extracts the host-arch dynamic library bundled inside the JAR at
- * `META-INF/native/<os>-<arch>/libpso_sra_integration.{dylib,so}`,
+ * `META-INF/native/<os>-<arch>/libpso_attester_integration.{dylib,so}`,
  * registers it with the JVM via `System.load`, and points UniFFI's
  * generated JNA `Native.register(...)` call at the extracted file
- * via the `uniffi.component.pso_sra_integration.libraryOverride`
+ * via the `uniffi.component.pso_attester_integration.libraryOverride`
  * system property.
  *
  * Both hooks are needed:
@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *     past the UniFFI surface.
  *   - `libraryOverride` — for UniFFI itself, whose generated
  *     `findLibraryName(...)` reads this property first before falling
- *     back to a bare `dlopen("pso_sra_integration")`, which would
+ *     back to a bare `dlopen("pso_attester_integration")`, which would
  *     fail in a JAR-distributed setup (the dylib lives in a tempdir,
  *     not on the OS library search path).
  *
@@ -33,13 +33,13 @@ object NativeLoader {
 
         val osArch = detectOsArch()
         val ext = if (osArch.startsWith("darwin")) "dylib" else "so"
-        val resource = "/META-INF/native/$osArch/libpso_sra_integration.$ext"
+        val resource = "/META-INF/native/$osArch/libpso_attester_integration.$ext"
 
         val stream = NativeLoader::class.java.getResourceAsStream(resource)
             ?: error("Native library not found in JAR: $resource (host=$osArch)")
 
         val tempFile = Files.createTempFile(
-            "libpso_sra_integration",
+            "libpso_attester_integration",
             ".$ext",
         ).toFile().apply { deleteOnExit() }
 
@@ -53,7 +53,7 @@ object NativeLoader {
 
         System.load(tempFile.absolutePath)
         System.setProperty(
-            "uniffi.component.pso_sra_integration.libraryOverride",
+            "uniffi.component.pso_attester_integration.libraryOverride",
             tempFile.absolutePath,
         )
     }

@@ -1,18 +1,18 @@
 // Gradle subproject that bundles the UniFFI Kotlin bindings for
-// pso-sra-integration into a JAR alongside dynamic native libs
-// (libpso_sra_integration.dylib on darwin, .so on linux) so a
+// pso-attester-integration into a JAR alongside dynamic native libs
+// (libpso_attester_integration.dylib on darwin, .so on linux) so a
 // vanilla Kotlin/JVM consumer can `System.load(...)` them via JNI.
 //
 // SRA is server-side, JVM-only — no iOS / Android / Windows slices.
 //
-// Inputs (staged by the CI job `build-sra-kotlin-jar` before `gradle build`):
-//   - $rootDir/uniffi-bindgen-sra                                  — host-arch bindgen binary
-//   - $rootDir/native/darwin-arm64/libpso_sra_integration.dylib
-//   - $rootDir/native/linux-x86_64/libpso_sra_integration.so
-//   - $rootDir/native/linux-aarch64/libpso_sra_integration.so
+// Inputs (staged by the CI job `build-attester-kotlin-jar` before `gradle build`):
+//   - $rootDir/uniffi-bindgen-attester                                  — host-arch bindgen binary
+//   - $rootDir/native/darwin-arm64/libpso_attester_integration.dylib
+//   - $rootDir/native/linux-x86_64/libpso_attester_integration.so
+//   - $rootDir/native/linux-aarch64/libpso_attester_integration.so
 //
 // The build performs three steps:
-//   1. `generateKotlinBindings` runs `uniffi-bindgen-sra generate
+//   1. `generateKotlinBindings` runs `uniffi-bindgen-attester generate
 //      --language kotlin --library <host slice>` and lays the
 //      output under build/generated/kotlin/. (UniFFI's bindgen only
 //      needs *one* of the dynamic libs to extract the component
@@ -62,19 +62,19 @@ tasks.test {
 val nativeStageDir = (findProperty("nativeStageDir") as String?)
     ?: "${rootDir}/native"
 val bindgenBinary = (findProperty("bindgenBinary") as String?)
-    ?: "${rootDir}/uniffi-bindgen-sra"
+    ?: "${rootDir}/uniffi-bindgen-attester"
 
 // Pick any one of the three dynamic libs for `--library`. The
 // linux-x86_64 .so is the natural default because the CI host
 // running gradle is ubuntu-latest; local dev on macOS overrides
-// via `-PbindgenLibraryArchive=.../libpso_sra_integration.dylib`.
+// via `-PbindgenLibraryArchive=.../libpso_attester_integration.dylib`.
 val bindgenLibraryArchive = (findProperty("bindgenLibraryArchive") as String?)
-    ?: "${nativeStageDir}/linux-x86_64/libpso_sra_integration.so"
+    ?: "${nativeStageDir}/linux-x86_64/libpso_attester_integration.so"
 
 val kotlinBindingsDir = layout.buildDirectory.dir("generated/kotlin")
 
 val generateKotlinBindings = tasks.register<Exec>("generateKotlinBindings") {
-    description = "Run uniffi-bindgen-sra to emit Kotlin bindings"
+    description = "Run uniffi-bindgen-attester to emit Kotlin bindings"
     group = "build"
 
     val outDir = kotlinBindingsDir.get().asFile
@@ -116,9 +116,9 @@ val stageNativeLibraries = tasks.register<Copy>("stageNativeLibraries") {
     group = "build"
 
     from(nativeStageDir) {
-        include("darwin-arm64/libpso_sra_integration.dylib")
-        include("linux-x86_64/libpso_sra_integration.so")
-        include("linux-aarch64/libpso_sra_integration.so")
+        include("darwin-arm64/libpso_attester_integration.dylib")
+        include("linux-x86_64/libpso_attester_integration.so")
+        include("linux-aarch64/libpso_attester_integration.so")
     }
     into(layout.buildDirectory.dir("staged-resources/META-INF/native"))
 }
@@ -134,9 +134,9 @@ tasks.named("processResources") {
 }
 
 tasks.named<Jar>("jar") {
-    archiveBaseName.set("pso-sra-integration-kotlin")
+    archiveBaseName.set("pso-attester-integration-kotlin")
     // Empty so the local archive path stays stable
-    // (build/libs/pso-sra-integration-kotlin.jar) regardless of
+    // (build/libs/pso-attester-integration-kotlin.jar) regardless of
     // version — the CI staging step renames it with the `-v<x.y.z>`
     // release suffix. maven-publish derives the *published* filename
     // from the coordinate (artifactId + version), not this archive
@@ -154,8 +154,8 @@ publishing {
         create<MavenPublication>("gpr") {
             // Maven coordinate: net.pso:integration.agent:<version>.
             // Independent of the local JAR archive name
-            // (pso-sra-integration-kotlin.jar) and the Rust crate name
-            // (pso_sra_integration) — maven-publish names the published
+            // (pso-attester-integration-kotlin.jar) and the Rust crate name
+            // (pso_attester_integration) — maven-publish names the published
             // file from the coordinate.
             artifactId = "integration.agent"
             from(components["java"])
