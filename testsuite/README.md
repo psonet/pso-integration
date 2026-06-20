@@ -1,7 +1,7 @@
 # pso-e2e-testsuite
 
 End-to-end test harness for the PSO L2. Ships as a single binary
-(`pso-e2e`) that drives the full Attester + Wallet round-trip plus 40+
+(`pso-e2e`) that drives the full Attester + Wallet round-trip plus ~40
 scenarios (negative-path invariants, envelope/VDF tampering, and the
 wallet-direct lifecycle) against a running pso-chain devnet.
 
@@ -97,9 +97,6 @@ guard it exercises.
 | S035  | `admin.update_mask` round-trips through `getRecord`.                                     |
 | S036  | `admin.set_rotation_candidate` round-trips through `getRecord`.                          |
 | S037  | `admin.revoke_attester` on never-registered address reverts `NotRegistered(addr)`.       |
-| S038  | `SequencerEpoch` view round-trip: constants + `currentEpoch` + `leaderForEpoch` ↔ `rankedLeadersForEpoch[0]`. |
-| S039  | `SlashingVerifier.proveEquivocation` happy path: two same-height signatures emit `EquivocationProven` + `Slashed`. |
-| S040  | `SlashingVerifier.proveInvalidVDF` happy path: zero-bytes proof against non-zero input emits `InvalidVDFProven` + `Slashed`. |
 | S041  | Users-pool envelope from a never-registered wallet key clears pool admission (no Attester gate on the actor lane). |
 | S042  | Mobile-API wallet flow: uniffi VDF + self-assembled envelope tx executes end-to-end through the `PsoEnvelopeDispatcher` (`status == 1`). |
 | S043  | Envelope aged ~20 blocks (inside `PSO_PROOF_MAX_AGE`) is admitted and executes — positive counterpart to S015. |
@@ -120,6 +117,10 @@ Intentional gaps in the numbering:
   existing record's mask / rate-limit / rotation flag in one
   call); the `AlreadyRegistered` error variant exists in the
   ABI but is dead code. Scenario dropped.
+- **S038–S040 (`SequencerEpoch` / `SlashingVerifier`)** — removed:
+  the new chain has no such L2 contracts; sequencer-epoch / leader
+  election and slashing are consensus-layer concerns (pso-chain-node
+  `consensus/`, pso-da, pso-rotation), not on-chain at `0x5200…02/03`.
 
 ## Exit codes
 
