@@ -43,6 +43,13 @@ alloy-eips.workspace               = true
 alloy-rpc-types-eth.workspace      = true
 alloy-transport-http.workspace     = true
 
+# BN254 scalar field — on-chain SR/AR/SU/TD ids are canonical field
+# elements (the SU/TD-hash precompiles reject `>=` modulus), so the id
+# generator samples `Fr` directly.
+ark-bn254.workspace                = true
+ark-ff.workspace                   = true
+ark-std.workspace                  = true
+
 # secp256k1 key material for address derivation in the env bootstrap.
 k256.workspace                     = true
 

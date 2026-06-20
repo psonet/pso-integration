@@ -231,11 +231,27 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     };
 
     let su_ids_ordered: Vec<U256> = su_ids_minted.clone();
+    // The chain's `_verifyAggregationProof` expects the `aggregationProof` arg
+    // as `[num_inputs:4B BE] ‖ public_inputs(32B × k) ‖ raw_proof`: it parses
+    // the prefix, asserts each attested public input matches the value it
+    // recomputes (per-SU owner/nft_hash + trailing binding), then forwards the
+    // whole blob to the zk_verify precompile. The FFI returns `proof` and
+    // `public_inputs` separately, so assemble that wire format here.
+    let combined_proof = {
+        let k = agg.public_inputs.len();
+        let mut buf = Vec::with_capacity(4 + k * 32 + agg.proof.len());
+        buf.extend_from_slice(&(k as u32).to_be_bytes());
+        for pi in &agg.public_inputs {
+            buf.extend_from_slice(pi);
+        }
+        buf.extend_from_slice(&agg.proof);
+        buf
+    };
     let inner = ITributeDraft::submitCall {
         tributeDraftId: td_id,
         derivedOwner: FixedBytes::<32>::from_slice(&td_owner_be),
         suIds: su_ids_ordered,
-        aggregationProof: Bytes::from(agg.proof),
+        aggregationProof: Bytes::from(combined_proof),
     }
     .abi_encode();
 

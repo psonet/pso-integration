@@ -11,6 +11,9 @@
 //! client or the bridge.
 
 use alloy_primitives::U256;
+use ark_bn254::Fr;
+use ark_ff::{BigInteger, PrimeField};
+use ark_std::UniformRand;
 use chrono::{Datelike, NaiveDate};
 use iso_currency::Currency;
 use rand::rngs::OsRng;
@@ -22,10 +25,15 @@ use rand::RngCore;
 /// We sample a fresh 32-byte BE blob so collision probability is
 /// negligible across an entire test session — the SR / SU SBTs
 /// would revert with `AlreadyExists` on duplicates.
+///
+/// **Reduced into the BN254 scalar field.** These ids are folded as
+/// canonical field elements by the SU/TD-hash precompiles (`0x0211`/
+/// `0x0212`), which reject any value `>=` the modulus (a raw 256-bit
+/// sample exceeds it ~80% of the time). The field is ~2^254, so the
+/// reduction keeps collisions negligible.
 pub fn random_id() -> U256 {
-    let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
-    U256::from_be_bytes(bytes)
+    let fr = Fr::rand(&mut OsRng);
+    U256::from_be_slice(&fr.into_bigint().to_bytes_be())
 }
 
 /// Random 32-byte secp256k1 secret-key material. Caller must wrap
