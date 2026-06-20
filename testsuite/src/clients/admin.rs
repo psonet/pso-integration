@@ -12,7 +12,7 @@
 //!
 //! ## Surface (today)
 //!
-//! Working: [`AdminClient::register_sra`], [`AdminClient::revoke_sra`],
+//! Working: [`AdminClient::register_attester`], [`AdminClient::revoke_attester`],
 //! [`AdminClient::update_mask`], [`AdminClient::set_rotation_candidate`],
 //! [`AdminClient::set_consensus_identity`], [`AdminClient::is_active`],
 //! [`AdminClient::get_record`], [`AdminClient::current_difficulty`].
@@ -33,8 +33,8 @@ use crate::clients::rpc::{RpcError, RpcHandle};
 
 /// Stable address of the AttestersRegistry predeploy. Re-exported from
 /// `pso_chain_abi::addresses::ATTESTERS_REGISTRY` under the historical
-/// name so `crate::clients::admin::SRA_REGISTRY` keeps working.
-pub const SRA_REGISTRY: Address = ATTESTERS_REGISTRY;
+/// name so `crate::clients::admin::ATTESTER_REGISTRY` keeps working.
+pub const ATTESTER_REGISTRY: Address = ATTESTERS_REGISTRY;
 
 sol! {
     /// `setConsensusIdentity` is part of `AttestersRegistry.sol` but is
@@ -92,23 +92,23 @@ impl AdminClient {
     /// `AttestersRegistry.register(attester, permissionMask, isRotationCandidate, consensusKey, p2pAddr)`.
     ///
     /// A rotation candidate must carry a non-zero `consensusKey`
-    /// (contract invariant); the testsuite SRA only needs to be *active*
+    /// (contract invariant); the testsuite Attester only needs to be *active*
     /// to submit records, so it registers as a non-rotation attester
     /// with a zero identity. Pass an explicit `consensus_key` (and set
     /// `is_rotation_candidate`) only when a scenario exercises rotation.
-    pub async fn register_sra(
+    pub async fn register_attester(
         &self,
-        sra: Address,
+        attester: Address,
         permission_mask: u32,
         is_rotation_candidate: bool,
         consensus_key: B256,
         p2p_addr: U256,
     ) -> Result<TxHash, RpcError> {
         let provider = self.inner.write_provider()?;
-        let reg = IAttestersRegistry::new(SRA_REGISTRY, provider);
+        let reg = IAttestersRegistry::new(ATTESTER_REGISTRY, provider);
         let pending = reg
             .register(
-                sra,
+                attester,
                 permission_mask,
                 is_rotation_candidate,
                 consensus_key,
@@ -122,13 +122,13 @@ impl AdminClient {
         Ok(*pending.tx_hash())
     }
 
-    /// `AttestersRegistry.revoke(sra)`. After this the SRA's submissions
+    /// `AttestersRegistry.revoke(attester)`. After this the Attester's submissions
     /// are bounced with `AttesterNotActive`.
-    pub async fn revoke_sra(&self, sra: Address) -> Result<TxHash, RpcError> {
+    pub async fn revoke_attester(&self, attester: Address) -> Result<TxHash, RpcError> {
         let provider = self.inner.write_provider()?;
-        let reg = IAttestersRegistry::new(SRA_REGISTRY, provider);
+        let reg = IAttestersRegistry::new(ATTESTER_REGISTRY, provider);
         let pending = reg
-            .revoke(sra)
+            .revoke(attester)
             .max_fee_per_gas(0)
             .max_priority_fee_per_gas(0)
             .send()
@@ -137,12 +137,12 @@ impl AdminClient {
         Ok(*pending.tx_hash())
     }
 
-    /// `AttestersRegistry.updateMask(sra, newMask)`.
-    pub async fn update_mask(&self, sra: Address, new_mask: u32) -> Result<TxHash, RpcError> {
+    /// `AttestersRegistry.updateMask(attester, newMask)`.
+    pub async fn update_mask(&self, attester: Address, new_mask: u32) -> Result<TxHash, RpcError> {
         let provider = self.inner.write_provider()?;
-        let reg = IAttestersRegistry::new(SRA_REGISTRY, provider);
+        let reg = IAttestersRegistry::new(ATTESTER_REGISTRY, provider);
         let pending = reg
-            .updateMask(sra, new_mask)
+            .updateMask(attester, new_mask)
             .max_fee_per_gas(0)
             .max_priority_fee_per_gas(0)
             .send()
@@ -151,16 +151,16 @@ impl AdminClient {
         Ok(*pending.tx_hash())
     }
 
-    /// `AttestersRegistry.setRotationCandidate(sra, isRotationCandidate)`.
+    /// `AttestersRegistry.setRotationCandidate(attester, isRotationCandidate)`.
     pub async fn set_rotation_candidate(
         &self,
-        sra: Address,
+        attester: Address,
         is_rotation_candidate: bool,
     ) -> Result<TxHash, RpcError> {
         let provider = self.inner.write_provider()?;
-        let reg = IAttestersRegistry::new(SRA_REGISTRY, provider);
+        let reg = IAttestersRegistry::new(ATTESTER_REGISTRY, provider);
         let pending = reg
-            .setRotationCandidate(sra, is_rotation_candidate)
+            .setRotationCandidate(attester, is_rotation_candidate)
             .max_fee_per_gas(0)
             .max_priority_fee_per_gas(0)
             .send()
@@ -175,14 +175,14 @@ impl AdminClient {
     /// may be 0; the node falls back to `<addr>.pso.network`.)
     pub async fn set_consensus_identity(
         &self,
-        sra: Address,
+        attester: Address,
         consensus_key: B256,
         p2p_addr: U256,
     ) -> Result<TxHash, RpcError> {
         let provider = self.inner.write_provider()?;
-        let reg = IConsensusIdentity::new(SRA_REGISTRY, provider);
+        let reg = IConsensusIdentity::new(ATTESTER_REGISTRY, provider);
         let pending = reg
-            .setConsensusIdentity(sra, consensus_key, p2p_addr)
+            .setConsensusIdentity(attester, consensus_key, p2p_addr)
             .max_fee_per_gas(0)
             .max_priority_fee_per_gas(0)
             .send()
@@ -195,23 +195,23 @@ impl AdminClient {
     // Registry read views.
     // -----------------------------------------------------------------
 
-    /// `AttestersRegistry.isActive(sra)` — true once admin has registered
+    /// `AttestersRegistry.isActive(attester)` — true once admin has registered
     /// and not revoked.
-    pub async fn is_active(&self, sra: Address) -> eyre::Result<bool> {
+    pub async fn is_active(&self, attester: Address) -> eyre::Result<bool> {
         let provider = self.inner.read_provider();
-        let reg = IAttestersRegistry::new(SRA_REGISTRY, &provider);
-        Ok(reg.isActive(sra).call().await?)
+        let reg = IAttestersRegistry::new(ATTESTER_REGISTRY, &provider);
+        Ok(reg.isActive(attester).call().await?)
     }
 
-    /// `AttestersRegistry.getRecord(sra)` — full record (mask, rotation
+    /// `AttestersRegistry.getRecord(attester)` — full record (mask, rotation
     /// flag, active bit, consensus identity).
     pub async fn get_record(
         &self,
-        sra: Address,
+        attester: Address,
     ) -> eyre::Result<IAttestersRegistry::AttesterRecord> {
         let provider = self.inner.read_provider();
-        let reg = IAttestersRegistry::new(SRA_REGISTRY, &provider);
-        Ok(reg.getRecord(sra).call().await?)
+        let reg = IAttestersRegistry::new(ATTESTER_REGISTRY, &provider);
+        Ok(reg.getRecord(attester).call().await?)
     }
 
     // -----------------------------------------------------------------

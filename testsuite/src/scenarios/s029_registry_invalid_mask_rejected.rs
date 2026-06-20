@@ -1,7 +1,7 @@
 //! S029 — `AttestersRegistry.register(addr, 0, ...)` reverts with
 //! `InvalidMask()`.
 //!
-//! After the `onlyAdmin` gate and `sra != address(0)` check
+//! After the `onlyAdmin` gate and `attester != address(0)` check
 //! (S028's path), `register` validates the permission bitmask:
 //! `permissionMask == 0` reverts with `InvalidMask`. We call as
 //! admin with a fresh non-zero address but `mask = 0`.
@@ -9,7 +9,7 @@
 use alloy_primitives::Address;
 use async_trait::async_trait;
 
-use crate::clients::sra::into_pso_error;
+use crate::clients::attester::into_pso_error;
 use crate::{PsoContractError, Scenario, TestEnv};
 
 pub struct S029;
@@ -31,7 +31,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let fake = Address::from([0xab; 20]);
     let err = env
         .admin
-        .register_sra(
+        .register_attester(
             fake,
             0u32,
             false,

@@ -2,7 +2,7 @@
 //!
 //! Powers the `pso-e2e` binary. Two client surfaces drive the chain:
 //!
-//! - [`SraClient`](clients::sra::SraClient) — agents-pool side. Submits
+//! - [`AttesterClient`](clients::attester::AttesterClient) — agents-pool side. Submits
 //!   SR/AR/SU calls (built directly on the `pso-chain-abi` interfaces +
 //!   the testsuite's own [`RpcHandle`](clients::rpc::RpcHandle)) via the
 //!   standard EL JSON-RPC at `:19545`. The pool admits a tx iff `from`
@@ -35,11 +35,11 @@ pub mod hardhat;
 pub mod scenario;
 pub mod scenarios;
 
-pub use bridge::{spawn_sra_loop, Bridge, BridgeError, SuMintArgs, SuMintReceipt, SuMintRequest};
+pub use bridge::{spawn_attester_loop, Bridge, BridgeError, SuMintArgs, SuMintReceipt, SuMintRequest};
 pub use cli::{init_tracing, parse_hex32, Cli, ReportFormat};
 pub use clients::actor::{ActorClient, ActorClientError};
 pub use clients::contract_errors::{decode_text, into_pso_error, PsoContractError};
-pub use clients::sra::SraClient;
+pub use clients::attester::AttesterClient;
 pub use env::TestEnv;
 // `PsoContractError` + the decoder primitives are owned by the
 // testsuite's `clients::contract_errors` module. Re-export at the crate

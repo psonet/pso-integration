@@ -3709,6 +3709,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "pso-attester-cli"
+version = "0.8.4"
+dependencies = [
+ "alloy-contract",
+ "alloy-network",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-signer",
+ "alloy-signer-local",
+ "alloy-transport-http",
+ "clap",
+ "eyre",
+ "hex",
+ "pso-attester-integration",
+ "pso-chain-abi",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "pso-attester-integration"
 version = "0.8.4"
 dependencies = [
@@ -3828,27 +3849,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "pso-sra-cli"
-version = "0.8.4"
-dependencies = [
- "alloy-contract",
- "alloy-network",
- "alloy-primitives",
- "alloy-provider",
- "alloy-signer",
- "alloy-signer-local",
- "alloy-transport-http",
- "clap",
- "eyre",
- "hex",
- "pso-attester-integration",
- "pso-chain-abi",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

@@ -39,7 +39,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let call = ISpendingRecord::submitCall { srId: sr_id };
     let inner = Bytes::from(call.abi_encode());
     let result = env
-        .new_actor_as_sra_zero()?
+        .new_actor_as_attester_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner, |mut bytes| {
             // Flip the last byte of the vdf_output field (0x76 wire range).
             // Any single-byte change makes the encoded output not equal

@@ -48,7 +48,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let call_a = ISpendingRecord::submitCall { srId: sr_id_a };
     let inner_a = Bytes::from(call_a.abi_encode());
     let first = env
-        .new_actor_as_sra_zero()?
+        .new_actor_as_attester_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner_a, move |bytes| {
             let mut n = [0u8; 32];
             n.copy_from_slice(&bytes[crate::clients::envelope::NULLIFIER_RANGE]);
@@ -95,7 +95,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let call_b = ISpendingRecord::submitCall { srId: sr_id_b };
     let inner_b = Bytes::from(call_b.abi_encode());
     let result = env
-        .new_actor_as_sra_zero()?
+        .new_actor_as_attester_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner_b, move |mut bytes| {
             bytes[crate::clients::envelope::NULLIFIER_RANGE].copy_from_slice(&nullifier);
             tracing::info!(

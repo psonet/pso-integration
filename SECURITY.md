@@ -8,7 +8,7 @@ Starting with the first release tagged after this file lands (expected: **v0.3.7
 
 For each release ≥ the cutoff, the following files ship alongside the regular release assets.
 
-> **Version suffix.** Every released artifact carries a `-vX.Y.Z` suffix (the release tag, inserted before any file extension) — e.g. `pso-e2e-linux-x86_64-v0.3.11`, `pso-sra-integration-kotlin-v0.3.11.jar`. The tables below omit the suffix for brevity; substitute the release's tag when downloading.
+> **Version suffix.** Every released artifact carries a `-vX.Y.Z` suffix (the release tag, inserted before any file extension) — e.g. `pso-e2e-linux-x86_64-v0.3.11`, `pso-attester-integration-kotlin-v0.3.11.jar`. The tables below omit the suffix for brevity; substitute the release's tag when downloading.
 
 **End-to-end binaries:**
 
@@ -35,11 +35,11 @@ Each mobile slice also ships a `--features dev-tools` variant with `-dev-tools` 
 | `uniffi-bindgen-mobile-linux-x86_64` | UniFFI bindgen, Linux x86_64. |
 | `uniffi-bindgen-mobile-darwin-arm64` | UniFFI bindgen, Apple Silicon. |
 
-**SRA Kotlin bindings:**
+**Attester Kotlin bindings:**
 
 | File | What it is |
 |---|---|
-| `pso-sra-integration-kotlin.jar` | UniFFI-generated Kotlin bindings + 3 bundled native libs (`META-INF/native/<os>-<arch>/`). Also published to GitHub Packages Maven as `net.pso:integration.agent:X.Y.Z`. |
+| `pso-attester-integration-kotlin.jar` | UniFFI-generated Kotlin bindings + 3 bundled native libs (`META-INF/native/<os>-<arch>/`). Also published to GitHub Packages Maven as `net.pso:integration.attester:X.Y.Z`. |
 
 **Common:**
 
@@ -89,7 +89,7 @@ TAG=v0.3.7  # or any release ≥ the cutoff
 
 # JAR verification (most common consumer path). Released filenames
 # carry the `-$TAG` version suffix before the extension.
-ARTIFACT="pso-sra-integration-kotlin-$TAG.jar"
+ARTIFACT="pso-attester-integration-kotlin-$TAG.jar"
 gh release download "$TAG" --repo "$REPO" \
   --pattern "$ARTIFACT" \
   --pattern "$ARTIFACT.sig" \

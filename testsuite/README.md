@@ -1,7 +1,7 @@
 # pso-e2e-testsuite
 
 End-to-end test harness for the PSO L2. Ships as a single binary
-(`pso-e2e`) that drives the full SRA + Wallet round-trip plus 40+
+(`pso-e2e`) that drives the full Attester + Wallet round-trip plus 40+
 scenarios (negative-path invariants, envelope/VDF tampering, and the
 wallet-direct lifecycle) against a running pso-chain devnet.
 
@@ -26,11 +26,11 @@ are NO env-var fallbacks for the network parameters by design.
 
 ```bash
 pso-e2e \
-  --rpc-url       http://127.0.0.1:19545 \
-  --actor-rpc-url http://127.0.0.1:8546  \
-  --chain-id      19280501               \
-  --admin-key     0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-  --sra-key       0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+  --rpc-url        http://127.0.0.1:19545 \
+  --actor-rpc-url  http://127.0.0.1:8546  \
+  --chain-id       19280501               \
+  --admin-key      0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+  --attester-key   0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 ```
 
 Flags:
@@ -40,8 +40,8 @@ Flags:
 | `--rpc-url`         | URL             | no       | Agents-pool RPC, default `http://127.0.0.1:19545`.                   |
 | `--actor-rpc-url`   | URL             | no       | Actor-pool RPC, default `http://127.0.0.1:8546`.                     |
 | `--chain-id`        | u64             | no       | Default `19_280_501` (devnet `--dev` genesis).                       |
-| `--admin-key`       | 32B hex         | yes      | SRARegistry admin secret key.                                        |
-| `--sra-key`         | 32B hex         | yes      | Primary SRA secret key.                                              |
+| `--admin-key`       | 32B hex         | yes      | AttestersRegistry admin secret key.                                  |
+| `--attester-key`    | 32B hex         | yes      | Primary Attester secret key.                                         |
 | `--wallet-key`      | 32B hex         | no       | Optional wallet (actor-pool) signer; rolled at runtime otherwise.    |
 | `--only`            | csv             | no       | Substring filter on scenario id, e.g. `--only S001,S009`.            |
 | `--skip`            | csv             | no       | Substring filter excluding the listed ids.                           |
@@ -64,14 +64,14 @@ guard it exercises.
 | id    | invariant                                                                                |
 | ----- | ---------------------------------------------------------------------------------------- |
 | S001  | Full SR/AR → SU via bridge → wallet TD prove + submit; `derivedOwner` round-trip.        |
-| S002  | SRA-signed `TributeDraft.submit` through agents pool is refused (pool or contract).      |
-| S003  | Non-SRA wallet cannot submit a SpendingRecord through the actor pool.                    |
-| S004  | Non-SRA wallet cannot submit a SpendingRecordAmendment through the actor pool.           |
-| S005  | Non-SRA wallet cannot mint a SpendingUnit through the actor pool.                        |
-| S006  | SRA-signed actor-pool submission: assert the inner-call outcome (no SR landed).          |
+| S002  | Attester-signed `TributeDraft.submit` through agents pool is refused (pool or contract). |
+| S003  | Non-Attester wallet cannot submit a SpendingRecord through the actor pool.               |
+| S004  | Non-Attester wallet cannot submit a SpendingRecordAmendment through the actor pool.      |
+| S005  | Non-Attester wallet cannot mint a SpendingUnit through the actor pool.                   |
+| S006  | Attester-signed actor-pool submission: assert the inner-call outcome (no SR landed).     |
 | S007  | Registering the same SR id twice reverts with `AlreadyExists`.                           |
 | S008  | `SR.submit(id=0, ...)` reverts with `InvalidTokenId`.                                    |
-| S009  | `SU.submit` referencing another SRA's SR reverts with `InvalidSpendingRecords` (bad-owner SR). |
+| S009  | `SU.submit` referencing another Attester's SR reverts with `InvalidSpendingRecords` (bad-owner SR). |
 | S010  | Second SU sharing an SR fingerprint reverts with `InvalidSpendingRecords` (duplicate SR). |
 | S011  | `SU.submit` with never-registered SR ids reverts with `InvalidSpendingRecords` (bad-owner SR). |
 | S012  | `TributeDraft.submit` with empty `suIds` reverts with `EmptyArray`.                      |
@@ -82,25 +82,25 @@ guard it exercises.
 | S017  | Actor RPC rejects envelope with bit-flipped VDF output bytes.                            |
 | S018  | `TributeDraft.submit` with empty proof reverts `MalformedAggregationProof`.              |
 | S019  | `TributeDraft.submit` with mismatched public inputs reverts `InvalidAggregationProof`.   |
-| S020  | `SU.submit` referencing another SRA's AR reverts with `InvalidSpendingRecords` (bad-owner AR). |
+| S020  | `SU.submit` referencing another Attester's AR reverts with `InvalidSpendingRecords` (bad-owner AR). |
 | S021  | `TributeDraft.submit` with non-existent `suId` reverts `NotFound`.                       |
 | S022  | `TributeDraft.submit` with SUs on different worldwide_days reverts `NotSameWorldwideDay`.|
 | S023  | `TributeDraft.submit` with SUs in different currencies reverts `NotSameCurrency`. |
 | S026  | `SU.submit` with `amount_atto >= 1e18` reverts `InvalidAmount`.               |
-| S027  | `SRARegistry.register` from a non-admin reverts `NotAdmin`.                              |
-| S028  | `SRARegistry.register(address(0), ...)` reverts `ZeroAddress`.                           |
-| S029  | `SRARegistry.register(addr, 0, ...)` reverts `InvalidMask`.                              |
-| S030  | `SR.submit` from a never-registered SRA reverts `SRANotActive`.                          |
+| S027  | `AttestersRegistry.register` from a non-admin reverts `NotAdmin`.                        |
+| S028  | `AttestersRegistry.register(address(0), ...)` reverts `ZeroAddress`.                     |
+| S029  | `AttestersRegistry.register(addr, 0, ...)` reverts `InvalidMask`.                        |
+| S030  | `SR.submit` from a never-registered Attester reverts `AttesterNotActive`.                |
 | S031  | Actor RPC rejects envelope with VDF computed at `T` outside current ∪ previous epoch's. |
 | S032  | Actor RPC accepts envelope with VDF computed at the **previous** epoch's `T` after rollover. |
-| S033  | Revoked SRA's `SR.submit` reverts `SRANotActive` (lifecycle).                            |
+| S033  | Revoked Attester's `SR.submit` reverts `AttesterNotActive` (lifecycle).                  |
 | S035  | `admin.update_mask` round-trips through `getRecord`.                                     |
 | S036  | `admin.set_rotation_candidate` round-trips through `getRecord`.                          |
-| S037  | `admin.revoke_sra` on never-registered address reverts `NotRegistered(addr)`.            |
+| S037  | `admin.revoke_attester` on never-registered address reverts `NotRegistered(addr)`.       |
 | S038  | `SequencerEpoch` view round-trip: constants + `currentEpoch` + `leaderForEpoch` ↔ `rankedLeadersForEpoch[0]`. |
 | S039  | `SlashingVerifier.proveEquivocation` happy path: two same-height signatures emit `EquivocationProven` + `Slashed`. |
 | S040  | `SlashingVerifier.proveInvalidVDF` happy path: zero-bytes proof against non-zero input emits `InvalidVDFProven` + `Slashed`. |
-| S041  | Users-pool envelope from a never-registered wallet key clears pool admission (no SRA gate on the actor lane). |
+| S041  | Users-pool envelope from a never-registered wallet key clears pool admission (no Attester gate on the actor lane). |
 | S042  | Mobile-API wallet flow: uniffi VDF + self-assembled envelope tx executes end-to-end through the `PsoEnvelopeDispatcher` (`status == 1`). |
 | S043  | Envelope aged ~20 blocks (inside `PSO_PROOF_MAX_AGE`) is admitted and executes — positive counterpart to S015. |
 | S044  | Sequential wallet txs (nonce 0, 1) execute with per-nonce VDF recompute; nonce-0 VDF binding replayed at nonce 2 rejects `BadVdfInputBinding`. |
@@ -115,7 +115,7 @@ Intentional gaps in the numbering:
   revert, which would need 65 SU mints per scenario run. Drop
   until we have a cheaper path.
 - **S034 (`AlreadyRegistered`)** — initial premise was that
-  re-registering an active SRA reverts. The contract is actually
+  re-registering an active Attester reverts. The contract is actually
   idempotent (`register` is the canonical way to UPDATE an
   existing record's mask / rate-limit / rotation flag in one
   call); the `AlreadyRegistered` error variant exists in the
@@ -126,7 +126,7 @@ Intentional gaps in the numbering:
 - `0` — all (filtered) scenarios passed.
 - `1` — at least one scenario failed; consult the markdown / JSON
   report on stdout.
-- `2` — bootstrap or arg-parse error (clap / connect / SRA-register).
+- `2` — bootstrap or arg-parse error (clap / connect / Attester-register).
 
 ## Wiring into pso-chain CI
 
@@ -138,7 +138,7 @@ Intentional gaps in the numbering:
       --actor-rpc-url http://127.0.0.1:8546  \
       --chain-id      "$PSO_CHAIN_ID"        \
       --admin-key     "$ADMIN_KEY"           \
-      --sra-key       "$SRA_KEY"
+      --attester-key  "$ATTESTER_KEY"
 ```
 
 `--network host` so the container can reach the devnet RPCs on
@@ -155,14 +155,14 @@ cargo test -p pso-e2e-testsuite --test framework
 # Run the full suite against a local pso-chain --dev node.
 pso-chain --dev &
 pso-e2e \
-  --admin-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-  --sra-key   0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+  --admin-key    0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+  --attester-key 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 
 # Run a single scenario.
-pso-e2e --admin-key ... --sra-key ... --only S001 -vv
+pso-e2e --admin-key ... --attester-key ... --only S001 -vv
 ```
 
 The canonical Hardhat keys for `--dev` are pinned in
 [`src/hardhat.rs`](src/hardhat.rs) as a local-dev fixture; they are
 NOT wired into the binary's default code path — pass them via
-`--admin-key` / `--sra-key` explicitly.
+`--admin-key` / `--attester-key` explicitly.

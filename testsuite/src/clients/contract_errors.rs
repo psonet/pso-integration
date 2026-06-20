@@ -40,9 +40,9 @@ use crate::clients::rpc::RpcError;
 // -----------------------------------------------------------------
 
 sol! {
-    /// `ISRAAware.AttesterNotActive()` — agents-pool-side guard on every
+    /// `IAttesterAware.AttesterNotActive()` — agents-pool-side guard on every
     /// SR/AR/SU/TD submit entry point, fires when the EVM-side check
-    /// `sraRegistry.isActive(_msgSender())` returns false.
+    /// `attesterRegistry.isActive(_msgSender())` returns false.
     #[allow(missing_docs)]
     error AttesterNotActive();
 
@@ -134,11 +134,11 @@ sol! {
 
     /// `AttestersRegistry.AlreadyRegistered(address)`.
     #[allow(missing_docs)]
-    error AlreadyRegistered(address sra);
+    error AlreadyRegistered(address attester);
 
     /// `AttestersRegistry.NotRegistered(address)`.
     #[allow(missing_docs)]
-    error NotRegistered(address sra);
+    error NotRegistered(address attester);
 
     /// `AttestersRegistry.ZeroAddress()`.
     #[allow(missing_docs)]
@@ -153,7 +153,7 @@ sol! {
 /// rejection the suite cares about.
 #[derive(Debug, Clone)]
 pub enum PsoContractError {
-    /// `ISRAAware.AttesterNotActive`.
+    /// `IAttesterAware.AttesterNotActive`.
     AttesterNotActive,
     /// `SoulBoundTokenBase.AlreadyExists`.
     AlreadyExists,
@@ -296,7 +296,7 @@ pub fn decode(err: alloy_contract::Error) -> PsoContractError {
 /// Typical scenario / client-side usage:
 ///
 /// ```ignore
-/// let err = sra.call().await.map_err(into_pso_error)?;
+/// let err = attester.call().await.map_err(into_pso_error)?;
 /// match err {
 ///     PsoContractError::AttesterNotActive => { ... }
 ///     PsoContractError::NotFound(id) => { ... }
@@ -431,13 +431,13 @@ pub fn decode_from_bytes(data: &[u8]) -> PsoContractError {
         }
     }
     if selector == AlreadyRegistered::SELECTOR {
-        if let Ok(AlreadyRegistered { sra }) = AlreadyRegistered::abi_decode_raw(body) {
-            return PsoContractError::AlreadyRegistered(sra);
+        if let Ok(AlreadyRegistered { attester }) = AlreadyRegistered::abi_decode_raw(body) {
+            return PsoContractError::AlreadyRegistered(attester);
         }
     }
     if selector == NotRegistered::SELECTOR {
-        if let Ok(NotRegistered { sra }) = NotRegistered::abi_decode_raw(body) {
-            return PsoContractError::NotRegistered(sra);
+        if let Ok(NotRegistered { attester }) = NotRegistered::abi_decode_raw(body) {
+            return PsoContractError::NotRegistered(attester);
         }
     }
 
@@ -556,7 +556,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decode_sra_not_active_selector() {
+    fn decode_attester_not_active_selector() {
         let bytes = AttesterNotActive::SELECTOR.to_vec();
         match decode_from_bytes(&bytes) {
             PsoContractError::AttesterNotActive => {}

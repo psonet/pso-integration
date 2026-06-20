@@ -1,4 +1,4 @@
-# SRA Integration
+# Attester Integration
 
 FFI library for computing NFT ownership values using Secp256K1 ECDH
 key derivation and Poseidon5 hashing. Produces a Kotlin JVM library
@@ -7,11 +7,11 @@ key derivation and Poseidon5 hashing. Produces a Kotlin JVM library
 ## Cryptographic Flow
 
 ```
-Input:  sra_sk     (Secp256K1 secret key — raw 32 bytes or SEC1 DER encoded)
-        consent_pk (Secp256K1 public key — 33-byte compressed or 65-byte uncompressed)
+Input:  attester_sk (Secp256K1 secret key — raw 32 bytes or SEC1 DER encoded)
+        consent_pk  (Secp256K1 public key — 33-byte compressed or 65-byte uncompressed)
 
 1. Parse and validate inputs
-2. ECDH: S = sra_sk * consent_pk  (scalar multiplication on Secp256K1)
+2. ECDH: S = attester_sk * consent_pk  (scalar multiplication on Secp256K1)
 3. Generate random nonce          (Fr::random — valid BN256 field element)
 4. KDF:  nft_sk = HMAC-SHA256(S, nonce_bytes)
 5. Derive nft_pk from nft_sk      (Secp256K1 generator point)
@@ -21,7 +21,7 @@ Input:  sra_sk     (Secp256K1 secret key — raw 32 bytes or SEC1 DER encoded)
 
 ## Secret Key Format
 
-The `sra_sk` parameter accepts two formats, auto-detected by length:
+The `attester_sk` parameter accepts two formats, auto-detected by length:
 
 - **Raw scalar (32 bytes)** — the private key scalar directly
 - **SEC1 DER (>32 bytes)** — RFC 5915 encoded private key
@@ -150,31 +150,31 @@ repositories {
 dependencies {
     // Published to GitHub Packages by the release pipeline. JNA is a
     // transitive runtime dependency, resolved automatically from the POM.
-    implementation("net.pso:integration.agent:0.3.11")
+    implementation("net.pso:integration.attester:0.3.11")
 }
 ```
 
 ### Usage
 
 ```kotlin
-import net.pso.integration.agent.NativeLoader
-import net.pso.integration.agent.generateNftOwnership
-import net.pso.integration.agent.OwnershipException
+import net.pso.integration.attester.NativeLoader
+import net.pso.integration.attester.generateNftOwnership
+import net.pso.integration.attester.OwnershipException
 
 // Load native library once at application startup
 NativeLoader.load()
 
 // Prepare secret key — either raw 32-byte scalar or SEC1 DER encoded
 // Raw 32-byte scalar:
-val sraSkBytes = byteArrayOf(/* 32 bytes of private key scalar */)
+val attesterSkBytes = byteArrayOf(/* 32 bytes of private key scalar */)
 // Or SEC1 DER encoded (39+ bytes):
-// val sraSkBytes = byteArrayOf(0x30, 0x25, 0x02, 0x01, 0x01, 0x04, 0x20, ...)
+// val attesterSkBytes = byteArrayOf(0x30, 0x25, 0x02, 0x01, 0x01, 0x04, 0x20, ...)
 
 // Prepare public key (33 bytes compressed or 65 bytes uncompressed)
 val consentPkBytes = byteArrayOf(/* Secp256K1 public key bytes */)
 
 try {
-    val result = generateNftOwnership(sraSkBytes, consentPkBytes)
+    val result = generateNftOwnership(attesterSkBytes, consentPkBytes)
     println("Nonce: ${result.nonce}")
     println("Ownership: ${result.ownership}")
 } catch (e: OwnershipException) {
@@ -186,7 +186,7 @@ try {
 
 ```
 pso-attester-integration-0.1.0.jar
-├── net/pso/integration/agent/
+├── net/pso/integration/attester/
 │   ├── NativeLoader.class          # Platform-aware library loader
 │   └── pso_attester_integration.class   # UniFFI-generated bindings
 └── native/
@@ -253,10 +253,10 @@ crates/pso-attester-integration/
 │   ├── settings.gradle.kts
 │   ├── uniffi.toml         # UniFFI config (Kotlin package name)
 │   └── src/
-│       ├── main/kotlin/net/pso/integration/agent/
+│       ├── main/kotlin/net/pso/integration/attester/
 │       │   └── NativeLoader.kt
-│       └── test/kotlin/net/pso/integration/agent/
-│           └── SraIntegrationTest.kt
+│       └── test/kotlin/net/pso/integration/attester/
+│           └── AttesterIntegrationTest.kt
 └── Cargo.toml
 ```
 

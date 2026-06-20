@@ -8,7 +8,7 @@
 use eyre::Result;
 use serde::{Deserialize, Serialize};
 
-/// The issuance report the SRA hands the wallet (hex-encoded fields).
+/// The issuance report the Attester hands the wallet (hex-encoded fields).
 /// Input to `prepare-su`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IssuanceReportJson {

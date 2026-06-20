@@ -2,16 +2,16 @@
 //! reverts with `AttesterNotActive`.
 //!
 //! Every state-mutating entry point on the agents-pool path goes
-//! through the `onlyActiveSRA` modifier (`ISRAAware`), which calls
-//! `sraRegistry.isActive(_msgSender())`. A never-registered signer
+//! through the `onlyActiveAttester` modifier (`IAttesterAware`), which calls
+//! `attesterRegistry.isActive(_msgSender())`. A never-registered signer
 //! sees `isActive == false` and the modifier reverts with
 //! `AttesterNotActive()`. We roll a fresh secp256k1 key, build an
-//! `SraClient` from it, and try to submit an SR — expect the
+//! `AttesterClient` from it, and try to submit an SR — expect the
 //! revert.
 
 use async_trait::async_trait;
 
-use crate::clients::sra::SraClient;
+use crate::clients::attester::AttesterClient;
 use crate::data::{random_id, random_secret_key};
 use crate::{into_pso_error, PsoContractError, Scenario, TestEnv};
 
@@ -23,7 +23,7 @@ impl Scenario for S030 {
         "S030"
     }
     fn description(&self) -> &'static str {
-        "SR.submit from never-registered SRA reverts AttesterNotActive"
+        "SR.submit from never-registered Attester reverts AttesterNotActive"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -31,10 +31,10 @@ impl Scenario for S030 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    // Roll a fresh key — never goes through `bootstrap_register_sra`,
+    // Roll a fresh key — never goes through `bootstrap_register_attester`,
     // so the registry reports `isActive(addr) == false`.
     let stranger_key = random_secret_key();
-    let stranger = SraClient::new(&env.rpc_url, env.chain_id, &stranger_key)?;
+    let stranger = AttesterClient::new(&env.rpc_url, env.chain_id, &stranger_key)?;
 
     let sr_id = random_id();
     let err = stranger

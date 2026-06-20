@@ -3,7 +3,7 @@
 // (libpso_attester_integration.dylib on darwin, .so on linux) so a
 // vanilla Kotlin/JVM consumer can `System.load(...)` them via JNI.
 //
-// SRA is server-side, JVM-only — no iOS / Android / Windows slices.
+// Attester is server-side, JVM-only — no iOS / Android / Windows slices.
 //
 // Inputs (staged by the CI job `build-attester-kotlin-jar` before `gradle build`):
 //   - $rootDir/uniffi-bindgen-attester                                  — host-arch bindgen binary
@@ -146,19 +146,51 @@ tasks.named<Jar>("jar") {
 
 // Publish the bindings JAR (Kotlin classes + bundled native libs) to
 // the repo's GitHub Packages Maven registry as
-// net.pso:integration.agent:<version>. CI provides the
+// net.pso:integration.attester:<version>. CI provides the
 // GITHUB_* env vars; the workflow-level `packages: write` permission
 // authorises the push.
 publishing {
     publications {
         create<MavenPublication>("gpr") {
-            // Maven coordinate: net.pso:integration.agent:<version>.
+            // Maven coordinate: net.pso:integration.attester:<version>.
             // Independent of the local JAR archive name
             // (pso-attester-integration-kotlin.jar) and the Rust crate name
             // (pso_attester_integration) — maven-publish names the published
             // file from the coordinate.
-            artifactId = "integration.agent"
+            artifactId = "integration.attester"
             from(components["java"])
+
+            // POM metadata — required for a well-formed published artifact
+            // (Maven Central / consumers surface these).
+            pom {
+                name.set("PSO Attester Integration (Kotlin)")
+                description.set(
+                    "UniFFI Kotlin/JVM bindings for the PSO attester: consent-box " +
+                        "NFT issuance + SpendingUnit hashing, with bundled native libs.",
+                )
+                url.set("https://github.com/psonet/pso-integration")
+                licenses {
+                    license {
+                        name.set("MIT License")
+                        url.set("https://opensource.org/licenses/MIT")
+                        distribution.set("repo")
+                    }
+                }
+                developers {
+                    developer {
+                        id.set("psonet")
+                        name.set("PSO")
+                        email.set("dev@pso.network")
+                        organization.set("PSO")
+                        organizationUrl.set("https://github.com/psonet")
+                    }
+                }
+                scm {
+                    connection.set("scm:git:https://github.com/psonet/pso-integration.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/psonet/pso-integration.git")
+                    url.set("https://github.com/psonet/pso-integration")
+                }
+            }
         }
     }
     repositories {

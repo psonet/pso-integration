@@ -4,7 +4,7 @@
 //! from the well-known mnemonic
 //! `"test test test test test test test test test test test junk"`
 //! over BIP-44 path `m/44'/60'/0'/0/{i}`. The scenario surface itself
-//! is fully CLI-driven (admin / SRA / wallet keys come in as
+//! is fully CLI-driven (admin / Attester / wallet keys come in as
 //! `--*-key` args), so the binary does NOT depend on these constants
 //! at runtime.
 //!
@@ -12,7 +12,7 @@
 //!
 //! - Local-dev convenience: a developer running the binary by hand
 //!   against `pso-chain --dev` can paste the canonical values into
-//!   `--admin-key` / `--sra-key`. The constants are kept here as the
+//!   `--admin-key` / `--attester-key`. The constants are kept here as the
 //!   documented source.
 //! - Internal sanity tests (`canonical_first_two_addresses` below)
 //!   pin the table against drift — if either key ever decodes to a
@@ -22,7 +22,7 @@
 //! Conventions kept for readability of the table:
 //!
 //! - `0` — Registry admin (Hardhat #0, `0xf39Fd6…`).
-//! - `1` — Primary SRA signer (Hardhat #1, `0x7099…`).
+//! - `1` — Primary Attester signer (Hardhat #1, `0x7099…`).
 //! - `2..=9` — General-purpose wallets.
 
 use alloy_primitives::Address;
@@ -108,8 +108,8 @@ mod tests {
     use super::*;
 
     /// Sanity check: indices 0 and 1 are the ones pso-chain's `--dev`
-    /// genesis pre-funds as registry admin / primary SRA. If either
-    /// of these addresses drifts, the SRA registration bootstrap
+    /// genesis pre-funds as registry admin / primary Attester. If either
+    /// of these addresses drifts, the Attester registration bootstrap
     /// fails silently against the live node — pin them here.
     #[test]
     fn canonical_first_two_addresses() {

@@ -1,4 +1,4 @@
-//! `pso-sra-cli mint-su` — mint a SpendingUnit on L2.
+//! `pso-attester-cli mint-su` — mint a SpendingUnit on L2.
 //!
 //! SU issuance goes through the attester FFI: `generate_nft_header`
 //! (consent box over the wallet's `consent_pk`) + `issue_with_header`
@@ -9,7 +9,7 @@
 use clap::Args as ClapArgs;
 use eyre::Result;
 
-use crate::client::SraRpc;
+use crate::client::AttesterRpc;
 
 #[derive(ClapArgs, Debug)]
 pub struct Args {
@@ -48,7 +48,7 @@ pub struct Args {
     pub amendment_sr_ids: String,
 }
 
-pub async fn run(client: &SraRpc, args: Args) -> Result<()> {
+pub async fn run(client: &AttesterRpc, args: Args) -> Result<()> {
     let consent_pk = super::strip_hex(&args.consent_pk)?;
     let seed = super::strip_hex(&args.seed)?;
     let referrer = super::parse_address(&args.referrer)?;
@@ -61,7 +61,7 @@ pub async fn run(client: &SraRpc, args: Args) -> Result<()> {
     let ar_fps: Vec<Vec<u8>> = ar_ids.iter().map(|id| id.to_be_bytes::<32>().to_vec()).collect();
 
     // Attester FFI: consent-box header + full issuance, bound to the
-    // SRA's on-chain address.
+    // Attester's on-chain address.
     let attester = pso_attester_integration::Attester::new(client.address().to_vec())
         .map_err(|e| eyre::eyre!("attester: {e:?}"))?;
     let header = attester

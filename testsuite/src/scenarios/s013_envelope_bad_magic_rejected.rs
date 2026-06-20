@@ -33,7 +33,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let call = ISpendingRecord::submitCall { srId: sr_id };
     let inner = Bytes::from(call.abi_encode());
     let result = env
-        .new_actor_as_sra_zero()?
+        .new_actor_as_attester_zero()?
         .submit_tx_with_envelope(SPENDING_RECORD, inner, |mut env_bytes| {
             // Clobber the 0x76 type byte (the anonymous-lane discriminator);
             // the users RPC then sees a non-0x76 tx and refuses it.

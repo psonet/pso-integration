@@ -33,7 +33,7 @@ name: ci
 #                                 pre-merge; those are main-push /
 #                                 tag-only paths. Note `cargo check
 #                                 --workspace --tests` still compiles
-#                                 the mobile/sra crates on the host
+#                                 the mobile/attester crates on the host
 #                                 target, so non-cross build breakage
 #                                 is caught here — only the cross /
 #                                 packaging (iOS/Android/JAR) steps
@@ -845,7 +845,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       # Build + publish the Kotlin bindings to GitHub Packages Maven
-      # (net.pso:integration.agent:<x.y.z>). The Maven
+      # (net.pso:integration.attester:<x.y.z>). The Maven
       # coordinate uses the plain SemVer (`${TAG#v}`, no `v`); the
       # release-attached JAR keeps the `-v<x.y.z>` filename suffix.
       # GITHUB_TOKEN here is the job's GITHUB_TOKEN — the workflow-level
@@ -876,6 +876,119 @@ jobs:
         with:
           name: pso-attester-integration-kotlin-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
           path: dist/pso-attester-integration-kotlin-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}.jar
+          if-no-files-found: error
+          retention-days: 7
+
+  # Python wheels for the attester bindings — one platform wheel per slice
+  # (the attester crate is pure Rust, so each wheel bundles a single
+  # self-contained native lib next to the UniFFI-generated module). aarch64
+  # Linux is cross-built from the x86_64 runner via cargo-zigbuild; the UniFFI
+  # bindgen reads component metadata from any slice (cross-arch is fine).
+  build-attester-python:
+    name: Build pso-attester-integration ${{ matrix.label }} wheel
+    needs: [resolve, tag]
+    if: |
+      always() &&
+      (needs.tag.result == 'success' && needs.tag.outputs.tag != '' ||
+       needs.resolve.outputs.release_tag != '')
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            libext: so
+            plat: manylinux_2_34_x86_64
+            cross: false
+          - label: linux-aarch64
+            runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            libext: so
+            plat: manylinux_2_34_aarch64
+            cross: true
+          - label: darwin-arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            libext: dylib
+            plat: macosx_11_0_arm64
+            cross: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/configure-private-git
+        with:
+          token: ${{ secrets.PSONET_REPO_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install zig + cargo-zigbuild
+        if: matrix.cross
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+      - name: Install cargo-zigbuild
+        if: matrix.cross
+        run: command -v cargo-zigbuild >/dev/null 2>&1 || cargo install --locked cargo-zigbuild
+
+      - name: Build cdylib (${{ matrix.target }})
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cargo zigbuild --release --target ${{ matrix.target }} -p pso-attester-integration
+          else
+            cargo build --release --target ${{ matrix.target }} -p pso-attester-integration
+          fi
+
+      - name: Build host uniffi-bindgen-attester
+        run: cargo build --release --bin uniffi-bindgen-attester -p pso-attester-integration
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate Python bindings + stage native lib
+        run: |
+          set -euo pipefail
+          pkg=crates/pso-attester-integration/python/pso_attester_integration
+          lib="target/${{ matrix.target }}/release/libpso_attester_integration.${{ matrix.libext }}"
+          ./target/release/uniffi-bindgen-attester generate \
+            --library "$lib" \
+            --language python \
+            --out-dir "$pkg" \
+            --config crates/pso-attester-integration/python/uniffi.toml
+          cp "$lib" "$pkg/"
+          ls -lh "$pkg/"
+
+      - name: Build wheel (${{ matrix.plat }})
+        env:
+          TAG: ${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          cd crates/pso-attester-integration/python
+          python -m pip install --upgrade pip "setuptools>=68" wheel
+          # Inject the release version (sans leading `v`) into pyproject.
+          ver="${TAG#v}"
+          sed -i.bak -E "s/^version = \".*\"/version = \"${ver}\"/" pyproject.toml && rm -f pyproject.toml.bak
+          # `--plat-name` forces the correct tag for cross-built libs (the build
+          # host's arch is irrelevant); setuptools>=61 reads pyproject [project].
+          python setup.py bdist_wheel --plat-name ${{ matrix.plat }}
+          ls -lh dist/
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: pso-attester-integration-python-${{ matrix.label }}-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
+          path: crates/pso-attester-integration/python/dist/*.whl
           if-no-files-found: error
           retention-days: 7
 
@@ -990,12 +1103,12 @@ jobs:
           pattern: uniffi-bindgen-mobile-*
           merge-multiple: false
 
-      # SRA Kotlin JAR. We download by exact name rather than
+      # Attester Kotlin JAR. We download by exact name rather than
       # `pso-attester-integration-*` because that pattern would also pick
       # up the workflow-internal `pso-attester-integration-darwin-arm64-dylib`
       # artifact (1-day retention, not for release — the dylib it
       # carries already ships bundled inside the JAR).
-      - name: Download SRA Kotlin JAR
+      - name: Download Attester Kotlin JAR
         uses: actions/download-artifact@v4
         with:
           name: pso-attester-integration-kotlin-${{ needs.tag.outputs.tag || needs.resolve.outputs.release_tag }}
@@ -1030,7 +1143,7 @@ jobs:
             done
           done
 
-          # SRA Kotlin JAR — single version-suffixed file, downloaded
+          # Attester Kotlin JAR — single version-suffixed file, downloaded
           # by exact name so it lands directly under artifacts/attester-kotlin/.
           cp artifacts/attester-kotlin/pso-attester-integration-kotlin-*.jar \
              release/
@@ -1049,7 +1162,7 @@ jobs:
       # Matrix-aware signing over every staged artifact: the e2e
       # binaries + the 4 mobile slices (whichever subset built —
       # build-mobile-* jobs are continue-on-error: true) + 2 bindgen
-      # binaries + the SRA Kotlin JAR + SHA256SUMS. The JAR is signed
+      # binaries + the Attester Kotlin JAR + SHA256SUMS. The JAR is signed
       # as the unit (its bundled native libs are verified transitively
       # via the JAR's SHA-256, per spec 2026-05-20 implementation
       # finding). Skips pre-existing .sig/.pem so re-runs are idempotent.
@@ -1125,18 +1238,18 @@ jobs:
             echo "- \`uniffi-bindgen-mobile-linux-x86_64-${TAG}\` — \`x86_64-unknown-linux-gnu\`"
             echo "- \`uniffi-bindgen-mobile-darwin-arm64-${TAG}\` — \`aarch64-apple-darwin\`"
             echo
-            echo "### SRA Kotlin bindings (pso-attester-integration)"
+            echo "### Attester Kotlin bindings (pso-attester-integration)"
             echo
             echo "- \`pso-attester-integration-kotlin-${TAG}.jar\` — UniFFI-generated Kotlin bindings + 3 bundled native dynamic libs (\`darwin-arm64/libpso_attester_integration.dylib\`, \`linux-x86_64/libpso_attester_integration.so\`, \`linux-aarch64/libpso_attester_integration.so\`) under \`META-INF/native/<os>-<arch>/\`. Call \`NativeLoader.ensureLoaded()\` before any UniFFI function."
             echo
-            echo "Also published to GitHub Packages Maven as \`net.pso:integration.agent:${version}\`:"
+            echo "Also published to GitHub Packages Maven as \`net.pso:integration.attester:${version}\`:"
             echo
             echo '```kotlin'
             echo "repositories { maven { url = uri(\"https://maven.pkg.github.com/${GITHUB_REPOSITORY:-psonet/pso-integration}\") } }"
-            echo "dependencies { implementation(\"net.pso:integration.agent:${version}\") }"
+            echo "dependencies { implementation(\"net.pso:integration.attester:${version}\") }"
             echo '```'
             echo
-            echo "SRA is server-side, JVM-only — no standalone \`libpso_attester_integration.*\` files are attached; the JAR is the only SRA artifact on this release."
+            echo "Attester is server-side, JVM-only — no standalone \`libpso_attester_integration.*\` files are attached; the JAR is the only Attester artifact on this release."
             echo
             echo "### Verification"
             echo

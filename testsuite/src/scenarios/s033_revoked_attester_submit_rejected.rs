@@ -1,26 +1,26 @@
-//! S033 — a revoked SRA's `SpendingRecord.submit` reverts with
+//! S033 — a revoked Attester's `SpendingRecord.submit` reverts with
 //! `AttesterNotActive`.
 //!
 //! Lifecycle the scenario exercises end-to-end:
 //!
-//! 1. Spawn a fresh SRA via [`TestEnv::new_sra`] (admin
-//!    `register_sra` + wait on `isActive`).
+//! 1. Spawn a fresh Attester via [`TestEnv::new_attester`] (admin
+//!    `register_attester` + wait on `isActive`).
 //! 2. Confirm it can submit an SR (sanity check that the address
 //!    really is live in the registry).
-//! 3. Admin `revoke_sra(addr)`.
-//! 4. The same SRA attempts a second SR submission. The
-//!    `onlyActiveSRA` modifier reads `isActive(addr) == false`
+//! 3. Admin `revoke_attester(addr)`.
+//! 4. The same Attester attempts a second SR submission. The
+//!    `onlyActiveAttester` modifier reads `isActive(addr) == false`
 //!    post-revoke and reverts `AttesterNotActive`.
 //!
-//! Bookends the S030 invariant ("a never-registered SRA can't
-//! submit") with the temporal axis ("a previously-registered SRA
+//! Bookends the S030 invariant ("a never-registered Attester can't
+//! submit") with the temporal axis ("a previously-registered Attester
 //! who was revoked can't submit either").
 
 use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::clients::sra::into_pso_error;
+use crate::clients::attester::into_pso_error;
 use crate::data::random_id;
 use crate::{PsoContractError, Scenario, TestEnv};
 
@@ -32,7 +32,7 @@ impl Scenario for S033 {
         "S033"
     }
     fn description(&self) -> &'static str {
-        "revoked SRA's SR.submit reverts AttesterNotActive"
+        "revoked Attester's SR.submit reverts AttesterNotActive"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -40,22 +40,22 @@ impl Scenario for S033 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    let sra = env.new_sra().await?;
-    let addr = sra.address();
-    tracing::info!(scenario = "S033", %addr, "spawned fresh SRA");
+    let attester = env.new_attester().await?;
+    let addr = attester.address();
+    tracing::info!(scenario = "S033", %addr, "spawned fresh Attester");
 
-    // Sanity check: a freshly-registered SRA must succeed at one
+    // Sanity check: a freshly-registered Attester must succeed at one
     // SR submission before we revoke. Otherwise a failure on step
     // 4 wouldn't necessarily isolate the revoke.
     let sr_id_pre = random_id();
-    let tx = sra.register_spending_record(sr_id_pre).await?;
-    sra.wait_for_tx_success(tx, Duration::from_secs(30)).await?;
+    let tx = attester.register_spending_record(sr_id_pre).await?;
+    attester.wait_for_tx_success(tx, Duration::from_secs(30)).await?;
     tracing::info!(scenario = "S033", "pre-revoke SR submission landed");
 
     env.admin
-        .revoke_sra(addr)
+        .revoke_attester(addr)
         .await
-        .map_err(|e| eyre::eyre!("revoke_sra: {e}"))?;
+        .map_err(|e| eyre::eyre!("revoke_attester: {e}"))?;
     // Read-back: the active bit must flip before we try the next
     // submission, otherwise the revoke tx hasn't landed yet.
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
@@ -67,10 +67,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     }
     tracing::info!(scenario = "S033", "revoke observed on chain");
 
-    // Now the same SRA attempts a second SR. Same shape as the
+    // Now the same Attester attempts a second SR. Same shape as the
     // pre-revoke one — only the registry-side state changed.
     let sr_id_post = random_id();
-    let err = sra
+    let err = attester
         .register_spending_record(sr_id_post)
         .await
         .err()

@@ -1,4 +1,4 @@
-//! Thin alloy RPC handle for the SRA CLI.
+//! Thin alloy RPC handle for the Attester CLI.
 //!
 //! A small signing provider over the L2 JSON-RPC — the CLI's own copy of
 //! the standard alloy provider+signer wiring (there is no shared
@@ -16,13 +16,13 @@ use eyre::Result;
 use pso_chain_abi::addresses::{AMENDMENT_RECORD, SPENDING_RECORD, SPENDING_UNIT};
 use pso_chain_abi::interfaces::{IAmendmentRecord, ISpendingRecord, ISpendingUnit};
 
-/// Signing JSON-RPC handle for the SRA CLI.
-pub struct SraRpc {
+/// Signing JSON-RPC handle for the Attester CLI.
+pub struct AttesterRpc {
     url: Url,
     signer: PrivateKeySigner,
 }
 
-impl SraRpc {
+impl AttesterRpc {
     /// Build from RPC URL, chain id, and a 32-byte secp256k1 secret key.
     pub fn connect(rpc_url: &str, chain_id: u64, secret_key: &[u8; 32]) -> Result<Self> {
         let url = rpc_url.parse::<Url>()?;

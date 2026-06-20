@@ -1,4 +1,4 @@
-//! `pso-wallet-cli prepare-su` — turn an SRA-delivered issuance report
+//! `pso-wallet-cli prepare-su` — turn an Attester-delivered issuance report
 //! into an ownership witness the wallet can later aggregate.
 //!
 //! Reconstructs the signer from the wallet's consent material (the NFT
@@ -15,7 +15,7 @@ use crate::artifacts::{IssuanceReportJson, OwnershipWitnessJson};
 
 #[derive(ClapArgs, Debug)]
 pub struct Args {
-    /// JSON issuance report from the SRA (see [`IssuanceReportJson`]).
+    /// JSON issuance report from the Attester (see [`IssuanceReportJson`]).
     #[arg(long)]
     pub report: PathBuf,
     /// Submission binding the witness signs over (32-byte hex). This is

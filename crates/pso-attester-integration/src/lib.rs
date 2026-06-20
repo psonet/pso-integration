@@ -173,7 +173,7 @@ fn fingerprints(fps: &[Vec<u8>], what: &'static str) -> Result<Vec<B256>, Attest
         .collect()
 }
 
-/// An attester (SRA), bound to its on-chain address. Stateless: each issuance
+/// An attester, bound to its on-chain address. Stateless: each issuance
 /// is seeded by caller-supplied entropy, so there is no shared RNG to lock.
 #[derive(uniffi::Object)]
 pub struct Attester {
@@ -289,5 +289,159 @@ impl Attester {
             spending_unit,
             report,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pso_protocol::Codec;
+
+    /// A valid consent public key — `sk·G` (compressed Grumpkin point) for a
+    /// small fixed secret. `generate_nft_header` validates it via
+    /// `public_key_from_bytes`, so it must be a real on-curve point.
+    fn valid_consent_pk() -> Vec<u8> {
+        let mut sk_bytes = [0u8; 32];
+        sk_bytes[0] = 7; // canonical, non-zero little-endian scalar
+        let sk = PsoV1::secret_from_bytes(&sk_bytes).expect("secret");
+        PsoV1::public_key_to_bytes(&PsoV1::public_key_from_secret(&sk))
+            .expect("pk bytes")
+            .to_vec()
+    }
+
+    fn seed(tag: u8) -> Vec<u8> {
+        vec![tag; 32]
+    }
+
+    /// A canonical field-element fingerprint (small ⇒ < modulus).
+    fn fp(tag: u8) -> Vec<u8> {
+        let mut b = [0u8; 32];
+        b[31] = tag;
+        b.to_vec()
+    }
+
+    #[test]
+    fn new_validates_address_length() {
+        assert!(Attester::new(vec![0xab; 20]).is_ok());
+        assert!(matches!(
+            Attester::new(vec![0u8; 19]),
+            Err(AttesterError::BadInput { .. })
+        ));
+    }
+
+    #[test]
+    fn generate_nft_header_rejects_bad_consent_pk() {
+        let att = Attester::new(vec![0xab; 20]).unwrap();
+        // Wrong length.
+        assert!(matches!(
+            att.generate_nft_header(seed(1), vec![0u8; 31]),
+            Err(AttesterError::BadInput { .. })
+        ));
+        // Right length but not a valid point.
+        assert!(matches!(
+            att.generate_nft_header(seed(1), vec![0xff; 32]),
+            Err(AttesterError::InvalidConsentPk { .. })
+        ));
+    }
+
+    #[test]
+    fn generate_nft_header_rejects_seed_below_floor() {
+        let att = Attester::new(vec![0xab; 20]).unwrap();
+        assert!(matches!(
+            att.generate_nft_header(vec![0u8; 31], valid_consent_pk()),
+            Err(AttesterError::BadInput { .. })
+        ));
+    }
+
+    #[test]
+    fn generate_nft_header_is_deterministic_per_seed() {
+        let att = Attester::new(vec![0xab; 20]).unwrap();
+        let pk = valid_consent_pk();
+        let h1 = att.generate_nft_header(seed(9), pk.clone()).unwrap();
+        let h2 = att.generate_nft_header(seed(9), pk.clone()).unwrap();
+        assert_eq!(h1.nft_id, h2.nft_id);
+        assert_eq!(h1.derived_owner, h2.derived_owner);
+        assert_eq!(h1.derived_owner.len(), 32);
+        // A different seed yields a distinct identity.
+        let h3 = att.generate_nft_header(seed(10), pk).unwrap();
+        assert_ne!(h1.nft_id, h3.nft_id);
+    }
+
+    #[test]
+    fn issue_round_trip_and_reissue_reuses_identity() {
+        let att = Attester::new(vec![0xab; 20]).unwrap();
+        let header = att.generate_nft_header(seed(3), valid_consent_pk()).unwrap();
+
+        let issued = att
+            .issue_with_header(
+                header.clone(),
+                20_250_101,
+                978,
+                100,
+                0,
+                vec![0u8; 20],
+                vec![fp(1), fp(2)],
+                vec![fp(3)],
+            )
+            .unwrap();
+
+        // The on-chain SU mirrors the inputs + the header identity.
+        assert_eq!(issued.spending_unit.su_id, header.nft_id);
+        assert_eq!(issued.spending_unit.derived_owner, header.derived_owner);
+        assert_eq!(issued.spending_unit.attester, vec![0xab; 20]);
+        assert_eq!(issued.spending_unit.currency, 978);
+        assert_eq!(issued.report.derived_owner, header.derived_owner);
+        assert_eq!(issued.report.nft_hash.len(), 32);
+        assert!(issued.report.nft_hash.iter().any(|b| *b != 0));
+
+        // Re-issue with the SAME header but different records: identity
+        // (su_id / derived_owner) is preserved, nft_hash changes (sr/ar fold in).
+        let reissued = att
+            .issue_with_header(
+                header,
+                20_250_101,
+                978,
+                100,
+                0,
+                vec![0u8; 20],
+                vec![fp(4)],
+                vec![],
+            )
+            .unwrap();
+        assert_eq!(reissued.spending_unit.su_id, issued.spending_unit.su_id);
+        assert_eq!(reissued.report.derived_owner, issued.report.derived_owner);
+        assert_ne!(reissued.report.nft_hash, issued.report.nft_hash);
+    }
+
+    #[test]
+    fn issue_rejects_non_canonical_fingerprint() {
+        let att = Attester::new(vec![0xab; 20]).unwrap();
+        let header = att.generate_nft_header(seed(5), valid_consent_pk()).unwrap();
+        // 0xff..ff >= field modulus.
+        assert!(matches!(
+            att.issue_with_header(
+                header,
+                20_250_101,
+                978,
+                100,
+                0,
+                vec![0u8; 20],
+                vec![vec![0xff; 32]],
+                vec![],
+            ),
+            Err(AttesterError::BadInput { .. })
+        ));
+    }
+
+    /// Emits a valid consent_pk hex — the input vector the Kotlin functional
+    /// test pins. Run with `--ignored --nocapture` to refresh it.
+    #[test]
+    #[ignore]
+    fn print_consent_pk_vector() {
+        println!("consent_pk_hex={}", hex_encode(&valid_consent_pk()));
+    }
+
+    fn hex_encode(b: &[u8]) -> String {
+        b.iter().map(|x| format!("{x:02x}")).collect()
     }
 }

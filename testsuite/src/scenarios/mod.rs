@@ -6,11 +6,11 @@
 //! order the markdown / JSON report prints.
 
 pub mod s001_happy_flow;
-pub mod s002_sra_cannot_td_via_agents_pool;
+pub mod s002_attester_cannot_td_via_agents_pool;
 pub mod s003_wallet_cannot_register_sr;
 pub mod s004_wallet_cannot_register_ar;
 pub mod s005_wallet_cannot_mint_su;
-pub mod s006_sra_cannot_use_actor_endpoint;
+pub mod s006_attester_cannot_use_actor_endpoint;
 pub mod s007_sr_duplicate_id_rejected;
 pub mod s008_sr_id_zero_rejected;
 pub mod s009_su_with_foreign_sr_rejected;
@@ -32,10 +32,10 @@ pub mod s026_su_invalid_amount_rejected;
 pub mod s027_registry_not_admin_rejected;
 pub mod s028_registry_zero_address_rejected;
 pub mod s029_registry_invalid_mask_rejected;
-pub mod s030_sra_not_active_rejected;
+pub mod s030_attester_not_active_rejected;
 pub mod s031_envelope_wrong_difficulty_rejected;
 pub mod s032_envelope_previous_difficulty_accepted;
-pub mod s033_revoked_sra_submit_rejected;
+pub mod s033_revoked_attester_submit_rejected;
 pub mod s035_update_mask_round_trip;
 pub mod s036_rotation_candidate_round_trip;
 pub mod s037_revoke_unknown_rejected;
@@ -56,11 +56,11 @@ use crate::scenario::Scenario;
 pub fn all() -> Vec<Box<dyn Scenario>> {
     vec![
         Box::new(s001_happy_flow::S001),
-        Box::new(s002_sra_cannot_td_via_agents_pool::S002),
+        Box::new(s002_attester_cannot_td_via_agents_pool::S002),
         Box::new(s003_wallet_cannot_register_sr::S003),
         Box::new(s004_wallet_cannot_register_ar::S004),
         Box::new(s005_wallet_cannot_mint_su::S005),
-        Box::new(s006_sra_cannot_use_actor_endpoint::S006),
+        Box::new(s006_attester_cannot_use_actor_endpoint::S006),
         Box::new(s007_sr_duplicate_id_rejected::S007),
         Box::new(s008_sr_id_zero_rejected::S008),
         Box::new(s009_su_with_foreign_sr_rejected::S009),
@@ -82,10 +82,10 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s027_registry_not_admin_rejected::S027),
         Box::new(s028_registry_zero_address_rejected::S028),
         Box::new(s029_registry_invalid_mask_rejected::S029),
-        Box::new(s030_sra_not_active_rejected::S030),
+        Box::new(s030_attester_not_active_rejected::S030),
         Box::new(s031_envelope_wrong_difficulty_rejected::S031),
         Box::new(s032_envelope_previous_difficulty_accepted::S032),
-        Box::new(s033_revoked_sra_submit_rejected::S033),
+        Box::new(s033_revoked_attester_submit_rejected::S033),
         Box::new(s035_update_mask_round_trip::S035),
         Box::new(s036_rotation_candidate_round_trip::S036),
         Box::new(s037_revoke_unknown_rejected::S037),

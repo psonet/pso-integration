@@ -9,7 +9,7 @@
 //!
 //! Setup mirrors S018's `mint_one_su` minus the actual mint —
 //! we just register an SR, then call SU.submit directly via the
-//! SRA's MintSpendingUnitArgs path with `atto = 1e18`. The
+//! Attester's MintSpendingUnitArgs path with `atto = 1e18`. The
 //! contract's `_validateAmount` reverts; we decode and match.
 
 use std::time::Duration;
@@ -17,7 +17,7 @@ use std::time::Duration;
 use alloy_primitives::FixedBytes;
 use async_trait::async_trait;
 
-use crate::clients::sra::{into_pso_error, MintSpendingUnitArgs};
+use crate::clients::attester::{into_pso_error, MintSpendingUnitArgs};
 use crate::data::{random_id, random_su_args};
 use crate::{PsoContractError, Scenario, TestEnv};
 
@@ -40,17 +40,17 @@ impl Scenario for S026 {
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let sr_id = random_id();
-    let tx = env.sra_zero.register_spending_record(sr_id).await?;
-    env.sra_zero
+    let tx = env.attester_zero.register_spending_record(sr_id).await?;
+    env.attester_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
-    env.sra_zero
+    env.attester_zero
         .wait_for_sr_existence(&[sr_id], &[], Duration::from_secs(30))
         .await?;
 
     let shape = random_su_args();
     let err = env
-        .sra_zero
+        .attester_zero
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: random_id(),
             derived_owner: FixedBytes::from([0u8; 32]),

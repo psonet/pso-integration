@@ -1,5 +1,5 @@
 //! S020 — `SpendingUnit.submit` rejects an AR owned by a different
-//! SRA in its `arIds` array.
+//! Attester in its `arIds` array.
 //!
 //! Mirrors S009 (which exercises the same invariant for `srIds`)
 //! against the amendment-record side. The privacy spec requires
@@ -10,11 +10,11 @@
 //! payload.
 //!
 //! Approach:
-//! 1. Primary SRA registers an AR (via
+//! 1. Primary Attester registers an AR (via
 //!    `SpendingRecordAmendment.submit`).
-//! 2. Admin promotes a second SRA via
-//!    [`TestEnv::register_random_sra`].
-//! 3. SRA#2 attempts to mint an SU referencing SRA#1's AR in
+//! 2. Admin promotes a second Attester via
+//!    [`TestEnv::register_random_attester`].
+//! 3. Attester#2 attempts to mint an SU referencing Attester#1's AR in
 //!    `amendment_sr_ids`. Expect
 //!    `InvalidSpendingRecords(_, [ar_id], _, _)` — the AR id must
 //!    appear in the bad-owner AR slot of the payload, NOT in the
@@ -25,7 +25,7 @@ use std::time::Duration;
 use alloy_primitives::FixedBytes;
 use async_trait::async_trait;
 
-use crate::clients::sra::{into_pso_error, MintSpendingUnitArgs};
+use crate::clients::attester::{into_pso_error, MintSpendingUnitArgs};
 use crate::data::{random_id, random_su_args};
 use crate::{PsoContractError, Scenario, TestEnv};
 
@@ -37,7 +37,7 @@ impl Scenario for S020 {
         "S020"
     }
     fn description(&self) -> &'static str {
-        "SU.submit referencing another SRA's AR reverts with InvalidSpendingRecords (bad-owner AR)"
+        "SU.submit referencing another Attester's AR reverts with InvalidSpendingRecords (bad-owner AR)"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -45,21 +45,21 @@ impl Scenario for S020 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    // SRA#1 (env.sra_zero) registers an AR.
+    // Attester#1 (env.attester_zero) registers an AR.
     let ar_id = random_id();
-    let tx = env.sra_zero.register_amendment_record(ar_id).await?;
-    env.sra_zero
+    let tx = env.attester_zero.register_amendment_record(ar_id).await?;
+    env.attester_zero
         .wait_for_tx_success(tx, Duration::from_secs(30))
         .await?;
-    env.sra_zero
+    env.attester_zero
         .wait_for_sr_existence(&[], &[ar_id], Duration::from_secs(30))
         .await?;
-    tracing::info!(scenario = "S020", step = "seeded-ar", ar_id = %ar_id, "AR registered under primary SRA");
+    tracing::info!(scenario = "S020", step = "seeded-ar", ar_id = %ar_id, "AR registered under primary Attester");
 
-    // SRA#2 takes over and tries to bundle SRA#1's AR.
-    let sra2 = env.new_sra().await?;
+    // Attester#2 takes over and tries to bundle Attester#1's AR.
+    let attester2 = env.new_attester().await?;
     let shape = random_su_args();
-    let err = sra2
+    let err = attester2
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: random_id(),
             derived_owner: FixedBytes::from([0u8; 32]),
@@ -79,7 +79,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
     let typed = into_pso_error(err);
     match &typed {
-        // Foreign AR exists but is owned by a different SRA → lands
+        // Foreign AR exists but is owned by a different Attester → lands
         // in the bad-owner AR arm (second field).
         PsoContractError::InvalidSpendingRecords(bad_srs, bad_ars, _, _) => {
             if !bad_ars.contains(&ar_id) {

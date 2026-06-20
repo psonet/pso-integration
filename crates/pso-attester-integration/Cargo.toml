@@ -2,7 +2,7 @@
 name = "pso-attester-integration"
 version.workspace = true
 edition = "2021"
-description = "UniFFI bindings for the PSO attester (SRA): consent-box NFT issuance + SpendingUnit hashing"
+description = "UniFFI bindings for the PSO attester: consent-box NFT issuance + SpendingUnit hashing"
 license = "MIT"
 
 [lib]

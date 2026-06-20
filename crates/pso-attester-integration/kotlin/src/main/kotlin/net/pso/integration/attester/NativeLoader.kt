@@ -1,4 +1,4 @@
-package net.pso.integration.agent
+package net.pso.integration.attester
 
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption

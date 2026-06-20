@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Client-side integration layer** for the PSO L2 — everything a wallet,
-SRA registrar, or e2e harness needs to participate in the network.
+Attester registrar, or e2e harness needs to participate in the network.
 Bridges the consensus-binding primitives in
 [`pso-protocol`](https://github.com/psonet/pso-protocol) and the Noir
 prover in [`pso-zk-circuits`](https://github.com/psonet/pso-zk-circuits)
@@ -38,9 +38,9 @@ scenario-driven `pso-e2e` harness pso-chain CI runs against every PR.
 | Flat-aggregation tier dispatch (N ∈ {1,2,4,8,16,32,64})       | `pso-zk-canonical::select_aggregation_tier`           |
 | TributeDraft / SpendingUnit struct types                      | `domain/pso-nft`                                      |
 | Mobile UniFFI bindings (iOS / Android)                        | `pso-mobile-integration` — prove, verify, VDF, keypair |
-| SRA registrar UniFFI bindings                                 | `pso-sra-integration`                                 |
-| Command-line frontends                                        | `cli/pso-sra-cli`, `cli/pso-wallet-cli`, `cli/pso-zk-cli` |
-| L2 RPC client + ABI bindings                                  | `pso-l2-client` (alloy + inline `sol!` for the 4 predeploys + SRA/Wallet flow functions) |
+| Attester registrar UniFFI bindings                            | `pso-attester-integration`                            |
+| Command-line frontends                                        | `cli/pso-attester-cli`, `cli/pso-wallet-cli`, `cli/pso-zk-cli` |
+| L2 RPC client + ABI bindings                                  | `pso-l2-client` (alloy + inline `sol!` for the 4 predeploys + Attester/Wallet flow functions) |
 | Typed contract-error decoder                                  | `pso-l2-client::contract_errors::PsoContractError`    |
 | MinRoot VDF FFI (compute + verify + binding)                  | `pso-mobile-integration::vdf`                         |
 | End-to-end test harness                                       | `testsuite/` — the `pso-e2e` binary; see [`testsuite/README.md`](testsuite/README.md) |
@@ -75,18 +75,18 @@ pso-integration/
 │   │                                       # FFI, and the standalone
 │   │                                       # `schnorr_sign_grumpkin` /
 │   │                                       # `schnorr_verify_grumpkin`.
-│   ├── pso-sra-integration/                # UniFFI bindings for the
-│   │                                       # SRA registrar.
+│   ├── pso-attester-integration/           # UniFFI bindings for the
+│   │                                       # Attester registrar.
 │   └── pso-l2-client/                      # Alloy-based L2 RPC client
 │                                           # + inline `sol!` ABI +
-│                                           # SRA/Wallet flow functions
+│                                           # Attester/Wallet flow functions
 │                                           # + typed contract-error
 │                                           # decoder.
 ├── cli/
 │   ├── pso-zk-cli/                         # ZK proof CLI (NFT gen,
 │   │                                       # proof gen/verify, aggregate
 │   │                                       # workflow).
-│   ├── pso-sra-cli/                        # SRA-side L2 ops: register
+│   ├── pso-attester-cli/                   # Attester-side L2 ops: register
 │   │                                       # SR, register AR, mint SU.
 │   └── pso-wallet-cli/                     # Wallet-side L2 ops: prepare
 │                                           # SU material, aggregate,
@@ -201,17 +201,17 @@ cargo ndk -t arm64-v8a build --profile mobile \
 ```
 
 UniFFI bindings are emitted by each crate's `uniffi-bindgen-mobile` /
-`uniffi-bindgen-sra` binary — see the per-crate READMEs.
+`uniffi-bindgen-attester` binary — see the per-crate READMEs.
 
 ### Run `pso-e2e` against a local devnet
 
 `pso-e2e` is the scenario-driven harness. It connects to a running
-`pso-chain --dev` instance, bootstraps the SRA registry, and walks
+`pso-chain --dev` instance, bootstraps the Attester registry, and walks
 through every scenario in `testsuite/src/scenarios/` — both the
 happy-path SR → AR → SU → wallet-direct TD round-trip and the 40+
-invariants the protocol enforces (envelope tampering, foreign-SRA
+invariants the protocol enforces (envelope tampering, foreign-Attester
 record references, malformed aggregation proofs, registry guards,
-SRA lifecycle transitions, …).
+Attester lifecycle transitions, …).
 
 ```bash
 # 1. Start pso-chain --dev in a separate shell.
@@ -223,12 +223,12 @@ pso-e2e \
   --actor-rpc-url http://127.0.0.1:8546  \
   --chain-id      19280501               \
   --admin-key     0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-  --sra-key       0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+  --attester-key  0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 
 # 3. Filter to a single scenario / family while iterating.
-pso-e2e --admin-key … --sra-key … --only S001 -vv
-pso-e2e --admin-key … --sra-key … --only S013,S014,S015,S016,S017,S031   # envelope/VDF tampering
-pso-e2e --admin-key … --sra-key … --only S033,S035,S036,S037              # SRA admin lifecycle
+pso-e2e --admin-key … --attester-key … --only S001 -vv
+pso-e2e --admin-key … --attester-key … --only S013,S014,S015,S016,S017,S031   # envelope/VDF tampering
+pso-e2e --admin-key … --attester-key … --only S033,S035,S036,S037              # Attester admin lifecycle
 pso-e2e --list                                                              # enumerate the suite without touching the chain
 ```
 
@@ -247,7 +247,7 @@ docker run --rm --network host ghcr.io/psonet/pso-e2e:0.6.0 \
   --actor-rpc-url http://127.0.0.1:8546  \
   --chain-id      19280501               \
   --admin-key     "$ADMIN_KEY" \
-  --sra-key       "$SRA_KEY"
+  --attester-key  "$ATTESTER_KEY"
 ```
 
 ### Scenario surface
@@ -258,16 +258,16 @@ they exercise:
 | Group        | Range           | What                                                                           |
 | ------------ | --------------- | ------------------------------------------------------------------------------ |
 | Happy path   | S001            | Full SR → AR → SU mint via bridge → **wallet-direct** TD prove + submit through the actor pool; `derivedOwner` round-trip. |
-| Pool routing | S002 – S006     | Each pool admits only the txs it should: TD never on agents pool (no mask bit exists for it), wallet keys can't reach SRA-only contract methods. |
+| Pool routing | S002 – S006     | Each pool admits only the txs it should: TD never on agents pool (no mask bit exists for it), wallet keys can't reach Attester-only contract methods. |
 | SBT guards   | S007, S008      | Duplicate SR id → `AlreadyExists`; SR id 0 → `InvalidTokenId`.                 |
-| SU validity  | S009 – S011, S020 | Foreign-SRA SR/AR + never-registered SR + double-spend → `SpendingRecordsNotOwnedBySender` / `SpendingRecordsAlreadyExist`. |
+| SU validity  | S009 – S011, S020 | Foreign-Attester SR/AR + never-registered SR + double-spend → `SpendingRecordsNotOwnedBySender` / `SpendingRecordsAlreadyExist`. |
 | TD invariants| S012, S021 – S023 | Empty `suIds`, `NotFound`, `NotSameWorldwideDay`, `NotSameCurrency`. |
 | Envelope tampering | S013 – S017, S031 | Magic prefix, nullifier replay, stale `submitted_block`, bit-flipped VDF proof, bit-flipped VDF output, wrong VDF iteration count `T`. |
 | Aggregation negatives | S018, S019 | `MalformedAggregationProof` (length) + `InvalidAggregationProof` (public-input mismatch). |
-| Contract guards | S026 – S030 | `InvalidAmount`, `NotAdmin`, `ZeroAddress`, `InvalidMask`, `SRANotActive`. |
-| SRA lifecycle | S033, S035 – S037 | Revoke → SR.submit reverts `SRANotActive`; `updateMask` / `setRotationCandidate` round-trip; revoke unknown → `NotRegistered`. |
+| Contract guards | S026 – S030 | `InvalidAmount`, `NotAdmin`, `ZeroAddress`, `InvalidMask`, `AttesterNotActive`. |
+| Attester lifecycle | S033, S035 – S037 | Revoke → SR.submit reverts `AttesterNotActive`; `updateMask` / `setRotationCandidate` round-trip; revoke unknown → `NotRegistered`. |
 | Epoch / slashing | S038 – S040 | `SequencerEpoch` views; `proveEquivocation` / `proveInvalidVDF` happy paths. |
-| Wallet lifecycle | S041 – S044 | Permissionless actor-lane admission (no SRA gate); mobile-API wallet flow end-to-end through the envelope dispatcher; aged-proof window positive; sequential nonces + stale VDF-binding rejection. |
+| Wallet lifecycle | S041 – S044 | Permissionless actor-lane admission (no Attester gate); mobile-API wallet flow end-to-end through the envelope dispatcher; aged-proof window positive; sequential nonces + stale VDF-binding rejection. |
 
 The full table with descriptions lives in
 [`testsuite/README.md`](testsuite/README.md); each scenario file is
@@ -279,7 +279,7 @@ doc-comment explaining the chain-side guard it exercises.
 A React Native / iOS / Android client links against
 `pso-mobile-integration` (UniFFI). The exported surface includes:
 
-- **`derive_nft_keypair(consent_sk, sra_pk, nft_nonce)`** — App-A
+- **`derive_nft_keypair(consent_sk, attester_pk, nft_nonce)`** — App-A
   ECDH + HKDF → Grumpkin keypair.
 - **`schnorr_sign_grumpkin(secret_key, message)`** /
   **`schnorr_verify_grumpkin(public_key, message, signature)`** —
@@ -311,7 +311,7 @@ unit  ─┴─> image (push:main) ─> tag (cocogitto) ─> release-binaries �
   per-platform binaries (`pso-e2e-linux-x86_64-vX.Y.Z`,
   `pso-e2e-linux-aarch64-vX.Y.Z` — every released artifact carries the
   `-vX.Y.Z` version suffix) plus a versioned `:vX.Y.Z` + `:latest`
-  image, the `pso-sra-integration-kotlin` JAR published to GitHub
+  image, the `pso-attester-integration-kotlin` JAR published to GitHub
   Packages Maven, and a GitHub release.
 - `chore:` / `ci:` / `docs:` etc. commits are no-ops for cog — the
   release jobs short-circuit cleanly via
@@ -332,13 +332,13 @@ the pso-chain envelope dispatcher).
 - `barretenberg-rs` (5.x) — Grumpkin-Schnorr FFI backend.
 - `noir_rs` — Noir/Barretenberg proving for the flat-aggregation tiers.
 - `alloy` (1.x) — L2 RPC client + ABI bindings.
-- `uniffi` — mobile / SRA FFI bindings.
+- `uniffi` — mobile / Attester FFI bindings.
 - `pso-vdf` — MinRoot VDF prover.
 - `clap` — CLI surface.
 
 ## Verifying releases
 
-Releases tagged from `v0.3.7` onward ship sigstore cosign signatures + SLSA build-provenance attestations for every artifact: the e2e binaries, the mobile slices (best-effort matrix), the bindgen binaries, the `pso-sra-integration-kotlin.jar`, and `SHA256SUMS`. The JAR is signed as the unit; its bundled native libs are verified transitively via the JAR's SHA-256.
+Releases tagged from `v0.3.7` onward ship sigstore cosign signatures + SLSA build-provenance attestations for every artifact: the e2e binaries, the mobile slices (best-effort matrix), the bindgen binaries, the `pso-attester-integration-kotlin.jar`, and `SHA256SUMS`. The JAR is signed as the unit; its bundled native libs are verified transitively via the JAR's SHA-256.
 
 See [SECURITY.md](SECURITY.md) for the threat model, the matrix-aware semantics, and the full verify recipe.
 
@@ -346,7 +346,7 @@ Quick check (JAR):
 
 ```sh
 TAG=v0.6.0
-ARTIFACT="pso-sra-integration-kotlin-$TAG.jar"  # released filenames carry the -$TAG suffix
+ARTIFACT="pso-attester-integration-kotlin-$TAG.jar"  # released filenames carry the -$TAG suffix
 gh release download "$TAG" --repo psonet/pso-integration \
   --pattern "$ARTIFACT" --pattern "$ARTIFACT.sig" --pattern "$ARTIFACT.pem"
 cosign verify-blob \

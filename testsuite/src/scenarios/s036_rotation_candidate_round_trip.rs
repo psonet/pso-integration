@@ -1,7 +1,7 @@
 //! S036 — `AttestersRegistry.setRotationCandidate` mutates the on-chain
 //! record and `getRecord` reads back the new value.
 //!
-//! [`TestEnv::new_sra`] registers freshly-rolled SRAs as **non-rotation**
+//! [`TestEnv::new_attester`] registers freshly-rolled Attesters as **non-rotation**
 //! attesters with a zero consensus identity (they only need to be active to
 //! submit). M3's `AttestersRegistry` rejects rotation candidacy without a
 //! non-zero `consensusKey`, so the round-trip we exercise is: set a consensus
@@ -40,14 +40,14 @@ impl Scenario for S036 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    let sra = env.new_sra().await?;
-    let addr = sra.address();
+    let attester = env.new_attester().await?;
+    let addr = attester.address();
 
-    // new_sra registers non-rotation; confirm the baseline.
+    // new_attester registers non-rotation; confirm the baseline.
     let initial = env.admin.get_record(addr).await?;
     if initial.isRotationCandidate {
         return Err(eyre::eyre!(
-            "S036: new_sra() unexpectedly bootstrapped with isRotationCandidate=true"
+            "S036: new_attester() unexpectedly bootstrapped with isRotationCandidate=true"
         ));
     }
 
@@ -103,7 +103,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // CLEANUP — revert the rotation candidacy. This is consensus-critical
     // shared state: the node's epoch manager reads `rotationCandidatesSorted()`
     // at every epoch boundary and tries to reshare the threshold committee to
-    // include each candidate. This SRA's `consensusKey` is the dummy `0x11..11`
+    // include each candidate. This Attester's `consensusKey` is the dummy `0x11..11`
     // with no live DKG node behind it, so leaving it a candidate makes every
     // subsequent reshare fail (`UnknownDealer`), stalling block production at
     // each boundary and eventually wedging the committee. The round-trip we set

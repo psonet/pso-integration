@@ -4,11 +4,11 @@
 //! Positive-side complement to S029 (admin sets `mask = 0` →
 //! `InvalidMask`). Here we walk the happy path twice:
 //!
-//! 1. Spawn a fresh SRA via [`TestEnv::new_sra`] — bootstrapped
-//!    with `mask = SRA_PERMISSION_MASK` (0xF, SU/SR/AR/heartbeat;
+//! 1. Spawn a fresh Attester via [`TestEnv::new_attester`] — bootstrapped
+//!    with `mask = ATTESTER_PERMISSION_MASK` (0xF, SU/SR/AR/heartbeat;
 //!    deliberately not ADMIN_MASK — see `env.rs`).
 //! 2. Read the record back via `admin.get_record`. Assert
-//!    `mask == SRA_PERMISSION_MASK`, `active == true`.
+//!    `mask == ATTESTER_PERMISSION_MASK`, `active == true`.
 //! 3. `admin.update_mask(addr, 0x03)` — shrink to SU+SR only so the
 //!    changed bits are obvious.
 //! 4. Re-read and assert `mask == 0x03`. `active` should still
@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::env::SRA_PERMISSION_MASK;
+use crate::env::ATTESTER_PERMISSION_MASK;
 use crate::{Scenario, TestEnv};
 
 pub struct S035;
@@ -37,19 +37,19 @@ impl Scenario for S035 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    let sra = env.new_sra().await?;
-    let addr = sra.address();
-    tracing::info!(scenario = "S035", %addr, "spawned fresh SRA");
+    let attester = env.new_attester().await?;
+    let addr = attester.address();
+    tracing::info!(scenario = "S035", %addr, "spawned fresh Attester");
 
     let initial = env.admin.get_record(addr).await?;
-    if initial.permissionMask != SRA_PERMISSION_MASK {
+    if initial.permissionMask != ATTESTER_PERMISSION_MASK {
         return Err(eyre::eyre!(
-            "S035: expected initial mask 0x{SRA_PERMISSION_MASK:08x}, got 0x{:08x}",
+            "S035: expected initial mask 0x{ATTESTER_PERMISSION_MASK:08x}, got 0x{:08x}",
             initial.permissionMask
         ));
     }
     if !initial.active {
-        return Err(eyre::eyre!("S035: freshly-registered SRA is not active"));
+        return Err(eyre::eyre!("S035: freshly-registered Attester is not active"));
     }
 
     let new_mask: u32 = 0x03;

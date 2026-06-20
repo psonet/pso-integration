@@ -26,9 +26,9 @@ deterministic function from inputs to proofs.
 ## Client Use Case
 
 The mobile wallet participates in a multi-step protocol involving an
-SRA server, an on-chain smart contract, and a destination blockchain:
+Attester server, an on-chain smart contract, and a destination blockchain:
 
-1. **SRA generates SpendingUnits** — the server creates SU NFTs and
+1. **Attester generates SpendingUnits** — the server creates SU NFTs and
    sends back to the client all data needed to reconstruct ownership
    (nonce, key derivation material, currency and amount data).
 
@@ -59,13 +59,13 @@ SRA server, an on-chain smart contract, and a destination blockchain:
 
 ```mermaid
 sequenceDiagram
-    participant SRA as SRA Server
+    participant Attester as Attester Server
     participant Client as Mobile Client
     participant SC as Smart Contract
     participant Chain as Destination Chain
 
-    Note over SRA,Client: Step 1 — SRA generates SpendingUnits
-    SRA->>Client: SU data (id, nonce, amounts, fingerprints)
+    Note over Attester,Client: Step 1 — Attester generates SpendingUnits
+    Attester->>Client: SU data (id, nonce, amounts, fingerprints)
 
     Note over Client: Step 2 — Prove SU ownership
     loop For each SpendingUnit

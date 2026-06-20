@@ -1,4 +1,4 @@
-//! S005 — wallet (non-SRA) cannot mint an SU via the actor pool.
+//! S005 — wallet (non-Attester) cannot mint an SU via the actor pool.
 //!
 //! Same shape as S003 / S004, addressed at `SpendingUnit.submit`.
 //! Same two-path acceptance documented in S003's body.
@@ -24,7 +24,7 @@ impl Scenario for S005 {
         "S005"
     }
     fn description(&self) -> &'static str {
-        "non-SRA wallet cannot mint a SpendingUnit through the actor pool"
+        "non-Attester wallet cannot mint a SpendingUnit through the actor pool"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await

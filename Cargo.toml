@@ -13,7 +13,7 @@ members = [
     # were removed — their surface moved to pso-chain-abi / pso-protocol /
     # pso-zk-canonical and the testsuite's own modules.)
     "cli/pso-zk-cli",
-    "cli/pso-sra-cli",
+    "cli/pso-attester-cli",
     "cli/pso-wallet-cli",
     "testsuite",
 ]

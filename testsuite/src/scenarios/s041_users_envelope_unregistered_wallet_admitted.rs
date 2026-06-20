@@ -3,15 +3,15 @@
 //!
 //! Regression test for psonet/pso-chain#13: the actor RPC's pool
 //! submitter used to gate every Users-pool transaction's EOA sender
-//! against the SRA admission registry, rejecting all genuine wallet
-//! submissions with `"SRA not registered: <sender>"` before the VDF
+//! against the Attester admission registry, rejecting all genuine wallet
+//! submissions with `"Attester not registered: <sender>"` before the VDF
 //! was ever verified. The Users lane is permissionless by design —
 //! its anti-spam economics are the VDF + nullifier uniqueness +
 //! block-age window — so a fresh, never-registered wallet key with a
 //! valid envelope MUST clear pool admission.
 //!
 //! This gate survived CI because every envelope scenario (S013-S017,
-//! S031-S032) signs with `env.sra_zero`'s key; this scenario is the
+//! S031-S032) signs with `env.attester_zero`'s key; this scenario is the
 //! one that submits from a key the registry has never seen.
 //!
 //! Scope: **pool admission only.** The inner calldata is a
@@ -22,7 +22,7 @@
 //! actor pool" assertion lands once header-stripping ships; the
 //! invariant pinned here is exactly the one #13 fixed:
 //!
-//!   admission(valid envelope, unregistered sender) != "SRA not registered"
+//!   admission(valid envelope, unregistered sender) != "Attester not registered"
 
 use alloy_primitives::{Bytes, FixedBytes, U256};
 use alloy_sol_types::SolCall;
@@ -43,7 +43,7 @@ impl Scenario for S041 {
         "S041"
     }
     fn description(&self) -> &'static str {
-        "users-pool envelope from unregistered wallet key clears pool admission (no SRA gate)"
+        "users-pool envelope from unregistered wallet key clears pool admission (no Attester gate)"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -51,7 +51,7 @@ impl Scenario for S041 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    // Fresh random secp256k1 key — by construction NOT in the SRA
+    // Fresh random secp256k1 key — by construction NOT in the Attester
     // registry. The users lane is feeless (zeroed fee caps), so the
     // sender needs no balance either.
     let wallet = env.new_actor()?;
@@ -81,9 +81,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             Ok(())
         }
         // The exact regression #13 fixed.
-        Err(ActorClientError::PoolRejection(msg)) if msg.contains("SRA not registered") => {
+        Err(ActorClientError::PoolRejection(msg)) if msg.contains("Attester not registered") => {
             Err(eyre::eyre!(
-                "S041: REGRESSION — users-pool admission still gates on the SRA \
+                "S041: REGRESSION — users-pool admission still gates on the Attester \
                  registry (sender {:?}): {msg}. The actor lane must be \
                  permissionless (VDF + nullifier + block age only); see \
                  psonet/pso-chain#13.",

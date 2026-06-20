@@ -50,7 +50,7 @@ struct Cli {
 
 #[derive(Parser, Debug)]
 enum Command {
-    /// Turn an SRA-delivered issuance report into an ownership witness
+    /// Turn an Attester-delivered issuance report into an ownership witness
     /// (`Consent::witness`) bound to a submission binding.
     PrepareSu(commands::prepare_su::Args),
     /// Aggregate N ownership witnesses into one proof bundle

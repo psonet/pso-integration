@@ -3,7 +3,7 @@
 //! 1. Wallet derives a `consent` keypair (long-lived) via the mobile FFI
 //!    and ships its `consent_pk` (a 32-byte PsoV1 point) out-of-band to
 //!    the attester bridge.
-//! 2. SRA registers two SRs and one AR per SU it intends to mint.
+//! 2. Attester registers two SRs and one AR per SU it intends to mint.
 //! 3. Bridge mints the SUs through the attester FFI, which derives the
 //!    matching `derivedOwner` + the wallet's reconstruction material
 //!    (the [`IssuanceReport`](pso_mobile_integration::IssuanceReport)).
@@ -14,7 +14,7 @@
 //! 5. Wallet rolls a per-TD header, aggregates the witnesses into a
 //!    flat-aggregation proof ([`Wallet::prove_ownership`]), and submits
 //!    `TributeDraft.submit(...)` **itself** through the actor pool — a
-//!    fresh non-SRA key, PSO envelope with a real VDF, executed via
+//!    fresh non-Attester key, PSO envelope with a real VDF, executed via
 //!    TributeDraft's `PsoEnvelopeDispatcher` fallback.
 //! 6. Asserts the TD's stored `derivedOwner` matches the wallet's
 //!    computation.
@@ -78,7 +78,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .map_err(|e| eyre::eyre!("consent public_key: {e:?}"))?;
 
     // -----------------------------------------------------------------
-    // 2. SRA registers two SRs + one AR per SU. Each SU consumes a
+    // 2. Attester registers two SRs + one AR per SU. Each SU consumes a
     //    distinct fingerprint set; sharing across SUs would trip the
     //    `InvalidSpendingRecords` duplicate-SR guard on the second mint.
     // -----------------------------------------------------------------
@@ -93,18 +93,18 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         let sr2 = field_id();
         let ar1 = field_id();
 
-        let tx = env.sra_zero.register_spending_record(sr1).await?;
-        env.sra_zero
+        let tx = env.attester_zero.register_spending_record(sr1).await?;
+        env.attester_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;
 
-        let tx = env.sra_zero.register_spending_record(sr2).await?;
-        env.sra_zero
+        let tx = env.attester_zero.register_spending_record(sr2).await?;
+        env.attester_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;
 
-        let tx = env.sra_zero.register_amendment_record(ar1).await?;
-        env.sra_zero
+        let tx = env.attester_zero.register_amendment_record(ar1).await?;
+        env.attester_zero
             .wait_for_tx_success(tx, Duration::from_secs(30))
             .await?;
 
@@ -113,7 +113,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         all_sr.extend([sr1, sr2]);
         all_ar.push(ar1);
     }
-    env.sra_zero
+    env.attester_zero
         .wait_for_sr_existence(&all_sr, &all_ar, Duration::from_secs(30))
         .await?;
 
@@ -152,7 +152,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     }
 
     let su_ids_minted: Vec<U256> = receipts.iter().map(|r| r.su_id).collect();
-    env.sra_zero
+    env.attester_zero
         .wait_for_su_existence(&su_ids_minted, Duration::from_secs(30))
         .await?;
 
@@ -176,7 +176,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // 5. Wallet builds one ownership witness per SU over the shared
     //    binding; cross-checks against the on-chain `derivedOwner`.
     // -----------------------------------------------------------------
-    let read_provider = env.sra_zero.inner().read_provider();
+    let read_provider = env.attester_zero.inner().read_provider();
     let su_view = pso_chain_abi::interfaces::ISpendingUnit::new(SPENDING_UNIT, &read_provider);
     let mut witnesses: Vec<pso_mobile_integration::NftOwnershipWitness> =
         Vec::with_capacity(receipts.len());

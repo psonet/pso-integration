@@ -1,11 +1,11 @@
 [package]
-name        = "pso-sra-cli"
+name        = "pso-attester-cli"
 version.workspace = true
 edition.workspace = true
-description = "CLI for PSO SRA-side L2 operations: register SR / amendment records, mint SpendingUnits."
+description = "CLI for PSO Attester-side L2 operations: register SR / amendment records, mint SpendingUnits."
 
 [[bin]]
-name = "pso-sra-cli"
+name = "pso-attester-cli"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,4 +1,4 @@
-//! SRA CLI subcommands.
+//! Attester CLI subcommands.
 
 pub mod mint_su;
 pub mod register_ar;

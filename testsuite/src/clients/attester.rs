@@ -1,7 +1,7 @@
 //! Agents-pool client.
 //!
 //! Wraps a signing [`RpcHandle`] pointed at the standard EL JSON-RPC
-//! (`:19545`) and exposes the SRA flow functions (SR/AR/SU submit) as
+//! (`:19545`) and exposes the Attester flow functions (SR/AR/SU submit) as
 //! methods, built directly on the `pso-chain-abi` interfaces. The pool
 //! validator admits a tx iff
 //!
@@ -31,7 +31,7 @@ pub struct MintSpendingUnitArgs {
     pub su_id: U256,
     /// Wallet-supplied Poseidon ownership commitment for this SU.
     pub derived_owner: FixedBytes<32>,
-    /// Wallet self-address captured at consent initiation. The SRA holds
+    /// Wallet self-address captured at consent initiation. The Attester holds
     /// it for the consent session and stamps every SU minted in that
     /// session with it (the on-chain `referrerAddress`). `Address::ZERO`
     /// means "no referrer". TributeDraft aggregation later collects the
@@ -55,20 +55,20 @@ pub struct MintSpendingUnitArgs {
 
 /// Agents-pool RPC client. Cheap to clone ([`RpcHandle`] is `Arc`-backed).
 #[derive(Clone)]
-pub struct SraClient {
+pub struct AttesterClient {
     /// Underlying alloy + signer handle. Exposed via accessors when a
     /// caller needs to drop down to read-only Provider operations.
     inner: RpcHandle,
     rpc_url: String,
 }
 
-impl SraClient {
+impl AttesterClient {
     /// Build from an RPC URL, chain id, and a 32-byte secp256k1 secret
     /// key. The signer is gas-free — every helper here pins
     /// `max_fee_per_gas = max_priority_fee_per_gas = 0`.
     pub fn new(rpc_url: &str, chain_id: u64, secret_key: &[u8; 32]) -> eyre::Result<Self> {
         let inner = RpcHandle::connect_with_signer(rpc_url, chain_id, secret_key)
-            .map_err(|e| eyre::eyre!("SraClient connect: {e}"))?;
+            .map_err(|e| eyre::eyre!("AttesterClient connect: {e}"))?;
         Ok(Self {
             inner,
             rpc_url: rpc_url.to_string(),
@@ -133,7 +133,7 @@ impl SraClient {
         Ok(*pending.tx_hash())
     }
 
-    /// `SpendingUnit.submit(...)`. The SRA is the on-chain submitter;
+    /// `SpendingUnit.submit(...)`. The Attester is the on-chain submitter;
     /// the wallet supplied the `derivedOwner` commitment off-line so the
     /// chain can later verify a ZK ownership proof against it.
     pub async fn mint_spending_unit(
@@ -272,5 +272,5 @@ impl SraClient {
 }
 
 // Re-export the typed-error helpers so scenarios can keep importing
-// `crate::clients::sra::into_pso_error` (the prior path).
+// `crate::clients::attester::into_pso_error` (the prior path).
 pub use crate::clients::contract_errors::into_pso_error;

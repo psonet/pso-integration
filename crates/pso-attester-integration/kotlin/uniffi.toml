@@ -1,2 +1,2 @@
 [bindings.kotlin]
-package_name = "net.pso.integration.agent"
+package_name = "net.pso.integration.attester"

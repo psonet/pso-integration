@@ -1,15 +1,15 @@
-//! `pso-sra-cli` — command-line frontend for SRA-side L2 operations.
+//! `pso-attester-cli` — command-line frontend for Attester-side L2 operations.
 //!
 //! ```text
-//! pso-sra-cli register-sr  --sr-id 0x...
-//! pso-sra-cli register-ar  --ar-id 0x...
-//! pso-sra-cli mint-su      --su-id 0x... --derived-owner 0x... --currency 978 \
+//! pso-attester-cli register-sr  --sr-id 0x...
+//! pso-attester-cli register-ar  --ar-id 0x...
+//! pso-attester-cli mint-su      --su-id 0x... --derived-owner 0x... --currency 978 \
 //!                          --worldwide-day 20250923 --amount-base 100 --amount-atto 0 \
 //!                          --sr-ids 0x..,0x.. --amendment-sr-ids
 //! ```
 //!
 //! Every command requires `--rpc <URL>` and `--key <HEX>` (or
-//! `PSO_L2_RPC` / `PSO_SRA_KEY` env vars). SR/AR/SU submits go directly
+//! `PSO_L2_RPC` / `PSO_ATTESTER_KEY` env vars). SR/AR/SU submits go directly
 //! through the `pso-chain-abi` interfaces on a thin local alloy RPC
 //! handle; `mint-su` derives the SU id / owner / hash via the attester
 //! FFI before submitting.
@@ -20,10 +20,10 @@ use eyre::Result;
 mod client;
 mod commands;
 
-use client::SraRpc;
+use client::AttesterRpc;
 
 #[derive(Parser, Debug)]
-#[command(name = "pso-sra-cli", version, about = "PSO SRA-side L2 operations")]
+#[command(name = "pso-attester-cli", version, about = "PSO Attester-side L2 operations")]
 struct Cli {
     /// L2 JSON-RPC URL. Falls back to `$PSO_L2_RPC`.
     #[arg(long, env = "PSO_L2_RPC")]
@@ -33,8 +33,8 @@ struct Cli {
     #[arg(long, env = "PSO_L2_CHAIN_ID", default_value_t = 19_280_501)]
     chain_id: u64,
 
-    /// 32-byte hex secret key (SRA signer). Falls back to `$PSO_SRA_KEY`.
-    #[arg(long, env = "PSO_SRA_KEY")]
+    /// 32-byte hex secret key (Attester signer). Falls back to `$PSO_ATTESTER_KEY`.
+    #[arg(long, env = "PSO_ATTESTER_KEY")]
     key: String,
 
     #[command(subcommand)]
@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let key = parse_key_hex(&cli.key)?;
-    let client = SraRpc::connect(&cli.rpc, cli.chain_id, &key)?;
+    let client = AttesterRpc::connect(&cli.rpc, cli.chain_id, &key)?;
 
     match cli.command {
         Command::RegisterSr(args) => commands::register_sr::run(&client, args).await,

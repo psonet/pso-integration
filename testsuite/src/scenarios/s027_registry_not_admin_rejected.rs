@@ -6,9 +6,9 @@
 //! `setRotationCandidate`, `initiateAdminTransfer`). A non-admin
 //! caller fails the `msg.sender != admin` check immediately.
 //!
-//! We use the SRA client (env.sra_zero) — it's an active SRA, but NOT
+//! We use the Attester client (env.attester_zero) — it's an active Attester, but NOT
 //! the admin — to call register; the contract reverts before
-//! looking at the arguments, so any plausible `sra` / `mask` works.
+//! looking at the arguments, so any plausible `attester` / `mask` works.
 
 use alloy_primitives::Address;
 use alloy_sol_types::sol;
@@ -29,7 +29,7 @@ sol! {
     }
 }
 
-const SRA_REGISTRY: Address =
+const ATTESTER_REGISTRY: Address =
     alloy_primitives::address!("5200000000000000000000000000000000000001");
 
 pub struct S027;
@@ -48,9 +48,9 @@ impl Scenario for S027 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    // The SRA signer is active but NOT the admin — perfect impostor.
-    let provider = env.sra_zero.inner().write_provider()?;
-    let reg = IAttestersRegistryView::new(SRA_REGISTRY, provider);
+    // The Attester signer is active but NOT the admin — perfect impostor.
+    let provider = env.attester_zero.inner().write_provider()?;
+    let reg = IAttestersRegistryView::new(ATTESTER_REGISTRY, provider);
 
     // Pick a plausible-but-otherwise-irrelevant fresh address to
     // "register". The contract reverts at the admin gate first;

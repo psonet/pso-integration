@@ -37,7 +37,7 @@ impl Scenario for S021 {
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
     let phantom_su = random_id();
-    let provider = env.sra_zero.inner().write_provider()?;
+    let provider = env.attester_zero.inner().write_provider()?;
     let td = ITributeDraft::new(TRIBUTE_DRAFT, provider);
 
     let err = td

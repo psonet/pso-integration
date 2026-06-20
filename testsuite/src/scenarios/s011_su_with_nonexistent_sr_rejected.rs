@@ -9,7 +9,7 @@
 use alloy_primitives::FixedBytes;
 use async_trait::async_trait;
 
-use crate::clients::sra::{into_pso_error, MintSpendingUnitArgs};
+use crate::clients::attester::{into_pso_error, MintSpendingUnitArgs};
 use crate::data::{random_id, random_su_args};
 use crate::{PsoContractError, Scenario, TestEnv};
 
@@ -32,7 +32,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let phantom_sr = random_id();
     let shape = random_su_args();
     let err = env
-        .sra_zero
+        .attester_zero
         .mint_spending_unit(MintSpendingUnitArgs {
             su_id: random_id(),
             derived_owner: FixedBytes::from([0u8; 32]),

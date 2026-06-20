@@ -1,7 +1,7 @@
 //! Data generators for scenario inputs.
 //!
 //! Scenarios pull a [`SuTemplate`] from [`random_su_args`] and feed its
-//! fields straight into `SraClient::mint_spending_unit`, etc. The shapes
+//! fields straight into `AttesterClient::mint_spending_unit`, etc. The shapes
 //! mirror plausible protocol values (EUR, a recent past worldwide-day,
 //! a handful of SR/AR fingerprints) without going through any heavy
 //! reference generator.

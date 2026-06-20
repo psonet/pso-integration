@@ -1,4 +1,4 @@
-//! In-process SRA (attester) bridge.
+//! In-process Attester bridge.
 //!
 //! Models the production attester mint pipeline as a background task. The
 //! wallet (or, in the test suite, a scenario body) speaks to it via a
@@ -40,7 +40,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use pso_attester_integration::{Attester, IssuanceReport};
 
-use crate::clients::sra::{MintSpendingUnitArgs, SraClient};
+use crate::clients::attester::{MintSpendingUnitArgs, AttesterClient};
 
 /// Inputs the caller supplies for a single SU mint.
 #[derive(Debug, Clone)]
@@ -88,7 +88,7 @@ pub struct SuMintReceipt {
     /// ownership of this SU.
     pub report: IssuanceReport,
     /// Hash of the `SpendingUnit.submit` tx. Wait on it via
-    /// `SraClient::wait_for_tx_success` before downstream calls if
+    /// `AttesterClient::wait_for_tx_success` before downstream calls if
     /// the test depends on `getData(su_id)` being live.
     pub mint_tx: TxHash,
 }
@@ -155,31 +155,31 @@ impl Bridge {
     }
 }
 
-/// Spawn the SRA bridge loop. The returned [`Bridge`] is the only
+/// Spawn the Attester bridge loop. The returned [`Bridge`] is the only
 /// handle into the background task; dropping it closes the mpsc
 /// channel and lets the loop exit. The attester FFI is bound to the
-/// `sra`'s on-chain address (it stamps every SU's `attesterAddress`).
-pub fn spawn_sra_loop(sra: SraClient) -> Bridge {
+/// `attester_client`'s on-chain address (it stamps every SU's `attesterAddress`).
+pub fn spawn_attester_loop(attester_client: AttesterClient) -> Bridge {
     let (tx, mut rx) = mpsc::channel::<SuMintRequest>(64);
-    let attester = Attester::new(sra.address().to_vec())
+    let attester = Attester::new(attester_client.address().to_vec())
         .expect("attester address is 20 bytes");
     let handle = tokio::spawn(async move {
-        tracing::debug!("SRA bridge loop started");
+        tracing::debug!("Attester bridge loop started");
         while let Some(req) = rx.recv().await {
             let SuMintRequest { args, reply } = req;
-            let res = handle_mint(&sra, &attester, args).await;
+            let res = handle_mint(&attester_client, &attester, args).await;
             // Reply may have been dropped if the caller went away
             // (cancelled future). That's not an error.
             let _ = reply.send(res);
         }
-        tracing::debug!("SRA bridge loop exiting (channel closed)");
+        tracing::debug!("Attester bridge loop exiting (channel closed)");
     });
     Bridge { tx, handle }
 }
 
 /// Run a single mint through the attester FFI + the agents pool.
 async fn handle_mint(
-    sra: &SraClient,
+    attester_client: &AttesterClient,
     attester: &Arc<Attester>,
     args: SuMintArgs,
 ) -> Result<SuMintReceipt, BridgeError> {
@@ -262,13 +262,13 @@ async fn handle_mint(
         sr_ids: args.sr_ids,
         amendment_sr_ids: args.amendment_sr_ids,
     };
-    let mint_tx = sra
+    let mint_tx = attester_client
         .mint_spending_unit(mint_args)
         .await
         .map_err(|e| BridgeError::Mint(e.to_string()))?;
 
     // ----- (4) Wait for inclusion -----
-    sra.wait_for_tx_success(mint_tx, Duration::from_secs(30))
+    attester_client.wait_for_tx_success(mint_tx, Duration::from_secs(30))
         .await
         .map_err(|e| BridgeError::Receipt(e.to_string()))?;
     tracing::debug!(?mint_tx, "bridge: mint receipt success");
@@ -290,7 +290,7 @@ mod tests {
     //! `nft_hash` for the aggregation to verify.
     //!
     //! NOTE: the pre-0.8 suite compared raw shared-key bytes across four
-    //! surfaces (wallet Rust, SRA Rust, SRA UniFFI, mobile UniFFI). The
+    //! surfaces (wallet Rust, Attester Rust, Attester UniFFI, mobile UniFFI). The
     //! new FFI **encapsulates** the keys — they never cross the boundary,
     //! so a raw-bytes comparison is no longer expressible. We instead
     //! assert the observable end-to-end property: an attester-issued

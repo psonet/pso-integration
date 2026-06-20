@@ -1,6 +1,6 @@
 //! `RpcHandle` — alloy JSON-RPC + signer handle for PSO L2.
 //!
-//! The testsuite's SRA + admin clients take an `RpcHandle` and perform
+//! The testsuite's Attester + admin clients take an `RpcHandle` and perform
 //! their operations through it. The signer can be omitted for read-only
 //! interactions (e.g. inspecting on-chain state); any write-path
 //! function returns [`RpcError::NoSigner`] when the caller forgot to
