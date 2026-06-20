@@ -13,13 +13,10 @@
 //!   `l2-client` crate anymore).
 //! - [`contract_errors`] — the typed Solidity revert decoder
 //!   ([`PsoContractError`](contract_errors::PsoContractError)).
-//! - [`contracts`] — inline `sol!` bindings for the two contracts
-//!   `pso-chain-abi` does not carry (SequencerEpoch, SlashingVerifier).
 
 pub mod actor;
 pub mod admin;
 pub mod contract_errors;
-pub mod contracts;
 pub mod envelope;
 pub mod rpc;
 pub mod sra;

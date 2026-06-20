@@ -39,9 +39,10 @@ pub mod s033_revoked_sra_submit_rejected;
 pub mod s035_update_mask_round_trip;
 pub mod s036_rotation_candidate_round_trip;
 pub mod s037_revoke_unknown_rejected;
-pub mod s038_sequencer_epoch_view_roundtrip;
-pub mod s039_slashing_equivocation_happy_path;
-pub mod s040_slashing_invalid_vdf_happy_path;
+// S038 (SequencerEpoch) + S039/S040 (SlashingVerifier) removed: the new chain
+// has no such L2 contracts — sequencer-epoch/leader election and slashing live
+// in the consensus layer (pso-chain-node consensus/slashing.rs, pso-da
+// election.rs, pso-rotation anchor.rs), not at 0x5200..02/03.
 pub mod s041_users_envelope_unregistered_wallet_admitted;
 pub mod s042_mobile_api_wallet_flow;
 pub mod s043_envelope_aged_proof_accepted;
@@ -88,9 +89,6 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s035_update_mask_round_trip::S035),
         Box::new(s036_rotation_candidate_round_trip::S036),
         Box::new(s037_revoke_unknown_rejected::S037),
-        Box::new(s038_sequencer_epoch_view_roundtrip::S038),
-        Box::new(s039_slashing_equivocation_happy_path::S039),
-        Box::new(s040_slashing_invalid_vdf_happy_path::S040),
         Box::new(s041_users_envelope_unregistered_wallet_admitted::S041),
         Box::new(s042_mobile_api_wallet_flow::S042),
         Box::new(s043_envelope_aged_proof_accepted::S043),
