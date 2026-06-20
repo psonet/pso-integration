@@ -2,6 +2,32 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.10.0 - 2026-06-20
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**integration**) remove pso-l2-client; testsuite + CLIs on the 0.8 stack - (8607d22) - Anton Velichko
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**integration**) migrate FFI crates to the 0.8/0.9 stack - (7910aa2) - Anton Velichko
+#### Bug Fixes
+- (**ci**) repoint attester packaging after the sra→attester rename - (3514971) - Anton Velichko
+- (**e2e**) S036 reverts its rotation candidate (stop polluting the committee) - (086c6ac) - Anton Velichko
+- (**e2e**) widen S042 receipt deadline for bursty idle block cadence - (920e358) - Anton Velichko
+- (**e2e**) correct TD-submit proof wire format + canonical ids - (838e284) - Anton Velichko
+#### Documentation
+- rewrite READMEs for the 0.8 stack (sibling style) - (cdc460a) - Anton Velichko
+#### Tests
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**e2e**) drop S038/S039/S040 — no SequencerEpoch/SlashingVerifier in the new chain - (21cdf6b) - Anton Velichko
+#### Continuous Integration
+- (**release**) attach + document the attester Python wheels - (ebf2e6b) - Anton Velichko
+#### Refactoring
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**attester**) rename pso-sra-integration -> pso-attester-integration - (45bc639) - Anton Velichko
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**integration**) SRA→Attester rename + attester Python wheels, tests, package metadata - (12cc8f9) - Anton Velichko
+- (**testsuite**) decode contract errors via pso-chain-abi, drop copied sol! - (94ce02c) - Anton Velichko
+#### Miscellaneous Chores
+- (**mobile**) remove stale react-native example - (dc57355) - Anton Velichko
+#### Style
+- cargo fmt --all (rustfmt-clean the 0.8 migration + rename) - (715419e) - Anton Velichko
+
+- - -
+
 ## v0.9.0 - 2026-06-17
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**binding**) thread binding_hash through the prover (TD submit + L1 redemption) - (e676512) - Anton Velichko
