@@ -58,7 +58,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let provider = env.attester_zero.inner().write_provider()?;
     let tx_req = alloy_rpc_types_eth::TransactionRequest::default()
         .to(TRIBUTE_DRAFT)
-        .input(alloy_rpc_types_eth::TransactionInput::new(Bytes::from(data)))
+        .input(alloy_rpc_types_eth::TransactionInput::new(Bytes::from(
+            data,
+        )))
         .max_fee_per_gas(0)
         .max_priority_fee_per_gas(0);
     let result = provider.send_transaction(tx_req).await;

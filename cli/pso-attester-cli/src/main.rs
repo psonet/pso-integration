@@ -23,7 +23,11 @@ mod commands;
 use client::AttesterRpc;
 
 #[derive(Parser, Debug)]
-#[command(name = "pso-attester-cli", version, about = "PSO Attester-side L2 operations")]
+#[command(
+    name = "pso-attester-cli",
+    version,
+    about = "PSO Attester-side L2 operations"
+)]
 struct Cli {
     /// L2 JSON-RPC URL. Falls back to `$PSO_L2_RPC`.
     #[arg(long, env = "PSO_L2_RPC")]

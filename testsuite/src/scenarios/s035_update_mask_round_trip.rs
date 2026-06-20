@@ -49,7 +49,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         ));
     }
     if !initial.active {
-        return Err(eyre::eyre!("S035: freshly-registered Attester is not active"));
+        return Err(eyre::eyre!(
+            "S035: freshly-registered Attester is not active"
+        ));
     }
 
     let new_mask: u32 = 0x03;

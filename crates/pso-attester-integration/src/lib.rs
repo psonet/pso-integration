@@ -163,11 +163,11 @@ fn fingerprints(fps: &[Vec<u8>], what: &'static str) -> Result<Vec<B256>, Attest
         .enumerate()
         .map(|(i, fp)| {
             let bytes = arr::<32>(fp, what)?;
-            pso_protocol::codec::field_from_be_bytes_canonical::<Fr>(&bytes, what).map_err(|_| {
-                AttesterError::BadInput {
+            pso_protocol::codec::field_from_be_bytes_canonical::<Fr>(&bytes, what).map_err(
+                |_| AttesterError::BadInput {
                     detail: format!("{what} {i} is not a canonical field element (>= modulus)"),
-                }
-            })?;
+                },
+            )?;
             Ok(B256::new(bytes))
         })
         .collect()
@@ -370,7 +370,9 @@ mod tests {
     #[test]
     fn issue_round_trip_and_reissue_reuses_identity() {
         let att = Attester::new(vec![0xab; 20]).unwrap();
-        let header = att.generate_nft_header(seed(3), valid_consent_pk()).unwrap();
+        let header = att
+            .generate_nft_header(seed(3), valid_consent_pk())
+            .unwrap();
 
         let issued = att
             .issue_with_header(
@@ -416,7 +418,9 @@ mod tests {
     #[test]
     fn issue_rejects_non_canonical_fingerprint() {
         let att = Attester::new(vec![0xab; 20]).unwrap();
-        let header = att.generate_nft_header(seed(5), valid_consent_pk()).unwrap();
+        let header = att
+            .generate_nft_header(seed(5), valid_consent_pk())
+            .unwrap();
         // 0xff..ff >= field modulus.
         assert!(matches!(
             att.issue_with_header(

@@ -32,7 +32,10 @@ fn nft_generate_tribute_draft_writes_valid_json() {
     assert_eq!(output.nft_type, "tribute-draft");
     assert!(output.tribute_draft.is_some(), "tribute_draft body present");
     assert!(output.spending_unit.is_none(), "no spending_unit body");
-    assert!(!output.secret_key_hex.is_empty(), "secret_key_hex not empty");
+    assert!(
+        !output.secret_key_hex.is_empty(),
+        "secret_key_hex not empty"
+    );
     assert!(!output.nonce_hex.is_empty(), "nonce_hex not empty");
 }
 
@@ -65,7 +68,11 @@ fn generated_output_nonce_hex_is_valid_hex_32_bytes() {
     handle_nft_generate(NftType::TributeDraft, &path).expect("handle_nft_generate should succeed");
     let output = read_generated_output(&path);
     let bytes = hex::decode(&output.nonce_hex).expect("nonce_hex must be valid hex");
-    assert_eq!(bytes.len(), 32, "BN254 field element nonce must be 32 bytes");
+    assert_eq!(
+        bytes.len(),
+        32,
+        "BN254 field element nonce must be 32 bytes"
+    );
 }
 
 #[test]

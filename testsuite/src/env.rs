@@ -47,8 +47,8 @@ use crate::bridge::{spawn_attester_loop, Bridge};
 use crate::cli::Cli;
 use crate::clients::actor::ActorClient;
 use crate::clients::admin::{AdminClient, ATTESTER_REGISTRY};
-use crate::clients::rpc::{RpcError, RpcHandle};
 use crate::clients::attester::AttesterClient;
+use crate::clients::rpc::{RpcError, RpcHandle};
 
 /// Permission mask Attesters are registered with: bits 0–3 = SU.submit,
 /// SR.submit, AR.submit, heartbeat (reserved) — the same mask the

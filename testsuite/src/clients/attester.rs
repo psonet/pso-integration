@@ -136,10 +136,7 @@ impl AttesterClient {
     /// `SpendingUnit.submit(...)`. The Attester is the on-chain submitter;
     /// the wallet supplied the `derivedOwner` commitment off-line so the
     /// chain can later verify a ZK ownership proof against it.
-    pub async fn mint_spending_unit(
-        &self,
-        args: MintSpendingUnitArgs,
-    ) -> Result<TxHash, RpcError> {
+    pub async fn mint_spending_unit(&self, args: MintSpendingUnitArgs) -> Result<TxHash, RpcError> {
         let provider = self.inner.write_provider()?;
         let inst = ISpendingUnit::new(SPENDING_UNIT, provider);
         let pending = inst

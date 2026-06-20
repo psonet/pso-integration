@@ -57,8 +57,14 @@ pub async fn run(client: &AttesterRpc, args: Args) -> Result<()> {
 
     // Record fingerprints are the same canonical BE bytes the on-chain
     // SU stores; the attester folds them into `nft_hash`.
-    let sr_fps: Vec<Vec<u8>> = sr_ids.iter().map(|id| id.to_be_bytes::<32>().to_vec()).collect();
-    let ar_fps: Vec<Vec<u8>> = ar_ids.iter().map(|id| id.to_be_bytes::<32>().to_vec()).collect();
+    let sr_fps: Vec<Vec<u8>> = sr_ids
+        .iter()
+        .map(|id| id.to_be_bytes::<32>().to_vec())
+        .collect();
+    let ar_fps: Vec<Vec<u8>> = ar_ids
+        .iter()
+        .map(|id| id.to_be_bytes::<32>().to_vec())
+        .collect();
 
     // Attester FFI: consent-box header + full issuance, bound to the
     // Attester's on-chain address.

@@ -93,7 +93,10 @@ fn parse_seed_hex(s: &str) -> Result<Vec<u8>> {
     let s = s.strip_prefix("0x").unwrap_or(s);
     let bytes = hex::decode(s)?;
     if bytes.len() < 32 {
-        eyre::bail!("wallet seed must be >= 32 bytes of entropy, got {}", bytes.len());
+        eyre::bail!(
+            "wallet seed must be >= 32 bytes of entropy, got {}",
+            bytes.len()
+        );
     }
     Ok(bytes)
 }

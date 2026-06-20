@@ -142,8 +142,8 @@ pub struct SerializableProof {
 // -- Helpers --
 
 fn b256(s: &str) -> Result<B256> {
-    let bytes = hex::decode(s.strip_prefix("0x").unwrap_or(s))
-        .map_err(|e| anyhow!("invalid hex: {e}"))?;
+    let bytes =
+        hex::decode(s.strip_prefix("0x").unwrap_or(s)).map_err(|e| anyhow!("invalid hex: {e}"))?;
     if bytes.len() != 32 {
         return Err(anyhow!("expected 32 bytes, got {}", bytes.len()));
     }
@@ -151,8 +151,8 @@ fn b256(s: &str) -> Result<B256> {
 }
 
 fn address(s: &str) -> Result<Address> {
-    let bytes = hex::decode(s.strip_prefix("0x").unwrap_or(s))
-        .map_err(|e| anyhow!("invalid hex: {e}"))?;
+    let bytes =
+        hex::decode(s.strip_prefix("0x").unwrap_or(s)).map_err(|e| anyhow!("invalid hex: {e}"))?;
     if bytes.len() != 20 {
         return Err(anyhow!("expected 20 bytes, got {}", bytes.len()));
     }

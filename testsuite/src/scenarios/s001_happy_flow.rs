@@ -167,9 +167,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let sender = wallet.address();
     let chain_id = wallet.chain_id();
     let td_id = random_id();
-    let binding =
-        PsoV1::binding(&sender.into_array(), &td_id.to_be_bytes::<32>(), chain_id)
-            .map_err(|e| eyre::eyre!("compute binding: {e}"))?;
+    let binding = PsoV1::binding(&sender.into_array(), &td_id.to_be_bytes::<32>(), chain_id)
+        .map_err(|e| eyre::eyre!("compute binding: {e}"))?;
     let binding_bytes = PsoV1::field_to_be_bytes(&binding);
 
     // -----------------------------------------------------------------

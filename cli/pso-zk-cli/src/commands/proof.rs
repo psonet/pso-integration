@@ -56,8 +56,8 @@ pub fn handle_proof_generate(
         .try_into()
         .map_err(|_| anyhow!("nonce_hex must be 32 bytes"))?;
     let nonce = PsoV1::field_from_be32(&nonce_bytes);
-    let signer = Signer::<PsoV1>::from_secret(NftSecret::new(sk), nonce)
-        .context("bind signer to nonce")?;
+    let signer =
+        Signer::<PsoV1>::from_secret(NftSecret::new(sk), nonce).context("bind signer to nonce")?;
 
     // The commitment the binding pins: the NFT id.
     let commitment_id: [u8; 32] = hex::decode(gen.nft_id.strip_prefix("0x").unwrap_or(&gen.nft_id))
@@ -122,7 +122,10 @@ pub fn handle_proof_generate(
 
     let rows = vec![
         kv("Proof Mode", "ownership"),
-        kv("Public Inputs", &serializable.public_inputs.len().to_string()),
+        kv(
+            "Public Inputs",
+            &serializable.public_inputs.len().to_string(),
+        ),
         kv("Output File", &output.display().to_string()),
     ];
     println!("{}", build_table(&rows));
@@ -167,9 +170,7 @@ pub fn handle_proof_verify(proof_path: &Path) -> Result<()> {
     let proof_fields = sp
         .proof
         .iter()
-        .map(|s| {
-            hex::decode(s.strip_prefix("0x").unwrap_or(s)).context("decode proof field")
-        })
+        .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).context("decode proof field"))
         .collect::<Result<Vec<_>>>()?;
     let proof = pso_zk_backend::barretenberg::Proof {
         proof: proof_fields,
@@ -182,7 +183,10 @@ pub fn handle_proof_verify(proof_path: &Path) -> Result<()> {
     let rows = vec![
         kv("Proof Mode", &sp.mode),
         kv("Circuit Hash", &sp.circuit_hash),
-        kv("Verification Result", if valid { "VALID" } else { "INVALID" }),
+        kv(
+            "Verification Result",
+            if valid { "VALID" } else { "INVALID" },
+        ),
     ];
     println!("{}", build_table(&rows));
 

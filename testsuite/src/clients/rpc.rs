@@ -15,8 +15,8 @@ use std::sync::Arc;
 use alloy_network::EthereumWallet;
 use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder};
-use alloy_signer_local::PrivateKeySigner;
 use alloy_signer::Signer;
+use alloy_signer_local::PrivateKeySigner;
 use alloy_transport_http::reqwest::Url;
 use thiserror::Error;
 

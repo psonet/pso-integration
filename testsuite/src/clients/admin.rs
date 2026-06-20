@@ -21,8 +21,8 @@
 //! [`AdminClient::set_difficulty`]. `advance_epoch` shipped as a
 //! `TestEnv` method (uses the actor-RPC port).
 
-use alloy_primitives::{Address, B256, U256};
 use alloy_primitives::TxHash;
+use alloy_primitives::{Address, B256, U256};
 use alloy_sol_types::sol;
 use serde_json::json;
 

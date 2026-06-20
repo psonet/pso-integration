@@ -37,13 +37,14 @@ use pso_chain_abi::interfaces::{
     IAttesterGated::AttesterNotActive,
     IAttestersRegistry::{AlreadyRegistered, InvalidMask, NotAdmin, NotRegistered, ZeroAddress},
     ISpendingRecord::{AlreadyExists, InvalidTokenId},
-    ISpendingUnit::{InvalidAmount, InvalidSpendingRecords, NoSpendingRecords, TooManySpendingRecords},
+    ISpendingUnit::{
+        InvalidAmount, InvalidSpendingRecords, NoSpendingRecords, TooManySpendingRecords,
+    },
     ITributeDraft::{
         AggregationTierUnavailable, EmptyArray, InvalidAggregationProof, MalformedAggregationProof,
         NotFound, NotSameCurrency, NotSameWorldwideDay,
     },
 };
-
 
 /// Flat, scenario-facing classification of every revert / pool
 /// rejection the suite cares about.

@@ -49,7 +49,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // 4 wouldn't necessarily isolate the revoke.
     let sr_id_pre = random_id();
     let tx = attester.register_spending_record(sr_id_pre).await?;
-    attester.wait_for_tx_success(tx, Duration::from_secs(30)).await?;
+    attester
+        .wait_for_tx_success(tx, Duration::from_secs(30))
+        .await?;
     tracing::info!(scenario = "S033", "pre-revoke SR submission landed");
 
     env.admin

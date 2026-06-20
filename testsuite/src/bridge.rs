@@ -40,7 +40,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use pso_attester_integration::{Attester, IssuanceReport};
 
-use crate::clients::attester::{MintSpendingUnitArgs, AttesterClient};
+use crate::clients::attester::{AttesterClient, MintSpendingUnitArgs};
 
 /// Inputs the caller supplies for a single SU mint.
 #[derive(Debug, Clone)]
@@ -161,8 +161,8 @@ impl Bridge {
 /// `attester_client`'s on-chain address (it stamps every SU's `attesterAddress`).
 pub fn spawn_attester_loop(attester_client: AttesterClient) -> Bridge {
     let (tx, mut rx) = mpsc::channel::<SuMintRequest>(64);
-    let attester = Attester::new(attester_client.address().to_vec())
-        .expect("attester address is 20 bytes");
+    let attester =
+        Attester::new(attester_client.address().to_vec()).expect("attester address is 20 bytes");
     let handle = tokio::spawn(async move {
         tracing::debug!("Attester bridge loop started");
         while let Some(req) = rx.recv().await {
@@ -217,8 +217,14 @@ async fn handle_mint(
         // Record fingerprints are 32-byte big-endian field elements; the
         // on-chain SR/AR ids are uint256. Use the same BE bytes for both,
         // so the SU's `nft_hash` folds exactly what the chain stored.
-        let sr_fps: Vec<Vec<u8>> = sr_ids.iter().map(|id| id.to_be_bytes::<32>().to_vec()).collect();
-        let ar_fps: Vec<Vec<u8>> = ar_ids.iter().map(|id| id.to_be_bytes::<32>().to_vec()).collect();
+        let sr_fps: Vec<Vec<u8>> = sr_ids
+            .iter()
+            .map(|id| id.to_be_bytes::<32>().to_vec())
+            .collect();
+        let ar_fps: Vec<Vec<u8>> = ar_ids
+            .iter()
+            .map(|id| id.to_be_bytes::<32>().to_vec())
+            .collect();
 
         attester.issue_with_header(
             header,
@@ -268,7 +274,8 @@ async fn handle_mint(
         .map_err(|e| BridgeError::Mint(e.to_string()))?;
 
     // ----- (4) Wait for inclusion -----
-    attester_client.wait_for_tx_success(mint_tx, Duration::from_secs(30))
+    attester_client
+        .wait_for_tx_success(mint_tx, Duration::from_secs(30))
         .await
         .map_err(|e| BridgeError::Receipt(e.to_string()))?;
     tracing::debug!(?mint_tx, "bridge: mint receipt success");

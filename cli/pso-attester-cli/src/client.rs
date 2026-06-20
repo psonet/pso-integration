@@ -8,8 +8,8 @@
 use alloy_network::{Ethereum, EthereumWallet};
 use alloy_primitives::{Address, TxHash, U256};
 use alloy_provider::{Provider, ProviderBuilder};
-use alloy_signer_local::PrivateKeySigner;
 use alloy_signer::Signer;
+use alloy_signer_local::PrivateKeySigner;
 use alloy_transport_http::reqwest::Url;
 use eyre::Result;
 

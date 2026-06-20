@@ -191,10 +191,11 @@ fn arr<const N: usize>(v: &[u8], what: &str) -> Result<[u8; N], MobileError> {
 /// goes through here.
 fn field32(v: &[u8], what: &'static str) -> Result<Fr, MobileError> {
     let bytes = arr::<32>(v, what)?;
-    pso_protocol::codec::field_from_be_bytes_canonical::<Fr>(&bytes, what)
-        .map_err(|e| MobileError::InvalidInput {
+    pso_protocol::codec::field_from_be_bytes_canonical::<Fr>(&bytes, what).map_err(|e| {
+        MobileError::InvalidInput {
             detail: e.to_string(),
-        })
+        }
+    })
 }
 
 /// A deterministic per-purpose RNG: `StdRng` seeded with `sha256(tag ‖ seed ‖
@@ -233,8 +234,11 @@ fn rng_from(seed: &[u8], domain: u8) -> Result<StdRng, MobileError> {
 
 /// Ownership-circuit proof bytes for one slot.
 fn ownership_proof_bytes(witness: &Witness, public: &PublicInputs) -> Result<Vec<u8>, MobileError> {
-    let proof =
-        ProofGenerator::<PsoV1, OwnershipProof>::generate(&Barretenberg::default(), witness, public)?;
+    let proof = ProofGenerator::<PsoV1, OwnershipProof>::generate(
+        &Barretenberg::default(),
+        witness,
+        public,
+    )?;
     Ok(proof.proof.concat())
 }
 
@@ -285,12 +289,11 @@ impl Wallet {
 
     /// Load a consent from a previously-exported 32-byte secret.
     pub fn load_consent(&self, consent_sk: Vec<u8>) -> Result<Arc<Consent>, MobileError> {
-        let sk =
-            PsoV1::secret_from_bytes(&arr::<32>(&consent_sk, "consent_sk")?).map_err(|e| {
-                MobileError::InvalidInput {
-                    detail: e.to_string(),
-                }
-            })?;
+        let sk = PsoV1::secret_from_bytes(&arr::<32>(&consent_sk, "consent_sk")?).map_err(|e| {
+            MobileError::InvalidInput {
+                detail: e.to_string(),
+            }
+        })?;
         Ok(Arc::new(Consent {
             sk: SecretScalar::new(sk),
         }))
@@ -360,7 +363,11 @@ impl Wallet {
         let mut rng = rng_from(&seed, DOMAIN_PAD)?;
         let any = tier.assemble::<PsoV1, _>(&mut rng, slots, binding)?;
 
-        let public_inputs: Vec<Vec<u8>> = any.public_inputs().iter().map(PsoV1::field_to_be_bytes).collect();
+        let public_inputs: Vec<Vec<u8>> = any
+            .public_inputs()
+            .iter()
+            .map(PsoV1::field_to_be_bytes)
+            .collect();
         let proof = aggregation_proof_bytes(&any)?;
         Ok(AggregationProofResult {
             tier_n: tier.capacity() as u32,
@@ -508,7 +515,8 @@ impl Consent {
         report: IssuanceReport,
         binding: Vec<u8>,
     ) -> Result<ProofResult, MobileError> {
-        let (witness, public) = self.build_ownership(&seed, &report, arr::<32>(&binding, "binding")?)?;
+        let (witness, public) =
+            self.build_ownership(&seed, &report, arr::<32>(&binding, "binding")?)?;
         let public_inputs: Vec<Vec<u8>> =
             <OwnershipProof as Circuit<PsoV1>>::public_inputs(&public)
                 .iter()
@@ -536,8 +544,8 @@ impl Consent {
     ) -> Result<(Witness, PublicInputs), MobileError> {
         let opaque_pk = PsoV1::public_key_from_bytes(&arr::<32>(&report.opaque_pk, "opaque_pk")?)
             .map_err(|e| MobileError::InvalidInput {
-                detail: e.to_string(),
-            })?;
+            detail: e.to_string(),
+        })?;
         let nonce = field32(&report.nonce, "nonce")?;
         let signer = PsoV1::signer_from_remote(self.sk.expose(), &opaque_pk, nonce)?;
         let receipt = OwnershipReceipt::<PsoV1> {
@@ -562,18 +570,37 @@ mod vdf_tests {
     fn derive_input_is_deterministic_and_sensitive() {
         let w = wallet();
         let signer = vec![0xab; 20];
-        let base = w.derive_vdf_input(signer.clone(), 7, 100, 19_280_501).unwrap();
+        let base = w
+            .derive_vdf_input(signer.clone(), 7, 100, 19_280_501)
+            .unwrap();
         assert_eq!(base.len(), 32);
-        assert_eq!(base, w.derive_vdf_input(signer.clone(), 7, 100, 19_280_501).unwrap());
-        assert_ne!(base, w.derive_vdf_input(signer.clone(), 8, 100, 19_280_501).unwrap());
-        assert_ne!(base, w.derive_vdf_input(signer.clone(), 7, 101, 19_280_501).unwrap());
-        assert_ne!(base, w.derive_vdf_input(signer, 7, 100, 19_280_502).unwrap());
+        assert_eq!(
+            base,
+            w.derive_vdf_input(signer.clone(), 7, 100, 19_280_501)
+                .unwrap()
+        );
+        assert_ne!(
+            base,
+            w.derive_vdf_input(signer.clone(), 8, 100, 19_280_501)
+                .unwrap()
+        );
+        assert_ne!(
+            base,
+            w.derive_vdf_input(signer.clone(), 7, 101, 19_280_501)
+                .unwrap()
+        );
+        assert_ne!(
+            base,
+            w.derive_vdf_input(signer, 7, 100, 19_280_502).unwrap()
+        );
     }
 
     #[test]
     fn derive_input_rejects_wrong_signer_length() {
         assert!(matches!(
-            wallet().derive_vdf_input(vec![0u8; 19], 0, 0, 1).unwrap_err(),
+            wallet()
+                .derive_vdf_input(vec![0u8; 19], 0, 0, 1)
+                .unwrap_err(),
             MobileError::InvalidInput { .. }
         ));
     }
@@ -585,7 +612,9 @@ mod vdf_tests {
         let input = w.derive_vdf_input(vec![0xab; 20], 1, 1, 1).unwrap();
         let result = w.compute_vdf(input.clone(), 16).unwrap();
         assert!(!result.proof.is_empty());
-        assert!(w.verify_vdf(input, result.output, result.proof, 16).unwrap());
+        assert!(w
+            .verify_vdf(input, result.output, result.proof, 16)
+            .unwrap());
     }
 
     #[test]

@@ -16,7 +16,7 @@
 
 pub mod actor;
 pub mod admin;
+pub mod attester;
 pub mod contract_errors;
 pub mod envelope;
 pub mod rpc;
-pub mod attester;

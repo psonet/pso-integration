@@ -35,11 +35,13 @@ pub mod hardhat;
 pub mod scenario;
 pub mod scenarios;
 
-pub use bridge::{spawn_attester_loop, Bridge, BridgeError, SuMintArgs, SuMintReceipt, SuMintRequest};
+pub use bridge::{
+    spawn_attester_loop, Bridge, BridgeError, SuMintArgs, SuMintReceipt, SuMintRequest,
+};
 pub use cli::{init_tracing, parse_hex32, Cli, ReportFormat};
 pub use clients::actor::{ActorClient, ActorClientError};
-pub use clients::contract_errors::{decode_text, into_pso_error, PsoContractError};
 pub use clients::attester::AttesterClient;
+pub use clients::contract_errors::{decode_text, into_pso_error, PsoContractError};
 pub use env::TestEnv;
 // `PsoContractError` + the decoder primitives are owned by the
 // testsuite's `clients::contract_errors` module. Re-export at the crate

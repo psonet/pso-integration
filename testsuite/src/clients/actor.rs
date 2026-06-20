@@ -29,8 +29,8 @@ use alloy_network::TxSignerSync;
 use alloy_primitives::{Address, Bytes, TxHash, TxKind, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_rpc_types_eth::TransactionReceipt;
-use alloy_signer_local::PrivateKeySigner;
 use alloy_signer::Signer;
+use alloy_signer_local::PrivateKeySigner;
 use alloy_transport_http::reqwest::{Client as HttpClient, Url};
 use serde_json::{json, Value};
 
