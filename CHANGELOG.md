@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.11.0 - 2026-06-21
+#### Features
+- (**testsuite**) S046 — verify a TD leaf is committee-signed (inclusion path + off-chain BLS) - (9ed9b92) - Anton Velichko
+#### Build system
+- (**deps**) source pso-chain-abi from crates.io 0.4.1 (was git branch) - (a26f45f) - Anton Velichko
+
+- - -
+
 ## v0.10.2 - 2026-06-20
 #### Bug Fixes
 - pin iOS deployment target to 15.0 so the mobile cdylib links - (ff053c4) - Anton Velichko
