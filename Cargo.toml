@@ -27,11 +27,11 @@ resolver = "2"
 #   coupling (acvm solve + barretenberg FFI); not on crates.io (git-only noir
 #   deps), so consumed via git+tag. It's generic over the core circuit seams.
 # - `pso-chain-abi` provides the typed SpendingUnit/TributeDraft entity structs;
-#   consumed from pso-chain-next via git until it's published to crates.io.
+#   on crates.io as of pso-chain-next v0.4.1 (was a git branch dep pre-release).
 pso-protocol         = "0.8"
 pso-zk-canonical     = "0.9"
 pso-zk-backend       = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.9.0" }
-pso-chain-abi        = { git = "ssh://git@github.com/psonet/pso-chain-next.git", branch = "feat/protocol-0.8" }
+pso-chain-abi        = "0.4.1"
 
 # In-workspace FFI path deps. The testsuite + CLIs consume these directly
 # (alongside pso-chain-abi / pso-protocol) — there is no shared "l2-client"
