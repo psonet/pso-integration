@@ -101,9 +101,14 @@ guard it exercises.
 | S042  | Mobile-API wallet flow: uniffi VDF + self-assembled envelope tx executes end-to-end through the `PsoEnvelopeDispatcher` (`status == 1`). |
 | S043  | Envelope aged ~20 blocks (inside `PSO_PROOF_MAX_AGE`) is admitted and executes — positive counterpart to S015. |
 | S044  | Sequential wallet txs (nonce 0, 1) execute with per-nonce VDF recompute; nonce-0 VDF binding replayed at nonce 2 rejects `BadVdfInputBinding`. |
+| S045  | A DA batch is committed on the L1 `DaInbox` (`hasCommitment()`), confirming the node posts finalized batches to L1. Needs `--l1-rpc-url` + `--da-inbox`. |
+| S046  | TD full-proof → `pso_getInclusionPath` (depth-32 Poseidon2 Merkle proof to root `R_M`) → `pso_getFinalizeCert` (assert `r == R_M`, recompute the signed digest) → verify the committee BLS threshold signature off-chain against the `DaInbox` group key. Needs `--l1-rpc-url` + `--da-inbox` and the node serving inclusion paths (on by default). |
 
 S032 needs the chain spawned with `PSO_DEV_RPC=1` (gates
 `pso_dev_advanceEpoch`); the CI workflow sets it on the dev node.
+
+S045/S046 read the L1 `DaInbox`, so they only run when `--l1-rpc-url`
+(and `--da-inbox`) are supplied; otherwise they're filtered out.
 
 Intentional gaps in the numbering:
 

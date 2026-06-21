@@ -79,16 +79,16 @@ async fn run(cli: Cli) -> eyre::Result<usize> {
     let all = scenarios::all();
     let mut filtered = apply_filters(all, cli.only.as_deref(), cli.skip.as_deref());
 
-    // S045 (DA batch committed) reads the L1 DaInbox. Without
-    // `--l1-rpc-url` there's nothing to assert against, so drop it rather
-    // than fail — consumers that don't expose their L1 run the rest of the
-    // suite unaffected. (The harness that wires DA passes --l1-rpc-url +
+    // S045 (DA batch committed) + S046 (cert-backed inclusion) read the L1
+    // DaInbox. Without `--l1-rpc-url` there's nothing to assert against, so drop
+    // them rather than fail — consumers that don't expose their L1 run the rest
+    // of the suite unaffected. (The harness that wires DA passes --l1-rpc-url +
     // --da-inbox.)
     if cli.l1_rpc_url.is_none() {
         let before = filtered.len();
-        filtered.retain(|s| s.id() != "S045");
+        filtered.retain(|s| s.id() != "S045" && s.id() != "S046");
         if filtered.len() != before {
-            tracing::info!("S045 skipped: --l1-rpc-url not provided (no DA inbox to read)");
+            tracing::info!("S045/S046 skipped: --l1-rpc-url not provided (no DA inbox to read)");
         }
     }
 

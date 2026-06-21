@@ -29,6 +29,7 @@
 use std::time::Duration;
 
 use alloy_primitives::{Address, Bytes, FixedBytes, U256};
+use alloy_rpc_types_eth::TransactionReceipt;
 use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 
@@ -41,6 +42,19 @@ use crate::data::{random_id, random_su_args};
 use crate::{Scenario, TestEnv};
 
 type Fr = <PsoV1 as Suite>::Field;
+
+/// What [`submit_full_tribute_draft`] hands back: the on-chain ids + the
+/// wallet-derived `derivedOwner` (BE 32B), the aggregated SU ids, the
+/// submitter EOA, and the TD-submit transaction receipt (carrying the
+/// `LeafInserted` event the cert-inclusion scenario reads). Shared so S046
+/// can reuse the full happy-path TD submission verbatim.
+pub(crate) struct TdSubmitOutcome {
+    pub td_id: U256,
+    pub td_owner_be: Vec<u8>,
+    pub su_ids: Vec<U256>,
+    pub sender: Address,
+    pub receipt: TransactionReceipt,
+}
 
 /// Unit struct implementing [`Scenario`]; the binary boxes it via
 /// `scenarios::all`.
@@ -55,7 +69,21 @@ impl Scenario for S001 {
         "full SR/AR -> SU via bridge -> wallet TD prove + submit; derivedOwner round-trip"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
-        run(env).await
+        let outcome = submit_full_tribute_draft(env).await?;
+
+        // Read the TD back, assert the stored `derivedOwner` matches the
+        // wallet's computation (unified BE wire format).
+        let read_provider = env.attester_zero.inner().read_provider();
+        let td_view = ITributeDraft::new(TRIBUTE_DRAFT, &read_provider);
+        let td_on_chain = td_view.getData(outcome.td_id).call().await?;
+        if td_on_chain.derivedOwner.as_slice() != outcome.td_owner_be.as_slice() {
+            return Err(eyre::eyre!(
+                "S001: TD on-chain derivedOwner {:?} != wallet-derived {:?}",
+                td_on_chain.derivedOwner,
+                outcome.td_owner_be
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -63,7 +91,13 @@ impl Scenario for S001 {
 // canonical fields the wallet cross-checks. The `pso-chain-abi`
 // interfaces carry `getData`, but the `*Entity` return structs are the
 // shape we read below.
-async fn run(env: &TestEnv) -> eyre::Result<()> {
+/// Drive the full happy-path TributeDraft submission (steps 1–6 of S001):
+/// wallet consent setup, attester SR/AR registration, bridge SU mints,
+/// per-SU ownership witnesses, flat-aggregation proof, and the wallet-direct
+/// `TributeDraft.submit` through the actor pool. Returns the on-chain ids +
+/// the submit receipt so callers can assert against the result (S001 checks
+/// `derivedOwner`; S046 reads the `LeafInserted` event + proves cert-inclusion).
+pub(crate) async fn submit_full_tribute_draft(env: &TestEnv) -> eyre::Result<TdSubmitOutcome> {
     // -----------------------------------------------------------------
     // 1. Wallet setup. The wallet's consent key is long-lived; the
     //    bridge ingests `consent_pk` per SU mint.
@@ -249,7 +283,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let inner = ITributeDraft::submitCall {
         tributeDraftId: td_id,
         derivedOwner: FixedBytes::<32>::from_slice(&td_owner_be),
-        suIds: su_ids_ordered,
+        suIds: su_ids_ordered.clone(),
         aggregationProof: Bytes::from(combined_proof),
     }
     .abi_encode();
@@ -261,26 +295,18 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let receipt = wallet.wait_for_receipt(tx, Duration::from_secs(60)).await?;
     if !receipt.status() {
         return Err(eyre::eyre!(
-            "S001: wallet-direct TD.submit reverted (tx {tx:#x}) — envelope \
-             dispatcher or aggregation verification failed"
+            "TD.submit reverted (tx {tx:#x}) — envelope dispatcher or \
+             aggregation verification failed"
         ));
     }
 
-    // -----------------------------------------------------------------
-    // 7. Read the TD back, assert the stored `derivedOwner` matches
-    //    the wallet's computation (unified BE wire format).
-    // -----------------------------------------------------------------
-    let td_view = ITributeDraft::new(TRIBUTE_DRAFT, &read_provider);
-    let td_on_chain = td_view.getData(td_id).call().await?;
-    if td_on_chain.derivedOwner.as_slice() != td_owner_be.as_slice() {
-        return Err(eyre::eyre!(
-            "S001: TD on-chain derivedOwner {:?} != wallet-derived {:?}",
-            td_on_chain.derivedOwner,
-            td_owner_be
-        ));
-    }
-
-    Ok(())
+    Ok(TdSubmitOutcome {
+        td_id,
+        td_owner_be,
+        su_ids: su_ids_ordered,
+        sender,
+        receipt,
+    })
 }
 
 /// A random SR/AR id that is a **canonical field element** — the
