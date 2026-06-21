@@ -375,8 +375,13 @@ impl ActorClient {
 
     /// Hand-rolled JSON-RPC POST. Goes around alloy's typed surface
     /// because we (a) need access to `data` bytes on errors and (b)
-    /// already encode the raw tx ourselves.
-    async fn raw_json_rpc(&self, method: &str, params: Value) -> Result<Value, ActorClientError> {
+    /// already encode the raw tx ourselves. Public so scenarios can call
+    /// custom `pso_*` methods (e.g. `pso_getInclusionPath`) on the node.
+    pub async fn raw_json_rpc(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, ActorClientError> {
         let body = json!({
             "jsonrpc": "2.0",
             "id":      1,

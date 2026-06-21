@@ -77,6 +77,14 @@ sha2.workspace                     = true
 chrono.workspace                   = true
 iso_currency.workspace             = true
 
+# S046 cert-inclusion: off-chain verification that the IMT root is committee-
+# signed. `commonware-cryptography` is the exact BLS12-381 MinSig threshold
+# crate the chain signs finalize certs with (so verify is byte-compatible);
+# `blst` decompresses the EIP-2537 G2 group key read from the DaInbox.
+commonware-cryptography.workspace  = true
+commonware-codec.workspace         = true
+blst.workspace                     = true
+
 # CLI parsing.
 clap.workspace                     = true
 

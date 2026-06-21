@@ -80,6 +80,15 @@ hmac = "0.12"
 sha2 = "0.10"
 once_cell = "1"
 hex = "0.4"
+# BLS12-381 threshold-cert verification for the cert-inclusion e2e scenario
+# (S046). The exact crate + version the chain SIGNS with, so the off-chain
+# verify is byte-compatible by construction; `blst` decompresses the EIP-2537
+# G2 group key read from the DaInbox into commonware's point format.
+commonware-cryptography = "2026.5.0"
+# commonware-codec: the Encode/Decode traits for commonware's BLS point types
+# (group key / signature), version-matched to commonware-cryptography.
+commonware-codec = "2026.5.0"
+blst = "0.3.16"
 
 # Async runtime — needed by the L2 client + CLIs + e2e tests.
 tokio = { version = "1", features = ["full"] }

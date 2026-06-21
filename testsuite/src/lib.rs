@@ -26,6 +26,7 @@
 //! scenarios can write `use pso_e2e_testsuite::{...}` without
 //! descending into the module tree.
 
+pub mod bls_verify;
 pub mod bridge;
 pub mod cli;
 pub mod clients;

@@ -48,6 +48,7 @@ pub mod s042_mobile_api_wallet_flow;
 pub mod s043_envelope_aged_proof_accepted;
 pub mod s044_wallet_nonce_lifecycle;
 pub mod s045_da_batch_committed;
+pub mod s046_cert_inclusion;
 
 use crate::scenario::Scenario;
 
@@ -93,8 +94,9 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s042_mobile_api_wallet_flow::S042),
         Box::new(s043_envelope_aged_proof_accepted::S043),
         Box::new(s044_wallet_nonce_lifecycle::S044),
-        // S045 needs L1/DaInbox wiring; main() drops it when --l1-rpc-url
-        // is absent, so it only runs where the DA path is exposed.
+        // S045 + S046 need L1/DaInbox wiring; main() drops them when
+        // --l1-rpc-url is absent, so they only run where the DA path is exposed.
         Box::new(s045_da_batch_committed::S045),
+        Box::new(s046_cert_inclusion::S046),
     ]
 }
