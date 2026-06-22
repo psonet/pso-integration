@@ -23,16 +23,22 @@ use ark_std::UniformRand;
 
 use pso_protocol::primitive::signature::SignatureScheme;
 use pso_protocol::protocol::entity::OwnershipReceipt;
+use pso_protocol::protocol::imt::InclusionPath;
 use pso_protocol::protocol::zk::{Circuit, ProofGenerator};
 use pso_protocol::PsoV1;
 use pso_protocol::Suite;
 use pso_zk_canonical::aggregation::{AggregationTier, AnyTier, Slot};
+use pso_zk_canonical::noir::full_proof::{
+    FullProof, PublicInputs as FullPublicInputs, Witness as FullWitness,
+};
 use pso_zk_canonical::noir::ownership_proof::{OwnershipProof, PublicInputs, Witness};
-use pso_zk_canonical::noir::EmbeddedCurvePoint;
+// The circuit's in-curve point (Fr x/y), aliased so the FFI `EmbeddedCurvePoint`
+// record (Vec<u8> x/y) can keep the canonical name on the boundary.
+use pso_zk_canonical::noir::EmbeddedCurvePoint as CircuitPoint;
 use pso_zk_canonical::ownership::Provable;
 
 use pso_protocol::codec::Secret;
-use pso_protocol::protocol::key::SecretScalar;
+use pso_protocol::protocol::key::{NftSecret, SecretScalar, Signer};
 use pso_protocol::Codec;
 use pso_zk_backend::barretenberg::Barretenberg;
 use sha2::{Digest, Sha256};
@@ -91,10 +97,8 @@ pub struct NftHeader {
 /// no secret; the signature is already over the shared `binding`.
 #[derive(Debug, uniffi::Record)]
 pub struct NftOwnershipWitness {
-    /// Signing public-key x-coordinate (32 bytes).
-    pub pk_x: Vec<u8>,
-    /// Signing public-key y-coordinate (32 bytes).
-    pub pk_y: Vec<u8>,
+    /// Signing public key (the in-curve point its `derivedOwner` commits to).
+    pub pk: EmbeddedCurvePoint,
     /// 64-byte `s ‖ e` Schnorr signature over the ownership payload.
     pub signature: Vec<u8>,
     /// Ownership nonce (32 bytes).
@@ -105,6 +109,42 @@ pub struct NftOwnershipWitness {
     pub nft_hash: Vec<u8>,
     /// Submission binding the signature commits to (32 bytes).
     pub binding: Vec<u8>,
+}
+
+/// An embedded-curve (Grumpkin) point — a signing public key. Both coordinates
+/// are 32-byte big-endian field elements.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct EmbeddedCurvePoint {
+    /// x-coordinate (32 bytes).
+    pub x: Vec<u8>,
+    /// y-coordinate (32 bytes).
+    pub y: Vec<u8>,
+}
+
+/// The inclusion half of a minted TributeDraft's **full proof** — the node's
+/// `pso_getInclusionPath` result for the TD leaf, carried as-is. The circuit
+/// re-derives the root from `merkle_siblings` and checks it equals `merkle_root`
+/// (the on-chain root the node returns), so the host does not recompute it.
+#[derive(Debug, uniffi::Record)]
+pub struct NftInclusionWitness {
+    /// The IMT root the path proves into (32-byte BE) — the node's `root`, used
+    /// directly as the circuit's `expected_merkle_root` public input.
+    pub merkle_root: Vec<u8>,
+    /// Depth-32 co-path siblings, bottom-up — 32 × 32-byte BE field elements.
+    pub merkle_siblings: Vec<Vec<u8>>,
+    /// The leaf's index in the tree (drives the circuit direction bits).
+    pub merkle_leaf_index: u64,
+}
+
+/// A TributeDraft **full proof** (§4.2 ownership + depth-32 Merkle inclusion),
+/// verified on L1.
+#[derive(Debug, uniffi::Record)]
+pub struct FullProofResult {
+    /// Proof bytes.
+    pub proof: Vec<u8>,
+    /// Public inputs (`owner, nft_hash, binding_hash, expected_merkle_root`),
+    /// each 32-byte big-endian.
+    pub public_inputs: Vec<Vec<u8>>,
 }
 
 /// A single-NFT ownership proof (mock: `proof` is the concatenated public inputs).
@@ -242,6 +282,16 @@ fn ownership_proof_bytes(witness: &Witness, public: &PublicInputs) -> Result<Vec
     Ok(proof.proof.concat())
 }
 
+/// Full-proof (ownership + Merkle inclusion) bytes for a minted TributeDraft.
+fn full_proof_bytes(
+    witness: &FullWitness,
+    public: &FullPublicInputs,
+) -> Result<Vec<u8>, MobileError> {
+    let proof =
+        ProofGenerator::<PsoV1, FullProof>::generate(&Barretenberg::default(), witness, public)?;
+    Ok(proof.proof.concat())
+}
+
 /// Aggregation proof bytes for a runtime-selected tier.
 fn aggregation_proof_bytes(any: &AnyTier) -> Result<Vec<u8>, MobileError> {
     use pso_zk_canonical::noir::{
@@ -333,45 +383,6 @@ impl Wallet {
         )?))
     }
 
-    /// Compute a minted **TributeDraft's** `nft_hash` — its leaf in the on-chain
-    /// commitment tree. The wallet knows every TD field (it built the TD from the
-    /// proved SpendingUnits), but had no way to fold them into the hash; this
-    /// closes that gap. The hash is `Entity::<PsoV1>::entity_hash` of the
-    /// `pso-chain-abi` `TributeDraft` struct — the SAME `#[derive(Entity)]` fold
-    /// the chain's `0x0211` precompile computes (one hash source of truth), so it
-    /// equals the `LeafInserted` leaf and feeds the full proof's Merkle inclusion.
-    ///
-    /// `id` / `derived_owner` / `su_ids[i]` are 32-byte big-endian field elements;
-    /// `worldwide_day` / `base` / `atto` are u64, `currency` a u16. Returns the
-    /// 32-byte big-endian leaf.
-    pub fn tribute_draft_hash(
-        &self,
-        id: Vec<u8>,
-        derived_owner: Vec<u8>,
-        worldwide_day: u64,
-        currency: u16,
-        base: u64,
-        atto: u64,
-        su_ids: Vec<Vec<u8>>,
-    ) -> Result<Vec<u8>, MobileError> {
-        use alloy_primitives::{B256, U16, U64};
-        let su_ids: Vec<B256> = su_ids
-            .iter()
-            .map(|s| Ok(B256::from(arr::<32>(s, "su_id")?)))
-            .collect::<Result<_, MobileError>>()?;
-        let td = pso_chain_abi::entity::TributeDraft {
-            id: B256::from(arr::<32>(&id, "id")?),
-            derived_owner: B256::from(arr::<32>(&derived_owner, "derived_owner")?),
-            worldwide_day: U64::from(worldwide_day),
-            currency: U16::from(currency),
-            base: U64::from(base),
-            atto: U64::from(atto),
-            su_ids,
-        };
-        let hash = pso_protocol::protocol::entity::Entity::<PsoV1>::entity_hash(&td)?;
-        Ok(PsoV1::field_to_be_bytes(&hash))
-    }
-
     /// Derive this wallet's consent keypair (deterministic from `seed`).
     pub fn generate_consent(&self, seed: Vec<u8>) -> Result<Arc<Consent>, MobileError> {
         let mut rng = rng_from(&seed, DOMAIN_CONSENT)?;
@@ -439,9 +450,9 @@ impl Wallet {
                 });
             }
             let witness = Witness {
-                pk: EmbeddedCurvePoint {
-                    x: field32(&w.pk_x, "pk_x")?,
-                    y: field32(&w.pk_y, "pk_y")?,
+                pk: CircuitPoint {
+                    x: field32(&w.pk.x, "pk_x")?,
+                    y: field32(&w.pk.y, "pk_y")?,
                 },
                 signature: arr::<64>(&w.signature, "signature")?,
                 nonce: field32(&w.nonce, "nonce")?,
@@ -471,6 +482,142 @@ impl Wallet {
             tier_n: tier.capacity() as u32,
             circuit_hash: tier.circuit_hash().to_vec(),
             vk_hash: tier.vk_hash().to_vec(),
+            proof,
+            public_inputs,
+        })
+    }
+
+    /// Build the **ownership** half of a minted TributeDraft's full proof: the
+    /// TD signs its OWN entity with its `nft_header` key over the **L1** binding.
+    /// Unlike [`Consent::witness`] (an SU signed by the consent key), the TD's
+    /// signer is reconstructed from the header's own secret + nonce. The TD's
+    /// `nft_hash` is folded internally from its fields (the SAME `#[derive(Entity)]`
+    /// hash the chain stores as the leaf); the binding
+    /// commits to the L1 submitter + L1 chain id (distinct from the wallet's L2
+    /// identity). `tribute_draft_id` is `nft_header.id`. The remaining args are
+    /// the TD body fields. Pair the result with [`Wallet::prove_full`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn tribute_ownership_witness(
+        &self,
+        nft_header: NftHeader,
+        worldwide_day: u64,
+        currency: u16,
+        base: u64,
+        atto: u64,
+        su_ids: Vec<Vec<u8>>,
+        l1_sender_address: Vec<u8>,
+        l1_chain_id: u64,
+    ) -> Result<NftOwnershipWitness, MobileError> {
+        // nft_hash (the leaf) folded from the TD fields; tribute_draft_id == id.
+        let nft_hash = self.tribute_draft_hash_fr(
+            &nft_header.id,
+            &nft_header.derived_owner,
+            worldwide_day,
+            currency,
+            base,
+            atto,
+            &su_ids,
+        )?;
+        // L1 binding the TD's ownership signature commits to.
+        let binding = Self::binding_fr(&l1_sender_address, &nft_header.id, l1_chain_id)?;
+        // Reconstruct the signer from the header's OWN key (no key generation,
+        // no seed). The signing nonce is derived deterministically below.
+        let sk = PsoV1::secret_from_bytes(&arr::<32>(&nft_header.nft_sk, "nft_sk")?)?;
+        let nonce = field32(&nft_header.nonce, "nonce")?;
+        let signer = Signer::<PsoV1>::from_secret(NftSecret::new(sk), nonce)?;
+        let receipt = OwnershipReceipt::<PsoV1> {
+            id: field32(&nft_header.id, "id")?,
+            owner: field32(&nft_header.derived_owner, "derived_owner")?,
+            nft_hash,
+        };
+        // Deterministic (RFC-6979-style) signing nonce: bound to the secret key +
+        // header nonce + the L1 binding (the message), so it's reproducible and
+        // never reused across different bindings — no wallet seed, no OS entropy.
+        let mut h = Sha256::new();
+        h.update(b"pso/wallet/full-sign/v1");
+        h.update(&nft_header.nft_sk);
+        h.update(&nft_header.nonce);
+        h.update(PsoV1::field_to_be_bytes(&binding));
+        let mut rng = StdRng::from_seed(h.finalize().into());
+        let (witness, public) = receipt.derive_ownership_witness(&mut rng, &signer, binding)?;
+        Ok(NftOwnershipWitness {
+            pk: EmbeddedCurvePoint {
+                x: PsoV1::field_to_be_bytes(&witness.pk.x),
+                y: PsoV1::field_to_be_bytes(&witness.pk.y),
+            },
+            signature: witness.signature.to_vec(),
+            nonce: PsoV1::field_to_be_bytes(&witness.nonce),
+            derived_owner: PsoV1::field_to_be_bytes(&public.owner),
+            nft_hash: PsoV1::field_to_be_bytes(&public.nft_hash),
+            binding: PsoV1::field_to_be_bytes(&binding),
+        })
+    }
+
+    /// Generate a minted TributeDraft's **full proof** (§4.2 ownership + depth-32
+    /// Merkle inclusion, verified on L1) from its two halves: the `ownership`
+    /// witness (from [`Wallet::tribute_ownership_witness`]) and the `inclusion`
+    /// witness (the node's `pso_getInclusionPath`). The circuit re-derives the
+    /// root from the path and checks it equals `inclusion.merkle_root` (the
+    /// node's on-chain root, used as the public input — not recomputed here).
+    /// Slow (on-device proving); run off the UI thread.
+    pub fn prove_full(
+        &self,
+        ownership: NftOwnershipWitness,
+        inclusion: NftInclusionWitness,
+    ) -> Result<FullProofResult, MobileError> {
+        if inclusion.merkle_siblings.len() != 32 {
+            return Err(MobileError::InvalidInput {
+                detail: format!(
+                    "merkle_siblings: expected 32, got {}",
+                    inclusion.merkle_siblings.len()
+                ),
+            });
+        }
+        let siblings: Vec<Fr> = inclusion
+            .merkle_siblings
+            .iter()
+            .map(|s| field32(s, "merkle_sibling"))
+            .collect::<Result<_, MobileError>>()?;
+        let path = InclusionPath::<PsoV1> {
+            leaf_index: inclusion.merkle_leaf_index,
+            siblings,
+        };
+        let merkle_path_siblings: [Fr; 32] =
+            path.siblings
+                .clone()
+                .try_into()
+                .map_err(|_| MobileError::InvalidInput {
+                    detail: "merkle_siblings: 32 elements".into(),
+                })?;
+        let merkle_path_indices: [u8; 32] =
+            path.circuit_indices()
+                .try_into()
+                .map_err(|_| MobileError::InvalidInput {
+                    detail: "circuit indices: 32 elements".into(),
+                })?;
+        let witness = FullWitness {
+            pk: CircuitPoint {
+                x: field32(&ownership.pk.x, "pk_x")?,
+                y: field32(&ownership.pk.y, "pk_y")?,
+            },
+            signature: arr::<64>(&ownership.signature, "signature")?,
+            nonce: field32(&ownership.nonce, "nonce")?,
+            merkle_path_siblings,
+            merkle_path_indices,
+        };
+        let public = FullPublicInputs {
+            owner: field32(&ownership.derived_owner, "derived_owner")?,
+            nft_hash: field32(&ownership.nft_hash, "nft_hash")?,
+            binding_hash: field32(&ownership.binding, "binding")?,
+            // The node's root — verified inside the circuit against the path.
+            expected_merkle_root: field32(&inclusion.merkle_root, "merkle_root")?,
+        };
+        let public_inputs: Vec<Vec<u8>> = <FullProof as Circuit<PsoV1>>::public_inputs(&public)
+            .iter()
+            .map(PsoV1::field_to_be_bytes)
+            .collect();
+        let proof = full_proof_bytes(&witness, &public)?;
+        Ok(FullProofResult {
             proof,
             public_inputs,
         })
@@ -570,8 +717,8 @@ impl Wallet {
     /// The submission binding as a field element: `PsoV1::binding(sender,
     /// commitment_id, chain_id)`. `chain_id` is passed explicitly — the wallet's
     /// L2 id for the on-device aggregation ([`Wallet::compute_binding`] /
-    /// [`Wallet::prove_ownership`]), or an L1 id for the off-lib full proof
-    /// ([`Wallet::compute_full_proof_binding`]).
+    /// [`Wallet::prove_ownership`]), or an L1 id for the full proof
+    /// ([`Wallet::tribute_ownership_witness`]).
     fn binding_fr(
         sender_address: &[u8],
         tribute_draft_id: &[u8],
@@ -580,6 +727,37 @@ impl Wallet {
         let sender = arr::<20>(sender_address, "sender_address")?;
         let commitment_id = arr::<32>(tribute_draft_id, "tribute_draft_id")?;
         Ok(PsoV1::binding(&sender, &commitment_id, chain_id)?)
+    }
+
+    /// The minted TributeDraft's `nft_hash` as a field element — `Entity::<PsoV1>`
+    /// `::entity_hash` of the `pso-chain-abi` `TributeDraft` struct (the one true
+    /// `#[derive(Entity)]` fold the chain's `0x0211` precompile computes). Folded
+    /// internally by [`Wallet::tribute_ownership_witness`] — not exposed over FFI.
+    fn tribute_draft_hash_fr(
+        &self,
+        id: &[u8],
+        derived_owner: &[u8],
+        worldwide_day: u64,
+        currency: u16,
+        base: u64,
+        atto: u64,
+        su_ids: &[Vec<u8>],
+    ) -> Result<Fr, MobileError> {
+        use alloy_primitives::{B256, U16, U64};
+        let su_ids: Vec<B256> = su_ids
+            .iter()
+            .map(|s| Ok(B256::from(arr::<32>(s, "su_id")?)))
+            .collect::<Result<_, MobileError>>()?;
+        let td = pso_chain_abi::entity::TributeDraft {
+            id: B256::from(arr::<32>(id, "id")?),
+            derived_owner: B256::from(arr::<32>(derived_owner, "derived_owner")?),
+            worldwide_day: U64::from(worldwide_day),
+            currency: U16::from(currency),
+            base: U64::from(base),
+            atto: U64::from(atto),
+            su_ids,
+        };
+        Ok(pso_protocol::protocol::entity::Entity::<PsoV1>::entity_hash(&td)?)
     }
 }
 
@@ -616,8 +794,10 @@ impl Consent {
         let binding_bytes = arr::<32>(&binding, "binding")?;
         let (witness, public) = self.build_ownership(&seed, &report, binding_bytes)?;
         Ok(NftOwnershipWitness {
-            pk_x: PsoV1::field_to_be_bytes(&witness.pk.x),
-            pk_y: PsoV1::field_to_be_bytes(&witness.pk.y),
+            pk: EmbeddedCurvePoint {
+                x: PsoV1::field_to_be_bytes(&witness.pk.x),
+                y: PsoV1::field_to_be_bytes(&witness.pk.y),
+            },
             signature: witness.signature.to_vec(),
             nonce: PsoV1::field_to_be_bytes(&witness.nonce),
             derived_owner: PsoV1::field_to_be_bytes(&public.owner),

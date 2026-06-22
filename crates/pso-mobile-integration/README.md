@@ -21,11 +21,6 @@ Ships as an **iOS staticlib + Android cdylib**.
     submission binding (`Hash([DOMAIN, sender, id_lo, id_hi, l2_chain_id])`,
     `l2_chain_id` from the wallet) the aggregation proof commits to; feed the SAME
     value to each `witness`.
-  - `tribute_draft_hash(id, derived_owner, worldwide_day, currency, base, atto, su_ids) -> bytes`
-    — the minted TD's `nft_hash` (its IMT leaf), folded from the `pso-chain-abi`
-    `TributeDraft` entity (the SAME `#[derive(Entity)]` hash the chain's `0x0211`
-    precompile computes — one source of truth). Equals the `LeafInserted` leaf;
-    feeds the full proof's Merkle inclusion.
   - `generate_consent(seed) -> Consent` / `load_consent(secret) -> Consent`
   - `generate_nft_header(seed) -> NftHeader` — a tribute draft's own NFT key.
   - `prove_ownership(seed, sender_address, tribute_draft_id, witnesses) -> AggregationProofResult`
@@ -33,6 +28,15 @@ Ships as an **iOS staticlib + Android cdylib**.
     binding is computed internally from `sender_address` + `tribute_draft_id` +
     the wallet's `l2_chain_id` (witnesses must match it); picks the smallest
     fitting tier (1/2/4/8/16/32/64), pads, proves.
+  - **Full proof** (the minted TD's **L1** proof = ownership ∥ Merkle inclusion):
+    - `tribute_ownership_witness(nft_header, worldwide_day, currency, base, atto, su_ids, l1_sender_address, l1_chain_id) -> NftOwnershipWitness`
+      — the TD's *own* ownership half: signed by the `nft_header` key over the
+      **L1** binding (`binding(l1_sender, nft_header.id, l1_chain_id)`), `nft_hash`
+      folded internally from the TD fields. (`tribute_draft_id == nft_header.id`.)
+    - `prove_full(ownership: NftOwnershipWitness, inclusion: NftInclusionWitness) -> FullProofResult`
+      — combines that with the inclusion half (the node's `pso_getInclusionPath`,
+      a [`NftInclusionWitness`]); the circuit checks the path against
+      `inclusion.merkle_root` (the node's root, used as-is — not recomputed).
   - MinRoot VDF (Users-pool gating): `derive_vdf_input(signer, nonce, submitted_block)`
     (uses the wallet's `l2_chain_id`), `compute_vdf(input, difficulty) -> VdfResult`
     (slow path — run off the UI thread), `verify_vdf(...)`, `is_vdf_block_valid(...)`,
@@ -44,10 +48,11 @@ Ships as an **iOS staticlib + Android cdylib**.
     signer from an attester `IssuanceReport` and build the aggregation slot.
   - `prove_ownership(seed, report, binding) -> ProofResult` — single-NFT proof.
 
-Records (`IssuanceReport`, `NftHeader`, `NftOwnershipWitness`, `ProofResult`,
-`AggregationProofResult`, `VdfResult`, `VdfConstants`) carry the data that
-crosses; field elements / points are 32-byte big-endian `bytes`. Non-canonical
-field inputs are rejected.
+Records (`IssuanceReport`, `NftHeader`, `NftOwnershipWitness` (its `pk` is an
+`EmbeddedCurvePoint { x, y }`), `NftInclusionWitness`, `ProofResult`,
+`AggregationProofResult`, `FullProofResult`, `VdfResult`, `VdfConstants`) carry
+the data that crosses; field elements / points are 32-byte big-endian `bytes`.
+Non-canonical field inputs are rejected.
 
 `testsuite/src/scenarios/s001_happy_flow.rs` (in the workspace) is the reference
 for how `Consent::witness` + `Wallet::prove_ownership` compose end-to-end against
