@@ -130,7 +130,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     //    UniFFI bindings export to React Native.
     let mobile = pso_mobile_integration::Wallet::new(env.chain_id);
     let vdf_input = mobile
-        .derive_vdf_input(wallet_addr.0 .0.to_vec(), nonce, head, env.chain_id)
+        .derive_vdf_input(wallet_addr.0 .0.to_vec(), nonce, head)
         .map_err(|e| eyre::eyre!("mobile derive_vdf_input: {e:?}"))?;
     let vdf = mobile
         .compute_vdf(vdf_input.clone(), difficulty)

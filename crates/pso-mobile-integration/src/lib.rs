@@ -266,12 +266,17 @@ fn aggregation_proof_bytes(any: &AnyTier) -> Result<Vec<u8>, MobileError> {
 /// A wallet: derives consent + NFT keys from a 32-byte entropy seed and
 /// aggregates ownership into tribute-draft proofs. Holds no secret — the seed is
 /// not retained, but passed to each operation that needs it and wiped after use,
-/// so the root secret never lives in this object. Its one setting is `chain_id`
-/// (a config, not a secret), folded into every submission binding.
+/// so the root secret never lives in this object. Its one setting is the L2
+/// `l2_chain_id` (a config, not a secret) — the VDF + on-device aggregation
+/// binding chain. (The L1 full-proof binding takes its chain id per call.)
 #[derive(uniffi::Object)]
 pub struct Wallet {
-    /// L2 chain id, bound into every submission binding (see [`Wallet::compute_binding`]).
-    chain_id: u64,
+    /// The wallet's **L2** chain id. The mobile bindings are the L2 side
+    /// (ownership + aggregation proofs verify on L2), so this single id feeds
+    /// both the VDF input ([`Wallet::derive_vdf_input`]) and the submission
+    /// binding ([`Wallet::compute_binding`]). (The L1 "full circuit" with tree
+    /// inclusion — different chain id + sender — is not part of these bindings.)
+    l2_chain_id: u64,
 }
 
 /// SRS G1 point count for the **full proof** — the largest aggregation tier the
@@ -282,18 +287,18 @@ const FULL_PROOF_SRS_POINTS: u32 = (1 << 20) + 1;
 
 #[uniffi::export]
 impl Wallet {
-    /// Construct a wallet handle (holds no secret) bound to `chain_id`.
+    /// Construct a wallet handle (holds no secret) bound to its **L2** chain id.
     ///
     /// Lazy SRS: the first proof sizes/loads the CRS (cache, else — only in a
     /// `with-network-srs` build — a download). On a mobile build (no network
     /// fallback) prefer [`Wallet::new_with_srs`]; otherwise the first proof
     /// errors with "SRS not available … set_srs_path".
     #[uniffi::constructor]
-    pub fn new(chain_id: u64) -> Arc<Self> {
-        Arc::new(Self { chain_id })
+    pub fn new(l2_chain_id: u64) -> Arc<Self> {
+        Arc::new(Self { l2_chain_id })
     }
 
-    /// Construct a wallet (bound to `chain_id`) that proves against an
+    /// Construct a wallet (bound to its **L2** chain id) that proves against an
     /// **app-provided SRS file** — the on-device path. `srs_path` is a bundled
     /// BN254 G1 `.dat` (the trusted setup); the prover reads it instead of
     /// hitting the network (mobile is built without the network fallback). The
@@ -302,28 +307,50 @@ impl Wallet {
     /// integrity-checked against the pinned CRS hash before use, and a
     /// missing/short/mismatched file errors here rather than at first proof.
     #[uniffi::constructor]
-    pub fn new_with_srs(srs_path: String, chain_id: u64) -> Result<Arc<Self>, MobileError> {
+    pub fn new_with_srs(srs_path: String, l2_chain_id: u64) -> Result<Arc<Self>, MobileError> {
         pso_zk_backend::barretenberg::set_srs_path(srs_path.into());
         pso_zk_backend::barretenberg::preinit_srs(FULL_PROOF_SRS_POINTS)?;
-        Ok(Arc::new(Self { chain_id }))
+        Ok(Arc::new(Self { l2_chain_id }))
     }
 
-    /// Compute the submission `binding` the aggregation proof commits to:
-    /// `Hash([DOMAIN, sender, tribute_draft_id_lo, _hi, chain_id])` (mirrors
-    /// `PsoV1::binding`), where `chain_id` is the wallet's setting. Derived from
-    /// the tx submitter (the per-tx opaque key's EOA) + the tribute-draft id;
-    /// the SAME value must reach every [`Consent::witness`] call so the
-    /// witnesses match the binding [`Wallet::prove_ownership`] recomputes.
-    /// `sender_address` is the 20-byte EVM address, `tribute_draft_id` the
-    /// 32-byte big-endian id; returns the 32-byte big-endian field element.
+    /// Compute the **L2** submission binding the aggregation/ownership proof
+    /// commits to: `Hash([DOMAIN, sender, tribute_draft_id_lo, _hi, l2_chain_id])`
+    /// (mirrors `PsoV1::binding`), using the wallet's L2 chain id. Derived from
+    /// the tx submitter (the per-tx opaque key's EOA) + the tribute-draft id; the
+    /// SAME value must reach every [`Consent::witness`] call so the witnesses
+    /// match the binding [`Wallet::prove_ownership`] recomputes. `sender_address`
+    /// is the 20-byte EVM address, `tribute_draft_id` the 32-byte big-endian id;
+    /// returns the 32-byte big-endian field element.
     pub fn compute_binding(
         &self,
         sender_address: Vec<u8>,
         tribute_draft_id: Vec<u8>,
     ) -> Result<Vec<u8>, MobileError> {
-        Ok(PsoV1::field_to_be_bytes(
-            &self.binding_fr(&sender_address, &tribute_draft_id)?,
-        ))
+        Ok(PsoV1::field_to_be_bytes(&Self::binding_fr(
+            &sender_address,
+            &tribute_draft_id,
+            self.l2_chain_id,
+        )?))
+    }
+
+    /// Compute the **L1** binding for a tribute draft's *full proof* (the circuit
+    /// with tree inclusion that settles on L1). The full proof is assembled +
+    /// sent to L1 OUTSIDE this native lib, but its binding is the same
+    /// `Hash([DOMAIN, sender, tribute_draft_id_lo, _hi, l1_chain_id])` — over the
+    /// **L1** submitter + **L1** chain id (both distinct from the wallet's L2
+    /// identity), so they are passed explicitly here. Returns the 32-byte
+    /// big-endian field element.
+    pub fn compute_full_proof_binding(
+        &self,
+        l1_sender_address: Vec<u8>,
+        tribute_draft_id: Vec<u8>,
+        l1_chain_id: u64,
+    ) -> Result<Vec<u8>, MobileError> {
+        Ok(PsoV1::field_to_be_bytes(&Self::binding_fr(
+            &l1_sender_address,
+            &tribute_draft_id,
+            l1_chain_id,
+        )?))
     }
 
     /// Derive this wallet's consent keypair (deterministic from `seed`).
@@ -364,11 +391,12 @@ impl Wallet {
     }
 
     /// Aggregate `witnesses` (built by [`Consent::witness`]) into a tribute-draft
-    /// proof. The submission `binding` is computed here from `sender_address` +
-    /// `tribute_draft_id` (the commitment) + the wallet's `chain_id` (see
-    /// [`Wallet::compute_binding`]); every witness must commit to that same
-    /// binding (build them with `compute_binding(sender_address, tribute_draft_id)`).
-    /// The smallest fitting tier is chosen and padded.
+    /// proof (the **L2** ownership/aggregation proof). The submission `binding` is
+    /// computed here from `sender_address` + `tribute_draft_id` (the commitment) +
+    /// the wallet's **L2** chain id (see [`Wallet::compute_binding`]); every
+    /// witness must commit to that same binding (build them with
+    /// `compute_binding(sender_address, tribute_draft_id)`). The smallest fitting
+    /// tier is chosen and padded.
     pub fn prove_ownership(
         &self,
         seed: Vec<u8>,
@@ -381,7 +409,7 @@ impl Wallet {
                 detail: "no witnesses".into(),
             });
         }
-        let binding = self.binding_fr(&sender_address, &tribute_draft_id)?;
+        let binding = Self::binding_fr(&sender_address, &tribute_draft_id, self.l2_chain_id)?;
         let binding_bytes = PsoV1::field_to_be_bytes(&binding);
 
         let mut slots: Vec<Slot> = Vec::with_capacity(witnesses.len());
@@ -438,17 +466,18 @@ impl Wallet {
     // the same input). verify_vdf is the fast self-check before broadcasting.
 
     /// Construct the canonical 32-byte VDF input the validator expects:
-    /// `SHA-256(signer_be_20 ‖ nonce_le_8 ‖ submitted_block_le_8 ‖ chain_id_le_8)`.
-    /// The validator rejects any mismatch, so wallets must use this exactly.
+    /// `SHA-256(signer_be_20 ‖ nonce_le_8 ‖ submitted_block_le_8 ‖ l2_chain_id_le_8)`.
+    /// Uses the wallet's L2 chain id (the Users-pool chain these txs target). The
+    /// validator rejects any mismatch, so wallets must use this exactly.
     pub fn derive_vdf_input(
         &self,
         signer: Vec<u8>,
         tx_nonce: u64,
         submitted_block: u64,
-        chain_id: u64,
     ) -> Result<Vec<u8>, MobileError> {
         let signer = arr::<20>(&signer, "signer")?;
-        let input = VdfParams::derive_input_from(signer, tx_nonce, submitted_block, chain_id);
+        let input =
+            VdfParams::derive_input_from(signer, tx_nonce, submitted_block, self.l2_chain_id);
         Ok(input.as_bytes().to_vec())
     }
 
@@ -520,17 +549,18 @@ impl Wallet {
 // exports every method, and `Fr` / `&[u8]` aren't the FFI shapes we want here).
 impl Wallet {
     /// The submission binding as a field element: `PsoV1::binding(sender,
-    /// commitment_id, chain_id)` with the wallet's `chain_id`. Shared by
-    /// [`Wallet::compute_binding`] (for building witnesses) and
-    /// [`Wallet::prove_ownership`] (the binding the proof commits to).
+    /// commitment_id, chain_id)`. `chain_id` is passed explicitly — the wallet's
+    /// L2 id for the on-device aggregation ([`Wallet::compute_binding`] /
+    /// [`Wallet::prove_ownership`]), or an L1 id for the off-lib full proof
+    /// ([`Wallet::compute_full_proof_binding`]).
     fn binding_fr(
-        &self,
         sender_address: &[u8],
         tribute_draft_id: &[u8],
+        chain_id: u64,
     ) -> Result<Fr, MobileError> {
         let sender = arr::<20>(sender_address, "sender_address")?;
         let commitment_id = arr::<32>(tribute_draft_id, "tribute_draft_id")?;
-        Ok(PsoV1::binding(&sender, &commitment_id, self.chain_id)?)
+        Ok(PsoV1::binding(&sender, &commitment_id, chain_id)?)
     }
 }
 
