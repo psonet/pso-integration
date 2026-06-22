@@ -867,39 +867,24 @@ mod vdf_tests {
 
     #[test]
     fn derive_input_is_deterministic_and_sensitive() {
-        let w = wallet();
+        let w = Wallet::new(19_280_501);
         let signer = vec![0xab; 20];
-        let base = w
-            .derive_vdf_input(signer.clone(), 7, 100, 19_280_501)
-            .unwrap();
+        let base = w.derive_vdf_input(signer.clone(), 7, 100).unwrap();
         assert_eq!(base.len(), 32);
-        assert_eq!(
-            base,
-            w.derive_vdf_input(signer.clone(), 7, 100, 19_280_501)
-                .unwrap()
-        );
-        assert_ne!(
-            base,
-            w.derive_vdf_input(signer.clone(), 8, 100, 19_280_501)
-                .unwrap()
-        );
-        assert_ne!(
-            base,
-            w.derive_vdf_input(signer.clone(), 7, 101, 19_280_501)
-                .unwrap()
-        );
-        assert_ne!(
-            base,
-            w.derive_vdf_input(signer, 7, 100, 19_280_502).unwrap()
-        );
+        // Deterministic for the same (signer, nonce, block) + wallet chain id.
+        assert_eq!(base, w.derive_vdf_input(signer.clone(), 7, 100).unwrap());
+        // Sensitive to the tx nonce and the submitted block.
+        assert_ne!(base, w.derive_vdf_input(signer.clone(), 8, 100).unwrap());
+        assert_ne!(base, w.derive_vdf_input(signer.clone(), 7, 101).unwrap());
+        // Sensitive to the wallet's L2 chain id (now a setting, not an arg).
+        let w2 = Wallet::new(19_280_502);
+        assert_ne!(base, w2.derive_vdf_input(signer, 7, 100).unwrap());
     }
 
     #[test]
     fn derive_input_rejects_wrong_signer_length() {
         assert!(matches!(
-            wallet()
-                .derive_vdf_input(vec![0u8; 19], 0, 0, 1)
-                .unwrap_err(),
+            wallet().derive_vdf_input(vec![0u8; 19], 0, 0).unwrap_err(),
             MobileError::InvalidInput { .. }
         ));
     }
@@ -908,7 +893,7 @@ mod vdf_tests {
     #[test]
     fn compute_then_verify_round_trips() {
         let w = wallet();
-        let input = w.derive_vdf_input(vec![0xab; 20], 1, 1, 1).unwrap();
+        let input = w.derive_vdf_input(vec![0xab; 20], 1, 1).unwrap();
         let result = w.compute_vdf(input.clone(), 16).unwrap();
         assert!(!result.proof.is_empty());
         assert!(w
@@ -919,7 +904,7 @@ mod vdf_tests {
     #[test]
     fn verify_rejects_tampered_output() {
         let w = wallet();
-        let input = w.derive_vdf_input(vec![0xab; 20], 1, 1, 1).unwrap();
+        let input = w.derive_vdf_input(vec![0xab; 20], 1, 1).unwrap();
         let mut result = w.compute_vdf(input.clone(), 8).unwrap();
         result.output[0] ^= 0xFF;
         assert!(!w.verify_vdf(input, result.output, result.proof, 8).unwrap());
