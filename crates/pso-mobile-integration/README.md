@@ -10,6 +10,13 @@ Ships as an **iOS staticlib + Android cdylib**.
 
 - **`Wallet`** — derives keys from a 32-byte entropy seed (held by the caller,
   passed per call), and aggregates ownership into a tribute-draft proof.
+  - `new()` — lazy SRS (cache / network). `new_with_srs(srs_path)` — construct
+    with an **app-bundled SRS file** and pre-size the CRS to the full proof; the
+    on-device path (mobile builds ship without the network SRS fallback, so the
+    SRS *must* be provided this way — see [SRS](#srs)).
+  - `compute_binding(sender_address, tribute_draft_id, chain_id) -> bytes` — the
+    submission binding (`Hash([DOMAIN, sender, id_lo, id_hi, chain_id])`) the
+    proof commits to; feed the SAME value to `witness` / `prove_ownership`.
   - `generate_consent(seed) -> Consent` / `load_consent(secret) -> Consent`
   - `generate_nft_header(seed) -> NftHeader` — a tribute draft's own NFT key.
   - `prove_ownership(seed, binding, witnesses) -> AggregationProofResult` —
@@ -59,7 +66,25 @@ error instead of aborting the host app.
 A failed cross-build on any slice blocks the entire release (the `github-release`
 job requires every build job to succeed) — releases are all-or-nothing.
 
+The mobile slices are built **`--no-default-features`**, which drops the SRS
+network fallback (`reqwest` + its tokio runtime) entirely — see [SRS](#srs).
+
 Generate the foreign bindings (Kotlin / Swift) with `uniffi-bindgen-mobile`.
+
+## SRS
+
+Proving needs the BN254 G1 trusted setup (the "SRS"/CRS). An on-device prover
+must **never** fetch it at proving time, so the mobile slices are built with
+`--no-default-features`: this drops `pso-zk-backend`'s `with-network-srs`
+feature (and `reqwest`/tokio with it), and a missing SRS becomes a clear error
+instead of a (panicking) `reqwest::blocking` download.
+
+The app therefore **ships the SRS as a bundled asset** and hands its path to
+`Wallet::new_with_srs(srs_path)` once at startup. The CRS is pre-sized to the
+full proof — the largest aggregation tier (n64, `(1<<20)+1` points, ~64 MiB) —
+so any tribute up to the protocol max proves; the bytes are integrity-checked
+against a pinned hash before use. Desktop/CI builds (default features) keep the
+network fallback and can use the lazy `Wallet::new()`.
 
 ## License
 

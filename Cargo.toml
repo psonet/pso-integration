@@ -30,7 +30,11 @@ resolver = "2"
 #   consumed from pso-chain-next via git until it's published to crates.io.
 pso-protocol         = "0.8"
 pso-zk-canonical     = "0.9"
-pso-zk-backend       = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.9.0" }
+# default-features = false at the workspace level so the SRS network fallback
+# (reqwest + tokio) is opt-IN per consumer: the mobile slices build without it
+# (app-provided SRS), while pso-zk-cli + the mobile crate's default feature
+# re-enable `with-network-srs` for dev/CI proving.
+pso-zk-backend       = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", branch = "feat/optional-network-srs", default-features = false }
 pso-chain-abi        = { git = "ssh://git@github.com/psonet/pso-chain-next.git", branch = "feat/protocol-0.8" }
 
 # In-workspace FFI path deps. The testsuite + CLIs consume these directly

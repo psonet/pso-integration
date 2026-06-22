@@ -17,7 +17,9 @@ path = "src/lib.rs"
 # proving via pso-zk-canonical (circuit descriptors) + pso-zk-backend
 # (Barretenberg), entities from pso-chain-abi.
 pso-protocol.workspace = true
-pso-zk-backend.workspace = true
+# Opt back into the SRS network fallback (the workspace pins it default-off):
+# a dev CLI proving locally downloads/caches the CRS rather than bundling it.
+pso-zk-backend = { workspace = true, features = ["with-network-srs"] }
 pso-zk-canonical.workspace = true
 pso-chain-abi.workspace = true
 

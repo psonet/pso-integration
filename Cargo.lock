@@ -4244,7 +4244,7 @@ dependencies = [
 [[package]]
 name = "pso-zk-backend"
 version = "0.9.0"
-source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?tag=v0.9.0#25e8f8c0259242f4b565aa12952a09559f236d48"
+source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?branch=feat%2Foptional-network-srs#b544fe23a7418dfe0eff5ef4d05e750b79dbe481"
 dependencies = [
  "acir",
  "acvm",
