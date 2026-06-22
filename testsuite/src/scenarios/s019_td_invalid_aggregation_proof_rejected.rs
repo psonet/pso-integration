@@ -94,7 +94,7 @@ async fn mint_one_su(env: &TestEnv) -> eyre::Result<U256> {
         .wait_for_sr_existence(&[sr_id], &[], Duration::from_secs(30))
         .await?;
 
-    let wallet = pso_mobile_integration::Wallet::new();
+    let wallet = pso_mobile_integration::Wallet::new(env.chain_id);
     let consent = wallet
         .generate_consent(vec![0x19; 32])
         .map_err(|e| eyre::eyre!("consent: {e:?}"))?;

@@ -75,8 +75,8 @@ async fn main() -> Result<()> {
     let seed = parse_seed_hex(&cli.key)?;
 
     match cli.command {
-        Command::PrepareSu(args) => commands::prepare_su::run(&seed, args),
-        Command::Aggregate(args) => commands::aggregate::run(&seed, args),
+        Command::PrepareSu(args) => commands::prepare_su::run(&seed, cli.chain_id, args),
+        Command::Aggregate(args) => commands::aggregate::run(&seed, cli.chain_id, args),
         Command::SubmitTd(args) => {
             if cli.rpc.is_empty() {
                 eyre::bail!("--rpc / PSO_L2_RPC required for `submit-td`");

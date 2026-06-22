@@ -314,7 +314,8 @@ mod tests {
     #[test]
     fn attester_issue_and_wallet_witness_agree() {
         // Wallet derives a consent keypair; hands the attester its pk.
-        let wallet = Wallet::new();
+        // chain_id is irrelevant to consent derivation; use the devnet default.
+        let wallet = Wallet::new(crate::DEVNET_CHAIN_ID);
         let consent = wallet.generate_consent(seed(0x11)).expect("consent");
         let consent_pk = consent.public_key().expect("consent pk");
 

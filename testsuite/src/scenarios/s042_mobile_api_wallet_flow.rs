@@ -128,7 +128,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
     // 2. VDF through the MOBILE API — the exact `Wallet` methods the
     //    UniFFI bindings export to React Native.
-    let mobile = pso_mobile_integration::Wallet::new();
+    let mobile = pso_mobile_integration::Wallet::new(env.chain_id);
     let vdf_input = mobile
         .derive_vdf_input(wallet_addr.0 .0.to_vec(), nonce, head, env.chain_id)
         .map_err(|e| eyre::eyre!("mobile derive_vdf_input: {e:?}"))?;

@@ -10,18 +10,21 @@ Ships as an **iOS staticlib + Android cdylib**.
 
 - **`Wallet`** — derives keys from a 32-byte entropy seed (held by the caller,
   passed per call), and aggregates ownership into a tribute-draft proof.
-  - `new()` — lazy SRS (cache / network). `new_with_srs(srs_path)` — construct
-    with an **app-bundled SRS file** and pre-size the CRS to the full proof; the
-    on-device path (mobile builds ship without the network SRS fallback, so the
-    SRS *must* be provided this way — see [SRS](#srs)).
-  - `compute_binding(sender_address, tribute_draft_id, chain_id) -> bytes` — the
-    submission binding (`Hash([DOMAIN, sender, id_lo, id_hi, chain_id])`) the
-    proof commits to; feed the SAME value to `witness` / `prove_ownership`.
+    The `chain_id` is a **wallet setting** (folded into every binding).
+  - `new(chain_id)` — lazy SRS (cache / network). `new_with_srs(srs_path, chain_id)`
+    — construct with an **app-bundled SRS file** and pre-size the CRS to the full
+    proof; the on-device path (mobile builds ship without the network SRS
+    fallback, so the SRS *must* be provided this way — see [SRS](#srs)).
+  - `compute_binding(sender_address, tribute_draft_id) -> bytes` — the submission
+    binding (`Hash([DOMAIN, sender, id_lo, id_hi, chain_id])`, `chain_id` from the
+    wallet) the proof commits to; feed the SAME value to each `witness`.
   - `generate_consent(seed) -> Consent` / `load_consent(secret) -> Consent`
   - `generate_nft_header(seed) -> NftHeader` — a tribute draft's own NFT key.
-  - `prove_ownership(seed, binding, witnesses) -> AggregationProofResult` —
-    aggregate per-NFT `NftOwnershipWitness`es over the shared submission binding;
-    picks the smallest fitting tier (1/2/4/8/16/32/64), pads, proves.
+  - `prove_ownership(seed, sender_address, tribute_draft_id, witnesses) -> AggregationProofResult`
+    — aggregate per-NFT `NftOwnershipWitness`es; the binding is computed
+    internally from `sender_address` + `tribute_draft_id` + the wallet's
+    `chain_id` (witnesses must match it); picks the smallest fitting tier
+    (1/2/4/8/16/32/64), pads, proves.
   - MinRoot VDF (Users-pool gating): `derive_vdf_input(signer, nonce, submitted_block, chain_id)`,
     `compute_vdf(input, difficulty) -> VdfResult` (slow path — run off the UI
     thread), `verify_vdf(...)`, `is_vdf_block_valid(...)`, `vdf_constants()`.
@@ -80,7 +83,7 @@ feature (and `reqwest`/tokio with it), and a missing SRS becomes a clear error
 instead of a (panicking) `reqwest::blocking` download.
 
 The app therefore **ships the SRS as a bundled asset** and hands its path to
-`Wallet::new_with_srs(srs_path)` once at startup. The CRS is pre-sized to the
+`Wallet::new_with_srs(srs_path, chain_id)` once at startup. The CRS is pre-sized to the
 full proof — the largest aggregation tier (n64, `(1<<20)+1` points, ~64 MiB) —
 so any tribute up to the protocol max proves; the bytes are integrity-checked
 against a pinned hash before use. Desktop/CI builds (default features) keep the

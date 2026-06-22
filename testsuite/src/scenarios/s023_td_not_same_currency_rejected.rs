@@ -87,7 +87,7 @@ async fn mint_su_with(
         .await?;
 
     // Fresh consent per SU (distinct owners).
-    let wallet = pso_mobile_integration::Wallet::new();
+    let wallet = pso_mobile_integration::Wallet::new(env.chain_id);
     let mut seed = [0u8; 32];
     rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
     let consent = wallet
