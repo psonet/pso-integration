@@ -20,6 +20,13 @@ name = "pso_mobile_integration"
 # on-device).
 pso-protocol.workspace = true
 pso-zk-canonical.workspace = true
+# Entity-only (the workspace pins default-features = false → no alloy-contract /
+# tokio / reqwest): the canonical TributeDraft hash struct, so the wallet
+# computes the TD's nft_hash (the IMT leaf) from the SAME #[derive(Entity)] fold
+# the chain uses — one hash source of truth. alloy-primitives supplies the
+# B256/U64/U16 field types the entity is built from.
+pso-chain-abi.workspace = true
+alloy-primitives.workspace = true
 # The workspace pins pso-zk-backend with default-features = false (no SRS
 # network fallback by default). The `with-network-srs` feature below re-enables
 # it for in-workspace consumers (testsuite / CLIs); the mobile slices build with

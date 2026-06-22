@@ -21,11 +21,11 @@ Ships as an **iOS staticlib + Android cdylib**.
     submission binding (`Hash([DOMAIN, sender, id_lo, id_hi, l2_chain_id])`,
     `l2_chain_id` from the wallet) the aggregation proof commits to; feed the SAME
     value to each `witness`.
-  - `compute_full_proof_binding(l1_sender_address, tribute_draft_id, l1_chain_id) -> bytes`
-    — the **L1** binding for a minted tribute draft's *full proof* (ownership +
-    tree inclusion, settled on L1). The L1 sender + L1 chain id differ from the
-    wallet's L2 identity, so they're passed explicitly; the tribute-draft id is
-    the same.
+  - `tribute_draft_hash(id, derived_owner, worldwide_day, currency, base, atto, su_ids) -> bytes`
+    — the minted TD's `nft_hash` (its IMT leaf), folded from the `pso-chain-abi`
+    `TributeDraft` entity (the SAME `#[derive(Entity)]` hash the chain's `0x0211`
+    precompile computes — one source of truth). Equals the `LeafInserted` leaf;
+    feeds the full proof's Merkle inclusion.
   - `generate_consent(seed) -> Consent` / `load_consent(secret) -> Consent`
   - `generate_nft_header(seed) -> NftHeader` — a tribute draft's own NFT key.
   - `prove_ownership(seed, sender_address, tribute_draft_id, witnesses) -> AggregationProofResult`

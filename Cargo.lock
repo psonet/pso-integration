@@ -4094,8 +4094,8 @@ dependencies = [
 
 [[package]]
 name = "pso-chain-abi"
-version = "0.3.0"
-source = "git+ssh://git@github.com/psonet/pso-chain-next.git?branch=feat%2Fprotocol-0.8#66ab8f8f1bd3aa3033a531abbc0571bae7cfd008"
+version = "0.5.0"
+source = "git+ssh://git@github.com/psonet/pso-chain-next.git?branch=feat%2Fabi-entity-only-feature#042c4aec85b49a708991280d41a6c04a06d31a25"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -4151,7 +4151,9 @@ dependencies = [
 name = "pso-mobile-integration"
 version = "0.10.1"
 dependencies = [
+ "alloy-primitives",
  "ark-std 0.6.0",
+ "pso-chain-abi",
  "pso-protocol",
  "pso-vdf",
  "pso-zk-backend",

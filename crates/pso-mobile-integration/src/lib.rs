@@ -333,24 +333,43 @@ impl Wallet {
         )?))
     }
 
-    /// Compute the **L1** binding for a tribute draft's *full proof* (the circuit
-    /// with tree inclusion that settles on L1). The full proof is assembled +
-    /// sent to L1 OUTSIDE this native lib, but its binding is the same
-    /// `Hash([DOMAIN, sender, tribute_draft_id_lo, _hi, l1_chain_id])` — over the
-    /// **L1** submitter + **L1** chain id (both distinct from the wallet's L2
-    /// identity), so they are passed explicitly here. Returns the 32-byte
-    /// big-endian field element.
-    pub fn compute_full_proof_binding(
+    /// Compute a minted **TributeDraft's** `nft_hash` — its leaf in the on-chain
+    /// commitment tree. The wallet knows every TD field (it built the TD from the
+    /// proved SpendingUnits), but had no way to fold them into the hash; this
+    /// closes that gap. The hash is `Entity::<PsoV1>::entity_hash` of the
+    /// `pso-chain-abi` `TributeDraft` struct — the SAME `#[derive(Entity)]` fold
+    /// the chain's `0x0211` precompile computes (one hash source of truth), so it
+    /// equals the `LeafInserted` leaf and feeds the full proof's Merkle inclusion.
+    ///
+    /// `id` / `derived_owner` / `su_ids[i]` are 32-byte big-endian field elements;
+    /// `worldwide_day` / `base` / `atto` are u64, `currency` a u16. Returns the
+    /// 32-byte big-endian leaf.
+    pub fn tribute_draft_hash(
         &self,
-        l1_sender_address: Vec<u8>,
-        tribute_draft_id: Vec<u8>,
-        l1_chain_id: u64,
+        id: Vec<u8>,
+        derived_owner: Vec<u8>,
+        worldwide_day: u64,
+        currency: u16,
+        base: u64,
+        atto: u64,
+        su_ids: Vec<Vec<u8>>,
     ) -> Result<Vec<u8>, MobileError> {
-        Ok(PsoV1::field_to_be_bytes(&Self::binding_fr(
-            &l1_sender_address,
-            &tribute_draft_id,
-            l1_chain_id,
-        )?))
+        use alloy_primitives::{B256, U16, U64};
+        let su_ids: Vec<B256> = su_ids
+            .iter()
+            .map(|s| Ok(B256::from(arr::<32>(s, "su_id")?)))
+            .collect::<Result<_, MobileError>>()?;
+        let td = pso_chain_abi::entity::TributeDraft {
+            id: B256::from(arr::<32>(&id, "id")?),
+            derived_owner: B256::from(arr::<32>(&derived_owner, "derived_owner")?),
+            worldwide_day: U64::from(worldwide_day),
+            currency: U16::from(currency),
+            base: U64::from(base),
+            atto: U64::from(atto),
+            su_ids,
+        };
+        let hash = pso_protocol::protocol::entity::Entity::<PsoV1>::entity_hash(&td)?;
+        Ok(PsoV1::field_to_be_bytes(&hash))
     }
 
     /// Derive this wallet's consent keypair (deterministic from `seed`).
