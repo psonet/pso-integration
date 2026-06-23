@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.12.0 - 2026-06-23
+#### Features
+- (**mobile**) TributeDraft full proof (ownership + Merkle inclusion) for L1 - (9ea76c9) - Anton Velichko
+- (**mobile**) compute TributeDraft hash via entity-only pso-chain-abi - (7dbff06) - Anton Velichko
+- (**mobile**) split L2/L1 chain ids — l2_chain_id wallet setting + L1 full-proof binding - (729a9c0) - Anton Velichko
+- (**mobile**) inline binding in prove_ownership; chain_id is a wallet setting - (b109a8c) - Anton Velichko
+- (**mobile**) app-provided SRS (no on-device download) + expose binding hash - (3c6051f) - Anton Velichko
+#### Tests
+- (**mobile**) fix vdf_tests for the derive_vdf_input signature change - (547f75b) - Anton Velichko
+#### Build system
+- (**deps**) re-pin pso-chain-abi 0.6.0 (crates.io) + pso-zk-backend v0.10.0 - (3ebe10a) - Anton Velichko
+
+- - -
+
 ## v0.11.0 - 2026-06-21
 #### Features
 - (**testsuite**) S046 — verify a TD leaf is committee-signed (inclusion path + off-chain BLS) - (9ed9b92) - Anton Velichko
