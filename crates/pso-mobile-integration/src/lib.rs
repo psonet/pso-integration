@@ -748,6 +748,11 @@ impl Wallet {
             .iter()
             .map(|s| Ok(B256::from(arr::<32>(s, "su_id")?)))
             .collect::<Result<_, MobileError>>()?;
+        // Entity `Vec<T>` fields hash as sorted sets (pso-protocol 0.9): sort
+        // ascending by field value + dedup so the hash matches what the chain's
+        // precompile recomputes against the (strictly-ascending) submitted ids.
+        let su_ids =
+            pso_protocol::codec::sort_set::<<PsoV1 as pso_protocol::Suite>::Field, B256>(&su_ids)?;
         let td = pso_chain_abi::entity::TributeDraft {
             id: B256::from(arr::<32>(id, "id")?),
             derived_owner: B256::from(arr::<32>(derived_owner, "derived_owner")?),

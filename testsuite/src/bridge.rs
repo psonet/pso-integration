@@ -41,6 +41,7 @@ use tokio::sync::{mpsc, oneshot};
 use pso_attester_integration::{Attester, IssuanceReport};
 
 use crate::clients::attester::{AttesterClient, MintSpendingUnitArgs};
+use crate::sorted_unique_u256;
 
 /// Inputs the caller supplies for a single SU mint.
 #[derive(Debug, Clone)]
@@ -202,9 +203,19 @@ async fn handle_mint(
     let worldwide_day = args.worldwide_day;
     let amount_base = args.amount_base;
     let amount_atto = args.amount_atto;
-    let sr_ids = args.sr_ids.clone();
-    let ar_ids = args.amendment_sr_ids.clone();
+    // Sort + dedup the SR/AR ids ONCE: pso-protocol 0.9 hashes the SU's
+    // `sr`/`ar` `Vec` fields as sorted sets, and the chain `require`s
+    // strictly-ascending `srIds`/`arIds` on submit. The SAME sorted vectors
+    // feed BOTH the attester FFI (which folds the fingerprints into `nft_hash`)
+    // and the on-chain `SpendingUnit.submit` below, so hash and submit agree.
+    let sr_ids = sorted_unique_u256(args.sr_ids.clone());
+    let ar_ids = sorted_unique_u256(args.amendment_sr_ids.clone());
     let attester = attester.clone();
+
+    // Clone the sorted ids for the FFI closure; the originals feed the on-chain
+    // submit below so both sides see the identical sorted set.
+    let sr_ids_ffi = sr_ids.clone();
+    let ar_ids_ffi = ar_ids.clone();
 
     let issued = tokio::task::spawn_blocking(move || {
         // Per-issuance entropy: 24 random bytes ‖ 8-byte counter is the
@@ -217,11 +228,11 @@ async fn handle_mint(
         // Record fingerprints are 32-byte big-endian field elements; the
         // on-chain SR/AR ids are uint256. Use the same BE bytes for both,
         // so the SU's `nft_hash` folds exactly what the chain stored.
-        let sr_fps: Vec<Vec<u8>> = sr_ids
+        let sr_fps: Vec<Vec<u8>> = sr_ids_ffi
             .iter()
             .map(|id| id.to_be_bytes::<32>().to_vec())
             .collect();
-        let ar_fps: Vec<Vec<u8>> = ar_ids
+        let ar_fps: Vec<Vec<u8>> = ar_ids_ffi
             .iter()
             .map(|id| id.to_be_bytes::<32>().to_vec())
             .collect();
@@ -265,8 +276,9 @@ async fn handle_mint(
         worldwide_day: args.worldwide_day,
         amount_base: args.amount_base,
         amount_atto: args.amount_atto,
-        sr_ids: args.sr_ids,
-        amendment_sr_ids: args.amendment_sr_ids,
+        // Sorted + de-duped above — the SAME order folded into `nft_hash`.
+        sr_ids,
+        amendment_sr_ids: ar_ids,
     };
     let mint_tx = attester_client
         .mint_spending_unit(mint_args)
