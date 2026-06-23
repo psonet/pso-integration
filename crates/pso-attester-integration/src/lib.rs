@@ -246,8 +246,25 @@ impl Attester {
         let su_id = arr::<32>(&header.nft_id, "nft_id")?;
         let derived_owner = arr::<32>(&header.derived_owner, "derived_owner")?;
         let referrer = arr::<20>(&referrer_addr, "referrer_addr")?;
-        let sr = fingerprints(&spending_records, "spending_record")?;
-        let ar = fingerprints(&amendment_records, "amendment_record")?;
+        // Entity `Vec<T>` fields hash as sorted sets (pso-protocol 0.9): sort the
+        // record fingerprints ascending by field value + dedup. `sr[i]` IS the
+        // 32-byte fingerprint of `spending_records[i]` (see `fingerprints`), so
+        // the sorted, de-duped fingerprint list is also the canonical record list
+        // the caller must submit on-chain — keep them in lock-step below.
+        let sr = pso_protocol::codec::sort_set::<Fr, B256>(&fingerprints(
+            &spending_records,
+            "spending_record",
+        )?)?;
+        let ar = pso_protocol::codec::sort_set::<Fr, B256>(&fingerprints(
+            &amendment_records,
+            "amendment_record",
+        )?)?;
+
+        // Canonical record lists the caller submits on-chain: the SAME sorted,
+        // de-duped fingerprints that fold into `nft_hash` below. Materialised
+        // before `sr`/`ar` are moved into the entity.
+        let spending_records = sr.iter().map(|b| b.to_vec()).collect();
+        let amendment_records = ar.iter().map(|b| b.to_vec()).collect();
 
         // Build the typed entity (the on-chain SU hash preimage) directly and
         // hash it. `sr`/`ar` fold into `nft_hash`, so adjusting them re-derives
@@ -275,6 +292,9 @@ impl Attester {
             currency,
             base,
             atto,
+            // Sorted, de-duped to match the entity hash AND the on-chain submit:
+            // `sr[i]`/`ar[i]` are the canonical record fingerprints in the same
+            // order the chain `require`s (strictly-ascending) on submit.
             spending_records,
             amendment_records,
         };

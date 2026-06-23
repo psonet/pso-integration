@@ -19,7 +19,7 @@ use pso_chain_abi::interfaces::ITributeDraft;
 
 use crate::bridge::SuMintArgs;
 use crate::data::{random_id, random_su_args};
-use crate::{decode_text, PsoContractError, Scenario, TestEnv};
+use crate::{decode_text, sorted_unique_u256, PsoContractError, Scenario, TestEnv};
 
 pub struct S022;
 
@@ -48,11 +48,13 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let provider = env.attester_zero.inner().write_provider()?;
     let td = ITributeDraft::new(TRIBUTE_DRAFT, provider);
 
+    // Sort the suIds: the new `SuIdsNotAscending` require fires FIRST, so submit
+    // them ascending to reach the intended `NotSameWorldwideDay` check.
     let err = td
         .submit(
             random_id(),
             FixedBytes::from([0u8; 32]),
-            vec![su_a, su_b],
+            sorted_unique_u256(vec![su_a, su_b]),
             Bytes::new(),
         )
         .max_fee_per_gas(0)

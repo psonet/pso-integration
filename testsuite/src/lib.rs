@@ -56,6 +56,17 @@ pub use scenario::{Outcome, Report, Scenario, ScenarioResult};
 // `--chain-id`; the defaults match pso-chain's `--dev` genesis.
 // -----------------------------------------------------------------
 
+/// Sort a `uint256` id vector into the canonical set the chain now `require`s
+/// on submit (strictly-ascending `suIds`/`srIds`/`arIds`) and the entity hash
+/// folds (pso-protocol 0.9 hashes `Vec<T>` fields as sorted sets). For the
+/// canonical (`< modulus`) ids these sets hold, a plain `U256` ascending sort
+/// equals field-value order, so `sort` + `dedup` produces exactly that order.
+pub fn sorted_unique_u256(mut v: Vec<alloy_primitives::U256>) -> Vec<alloy_primitives::U256> {
+    v.sort();
+    v.dedup();
+    v
+}
+
 /// PSO devnet chain id. Mirror of `pso-chain`'s `--dev` genesis.
 pub const DEVNET_CHAIN_ID: u64 = 19_280_501;
 

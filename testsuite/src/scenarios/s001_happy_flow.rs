@@ -39,7 +39,7 @@ use pso_protocol::{Codec, PsoV1, Suite};
 
 use crate::bridge::SuMintArgs;
 use crate::data::{random_id, random_su_args};
-use crate::{Scenario, TestEnv};
+use crate::{sorted_unique_u256, Scenario, TestEnv};
 
 type Fr = <PsoV1 as Suite>::Field;
 
@@ -185,6 +185,12 @@ pub(crate) async fn submit_full_tribute_draft(env: &TestEnv) -> eyre::Result<TdS
         });
     }
 
+    // pso-protocol 0.9 hashes the TD's `suIds` as a sorted set and the chain
+    // `require`s strictly-ascending `suIds` on submit. The aggregation proof's
+    // per-SU public inputs are recomputed in submitted-`suIds` order, so sort
+    // the receipts by su_id up front: the witnesses (hence proof inputs),
+    // `su_ids_minted`, and the submitted `suIds` then all share one order.
+    receipts.sort_by(|a, b| a.su_id.cmp(&b.su_id));
     let su_ids_minted: Vec<U256> = receipts.iter().map(|r| r.su_id).collect();
     env.attester_zero
         .wait_for_su_existence(&su_ids_minted, Duration::from_secs(30))
@@ -268,7 +274,10 @@ pub(crate) async fn submit_full_tribute_draft(env: &TestEnv) -> eyre::Result<TdS
         .map_err(|e| eyre::eyre!("prove_ownership: {e:?}"))?
     };
 
-    let su_ids_ordered: Vec<U256> = su_ids_minted.clone();
+    // Already ascending (receipts sorted by su_id above); route through the
+    // shared helper so the submitted `suIds` are provably sorted + de-duped and
+    // stay in lock-step with the proof's per-SU input order.
+    let su_ids_ordered: Vec<U256> = sorted_unique_u256(su_ids_minted.clone());
     // The chain's `_verifyAggregationProof` expects the `aggregationProof` arg
     // as `[num_inputs:4B BE] ‖ public_inputs(32B × k) ‖ raw_proof`: it parses
     // the prefix, asserts each attested public input matches the value it
