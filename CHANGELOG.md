@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.13.1 - 2026-06-23
+#### Bug Fixes
+- (**deps**) pso-chain-abi git branch -> published 0.7.0 - (f26ec6b) - Anton Velichko
+
+- - -
+
 ## v0.13.0 - 2026-06-23
 #### Features
 - sort entity vectors for pso-protocol 0.9 sorted-set hash - (2927365) - Anton Velichko
