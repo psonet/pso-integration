@@ -58,6 +58,50 @@ Non-canonical field inputs are rejected.
 for how `Consent::witness` + `Wallet::prove_ownership` compose end-to-end against
 a live chain.
 
+## Flows
+
+Inputs the caller supplies: `seed` (wallet entropy), `sender` (L2 submitter EOA),
+`l1_sender` (L1 settlement EOA), and the per-SU body fields (`worldwide_day`,
+`currency`, `base`, `atto`, `su_ids`) — these come from the attester-minted
+SpendingUnits. Everything else is produced by the wallet.
+
+**1 — Mint a TributeDraft (settles on L2).** The TD is itself an NFT, so the
+wallet mints its header first; `nft_header.id` *is* the tribute-draft id, and
+`nft_header.derived_owner` is the on-chain `derivedOwner`.
+
+```
+wallet     = Wallet::new_with_srs(srs_path, l2_chain_id)
+consent    = wallet.generate_consent(seed)         // consent.public_key() → attester → IssuanceReport/SU
+nft_header = wallet.generate_nft_header(seed)       // the TD's own key: .id = td id, .derived_owner, .nft_sk/.nonce
+binding    = wallet.compute_binding(sender, nft_header.id)
+witness[i] = consent.witness(seed, report[i], binding)              // per SU
+agg        = wallet.prove_ownership(seed, sender, nft_header.id, witness[..])
+  → L2:  TributeDraft.submit(id = nft_header.id, derivedOwner = nft_header.derived_owner, suIds = su_ids, proof = agg)
+  → chain emits LeafInserted(treeId, leafIndex, leaf)
+```
+
+**2 — Full proof for the minted TD (settles on L1).** Reuse the SAME
+`nft_header` + TD body fields. L1 needs the **signed tree root**. The committee
+doesn't sign the root directly — `pso_getFinalizeCert` is a threshold signature
+over the block's consensus digest `tipDigest = SHA256(contextEncoded ‖ parent ‖
+height ‖ timestampMs ‖ payloadHash ‖ r)`, where the header field `r` **is** the
+IMT root the block anchors. So the signature commits to the root transitively;
+the cert preimage carries `r` + `contextEncoded` so a verifier can rebuild the
+digest and check `r` is inside it. The wallet only produces the ZK proof; the
+cert is a node artifact the app fetches and forwards.
+
+```
+incl = NftInclusionWitness ← node  pso_getInclusionPath(treeId, leafIndex)   // { root, siblings[32], leafIndex, blockNumber }
+cert = node  pso_getFinalizeCert(incl.blockNumber)                           // committee threshold sig over tipDigest (which folds r)
+own  = wallet.tribute_ownership_witness(nft_header, worldwide_day, currency, base, atto, su_ids, l1_sender, l1_chain_id)
+full = wallet.prove_full(own, incl)
+  → L1 verifies, for the SAME finalized block:
+       (a) the full proof against `incl.root` (= the circuit's expected_merkle_root)
+       (b) the threshold sig over `tipDigest`
+       (c) recompute `tipDigest` from the cert preimage (incl. `r`) → binds `r`
+       (d) `r == incl.root`  — the attested root == the proof's root (mismatch ⇒ reject)
+```
+
 ## Build
 
 ```bash
