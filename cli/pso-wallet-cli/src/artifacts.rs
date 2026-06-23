@@ -61,8 +61,8 @@ impl OwnershipWitnessJson {
     /// Lift the FFI witness into the JSON shadow.
     pub fn from_ffi(w: &pso_mobile_integration::NftOwnershipWitness) -> Self {
         Self {
-            pk_x: hex_str(&w.pk_x),
-            pk_y: hex_str(&w.pk_y),
+            pk_x: hex_str(&w.pk.x),
+            pk_y: hex_str(&w.pk.y),
             signature: hex_str(&w.signature),
             nonce: hex_str(&w.nonce),
             derived_owner: hex_str(&w.derived_owner),
@@ -74,8 +74,10 @@ impl OwnershipWitnessJson {
     /// Lower into the FFI witness for aggregation.
     pub fn into_ffi(self) -> Result<pso_mobile_integration::NftOwnershipWitness> {
         Ok(pso_mobile_integration::NftOwnershipWitness {
-            pk_x: hex_vec(&self.pk_x)?,
-            pk_y: hex_vec(&self.pk_y)?,
+            pk: pso_mobile_integration::EmbeddedCurvePoint {
+                x: hex_vec(&self.pk_x)?,
+                y: hex_vec(&self.pk_y)?,
+            },
             signature: hex_vec(&self.signature)?,
             nonce: hex_vec(&self.nonce)?,
             derived_owner: hex_vec(&self.derived_owner)?,

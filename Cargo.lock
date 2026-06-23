@@ -4094,8 +4094,9 @@ dependencies = [
 
 [[package]]
 name = "pso-chain-abi"
-version = "0.5.0"
-source = "git+ssh://git@github.com/psonet/pso-chain-next.git?branch=feat%2Fabi-entity-only-feature#042c4aec85b49a708991280d41a6c04a06d31a25"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9242463dd4fa28ff4232f0ac1a361e779ad9df73f0c0ddd5bb8c4d9163b4e4da"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -4245,8 +4246,8 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-backend"
-version = "0.9.0"
-source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?branch=feat%2Foptional-network-srs#b544fe23a7418dfe0eff5ef4d05e750b79dbe481"
+version = "0.10.0"
+source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?tag=v0.10.0#ab5853a30b82a440d0390c603ffdb16986ae0eb8"
 dependencies = [
  "acir",
  "acvm",
