@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.13.0 - 2026-06-23
+#### Features
+- sort entity vectors for pso-protocol 0.9 sorted-set hash - (2927365) - Anton Velichko
+#### Documentation
+- (**mobile**) add full-proof flow + precise L1 signed-root binding - (c3051f5) - Anton Velichko
+#### Style
+- cargo fmt the sort_set call site - (d8c7d36) - Anton Velichko
+
+- - -
+
 ## v0.12.0 - 2026-06-23
 #### Features
 - (**mobile**) TributeDraft full proof (ownership + Merkle inclusion) for L1 - (9ea76c9) - Anton Velichko
