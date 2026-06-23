@@ -9,15 +9,38 @@ Ships as an **iOS staticlib + Android cdylib**.
 ## Object model
 
 - **`Wallet`** — derives keys from a 32-byte entropy seed (held by the caller,
-  passed per call), and aggregates ownership into a tribute-draft proof.
+  passed per call), and aggregates ownership into a tribute-draft proof. The
+  bindings are the **L2 side** (ownership/aggregation verify on L2); the
+  `l2_chain_id` is a **wallet setting** feeding the VDF + the L2 aggregation
+  binding. The **L1** full proof's binding takes its chain id per call.
+  - `new(l2_chain_id)` — lazy SRS (cache / network). `new_with_srs(srs_path, l2_chain_id)`
+    — construct with an **app-bundled SRS file** and pre-size the CRS to the full
+    proof; the on-device path (mobile builds ship without the network SRS
+    fallback, so the SRS *must* be provided this way — see [SRS](#srs)).
+  - `compute_binding(sender_address, tribute_draft_id) -> bytes` — the **L2**
+    submission binding (`Hash([DOMAIN, sender, id_lo, id_hi, l2_chain_id])`,
+    `l2_chain_id` from the wallet) the aggregation proof commits to; feed the SAME
+    value to each `witness`.
   - `generate_consent(seed) -> Consent` / `load_consent(secret) -> Consent`
   - `generate_nft_header(seed) -> NftHeader` — a tribute draft's own NFT key.
-  - `prove_ownership(seed, binding, witnesses) -> AggregationProofResult` —
-    aggregate per-NFT `NftOwnershipWitness`es over the shared submission binding;
-    picks the smallest fitting tier (1/2/4/8/16/32/64), pads, proves.
-  - MinRoot VDF (Users-pool gating): `derive_vdf_input(signer, nonce, submitted_block, chain_id)`,
-    `compute_vdf(input, difficulty) -> VdfResult` (slow path — run off the UI
-    thread), `verify_vdf(...)`, `is_vdf_block_valid(...)`, `vdf_constants()`.
+  - `prove_ownership(seed, sender_address, tribute_draft_id, witnesses) -> AggregationProofResult`
+    — the **L2** aggregation proof over per-NFT `NftOwnershipWitness`es; the
+    binding is computed internally from `sender_address` + `tribute_draft_id` +
+    the wallet's `l2_chain_id` (witnesses must match it); picks the smallest
+    fitting tier (1/2/4/8/16/32/64), pads, proves.
+  - **Full proof** (the minted TD's **L1** proof = ownership ∥ Merkle inclusion):
+    - `tribute_ownership_witness(nft_header, worldwide_day, currency, base, atto, su_ids, l1_sender_address, l1_chain_id) -> NftOwnershipWitness`
+      — the TD's *own* ownership half: signed by the `nft_header` key over the
+      **L1** binding (`binding(l1_sender, nft_header.id, l1_chain_id)`), `nft_hash`
+      folded internally from the TD fields. (`tribute_draft_id == nft_header.id`.)
+    - `prove_full(ownership: NftOwnershipWitness, inclusion: NftInclusionWitness) -> FullProofResult`
+      — combines that with the inclusion half (the node's `pso_getInclusionPath`,
+      a [`NftInclusionWitness`]); the circuit checks the path against
+      `inclusion.merkle_root` (the node's root, used as-is — not recomputed).
+  - MinRoot VDF (Users-pool gating): `derive_vdf_input(signer, nonce, submitted_block)`
+    (uses the wallet's `l2_chain_id`), `compute_vdf(input, difficulty) -> VdfResult`
+    (slow path — run off the UI thread), `verify_vdf(...)`, `is_vdf_block_valid(...)`,
+    `vdf_constants()`.
 - **`Consent`** — the wallet's long-lived consent keypair (the signing key stays
   encapsulated; never crosses the boundary).
   - `public_key()` (hand to an attester for issuance), `secret()` (persist).
@@ -25,10 +48,11 @@ Ships as an **iOS staticlib + Android cdylib**.
     signer from an attester `IssuanceReport` and build the aggregation slot.
   - `prove_ownership(seed, report, binding) -> ProofResult` — single-NFT proof.
 
-Records (`IssuanceReport`, `NftHeader`, `NftOwnershipWitness`, `ProofResult`,
-`AggregationProofResult`, `VdfResult`, `VdfConstants`) carry the data that
-crosses; field elements / points are 32-byte big-endian `bytes`. Non-canonical
-field inputs are rejected.
+Records (`IssuanceReport`, `NftHeader`, `NftOwnershipWitness` (its `pk` is an
+`EmbeddedCurvePoint { x, y }`), `NftInclusionWitness`, `ProofResult`,
+`AggregationProofResult`, `FullProofResult`, `VdfResult`, `VdfConstants`) carry
+the data that crosses; field elements / points are 32-byte big-endian `bytes`.
+Non-canonical field inputs are rejected.
 
 `testsuite/src/scenarios/s001_happy_flow.rs` (in the workspace) is the reference
 for how `Consent::witness` + `Wallet::prove_ownership` compose end-to-end against
@@ -59,7 +83,25 @@ error instead of aborting the host app.
 A failed cross-build on any slice blocks the entire release (the `github-release`
 job requires every build job to succeed) — releases are all-or-nothing.
 
+The mobile slices are built **`--no-default-features`**, which drops the SRS
+network fallback (`reqwest` + its tokio runtime) entirely — see [SRS](#srs).
+
 Generate the foreign bindings (Kotlin / Swift) with `uniffi-bindgen-mobile`.
+
+## SRS
+
+Proving needs the BN254 G1 trusted setup (the "SRS"/CRS). An on-device prover
+must **never** fetch it at proving time, so the mobile slices are built with
+`--no-default-features`: this drops `pso-zk-backend`'s `with-network-srs`
+feature (and `reqwest`/tokio with it), and a missing SRS becomes a clear error
+instead of a (panicking) `reqwest::blocking` download.
+
+The app therefore **ships the SRS as a bundled asset** and hands its path to
+`Wallet::new_with_srs(srs_path, chain_id)` once at startup. The CRS is pre-sized to the
+full proof — the largest aggregation tier (n64, `(1<<20)+1` points, ~64 MiB) —
+so any tribute up to the protocol max proves; the bytes are integrity-checked
+against a pinned hash before use. Desktop/CI builds (default features) keep the
+network fallback and can use the lazy `Wallet::new()`.
 
 ## License
 

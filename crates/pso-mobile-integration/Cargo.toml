@@ -20,6 +20,17 @@ name = "pso_mobile_integration"
 # on-device).
 pso-protocol.workspace = true
 pso-zk-canonical.workspace = true
+# Entity-only (the workspace pins default-features = false → no alloy-contract /
+# tokio / reqwest): the canonical TributeDraft hash struct, so the wallet
+# computes the TD's nft_hash (the IMT leaf) from the SAME #[derive(Entity)] fold
+# the chain uses — one hash source of truth. alloy-primitives supplies the
+# B256/U64/U16 field types the entity is built from.
+pso-chain-abi.workspace = true
+alloy-primitives.workspace = true
+# The workspace pins pso-zk-backend with default-features = false (no SRS
+# network fallback by default). The `with-network-srs` feature below re-enables
+# it for in-workspace consumers (testsuite / CLIs); the mobile slices build with
+# `--no-default-features` and supply the SRS via `Wallet::new_with_srs`.
 pso-zk-backend.workspace = true
 ark-std.workspace = true
 # MinRoot VDF (BLS12-381) — the proof-of-personhood challenge the wallet
@@ -32,6 +43,14 @@ uniffi = { version = "0.31", features = ["cli"] }
 thiserror = "2"
 # Domain-separated per-purpose RNG derivation from the wallet seed.
 sha2.workspace = true
+
+[features]
+# ON by default so in-workspace consumers (the e2e testsuite, the CLIs) prove
+# with the SRS network fallback available. The mobile slices build with
+# `--no-default-features`, which drops it (and reqwest + tokio) and forces the
+# app-provided SRS via `Wallet::new_with_srs`.
+default = ["with-network-srs"]
+with-network-srs = ["pso-zk-backend/with-network-srs"]
 
 # Generates the foreign bindings, e.g. `cargo run --bin uniffi-bindgen-mobile
 # -- generate --library <dylib> --language kotlin --out-dir <dir>`.

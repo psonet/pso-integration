@@ -23,7 +23,7 @@ path = "src/main.rs"
 # crates are the surfaces real Kotlin/JVM + React-Native clients consume
 # via UniFFI; driving the bridge through them exercises the same public
 # surface real clients hit.
-pso-chain-abi.workspace            = true
+pso-chain-abi = { workspace = true, features = ["interfaces"] }
 pso-protocol.workspace             = true
 pso-vdf.workspace                  = true
 pso-mobile-integration.workspace   = true

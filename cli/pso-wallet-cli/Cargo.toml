@@ -11,7 +11,7 @@ path = "src/main.rs"
 [dependencies]
 # Wallet flows (witness + aggregation) via the mobile FFI; TD submit via
 # the pso-chain-abi interface on a local alloy RPC handle.
-pso-chain-abi.workspace          = true
+pso-chain-abi = { workspace = true, features = ["interfaces"] }
 pso-mobile-integration.workspace = true
 pso-protocol.workspace           = true
 

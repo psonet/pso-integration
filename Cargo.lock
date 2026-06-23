@@ -4060,7 +4060,7 @@ dependencies = [
 
 [[package]]
 name = "pso-attester-cli"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "alloy-contract",
  "alloy-network",
@@ -4081,7 +4081,7 @@ dependencies = [
 
 [[package]]
 name = "pso-attester-integration"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "alloy-primitives",
  "ark-std 0.6.0",
@@ -4094,9 +4094,9 @@ dependencies = [
 
 [[package]]
 name = "pso-chain-abi"
-version = "0.4.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff9f4b29464bb4ab3a2ceba78faf8fab18f87d8348bd2bfc1287e2c22a01fd24"
+checksum = "9242463dd4fa28ff4232f0ac1a361e779ad9df73f0c0ddd5bb8c4d9163b4e4da"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -4107,7 +4107,7 @@ dependencies = [
 
 [[package]]
 name = "pso-e2e-testsuite"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
@@ -4150,9 +4150,11 @@ dependencies = [
 
 [[package]]
 name = "pso-mobile-integration"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
+ "alloy-primitives",
  "ark-std 0.6.0",
+ "pso-chain-abi",
  "pso-protocol",
  "pso-vdf",
  "pso-zk-backend",
@@ -4220,7 +4222,7 @@ dependencies = [
 
 [[package]]
 name = "pso-wallet-cli"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "alloy-contract",
  "alloy-network",
@@ -4244,8 +4246,8 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-backend"
-version = "0.9.0"
-source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?tag=v0.9.0#25e8f8c0259242f4b565aa12952a09559f236d48"
+version = "0.10.0"
+source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?tag=v0.10.0#ab5853a30b82a440d0390c603ffdb16986ae0eb8"
 dependencies = [
  "acir",
  "acvm",
@@ -4279,7 +4281,7 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-cli"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",

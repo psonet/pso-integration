@@ -11,7 +11,7 @@ path = "src/main.rs"
 [dependencies]
 # SU issuance via the attester FFI; SR/AR/SU submits via the
 # pso-chain-abi interfaces on a local alloy RPC handle.
-pso-chain-abi.workspace            = true
+pso-chain-abi = { workspace = true, features = ["interfaces"] }
 pso-attester-integration.workspace = true
 
 alloy-primitives.workspace     = true

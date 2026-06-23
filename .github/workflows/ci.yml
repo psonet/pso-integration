@@ -372,7 +372,9 @@ jobs:
           # 15.0. Pin 15.0 so the cdylib links cleanly (no undefined
           # `___chkstk_darwin`) and the "built for newer iOS" warnings clear.
           IPHONEOS_DEPLOYMENT_TARGET: "15.0"
-        run: cargo build --profile mobile -p pso-mobile-integration --target ${{ matrix.target }}
+        # --no-default-features drops the SRS network fallback (reqwest + tokio)
+        # — on-device proving uses the app-provided SRS via Wallet::new_with_srs.
+        run: cargo build --profile mobile --no-default-features -p pso-mobile-integration --target ${{ matrix.target }}
 
       - name: Stage static lib
         env:
@@ -540,7 +542,7 @@ jobs:
             --target ${{ matrix.abi }} \
             --platform ${{ env.ANDROID_PLATFORM }} \
             --output-dir ./jniLibs \
-            build --profile mobile -p pso-mobile-integration
+            build --profile mobile --no-default-features -p pso-mobile-integration
 
       - name: Stage shared lib
         env:

@@ -102,7 +102,7 @@ pub(crate) async fn submit_full_tribute_draft(env: &TestEnv) -> eyre::Result<TdS
     // 1. Wallet setup. The wallet's consent key is long-lived; the
     //    bridge ingests `consent_pk` per SU mint.
     // -----------------------------------------------------------------
-    let wallet_ffi = pso_mobile_integration::Wallet::new();
+    let wallet_ffi = pso_mobile_integration::Wallet::new(env.chain_id);
     let consent_seed = vec![0x01u8; 32];
     let consent = wallet_ffi
         .generate_consent(consent_seed.clone())
@@ -253,14 +253,19 @@ pub(crate) async fn submit_full_tribute_draft(env: &TestEnv) -> eyre::Result<TdS
     // synchronous work onto a blocking thread to avoid runtime-in-runtime
     // panics.
     let agg = {
-        // `witnesses` is consumed here (not needed afterwards).
-        let binding = binding_bytes.clone();
+        // `witnesses` is consumed here (not needed afterwards). The wallet
+        // recomputes the binding from (sender, td_id, chain_id) internally — the
+        // same value the witnesses above committed to via `compute_binding`.
+        let sender_bytes = sender.into_array().to_vec();
+        let td_id_bytes = td_id.to_be_bytes::<32>().to_vec();
         let seed = consent_seed.clone();
         let wallet_ffi = wallet_ffi.clone();
-        tokio::task::spawn_blocking(move || wallet_ffi.prove_ownership(seed, binding, witnesses))
-            .await
-            .map_err(|e| eyre::eyre!("prove join: {e}"))?
-            .map_err(|e| eyre::eyre!("prove_ownership: {e:?}"))?
+        tokio::task::spawn_blocking(move || {
+            wallet_ffi.prove_ownership(seed, sender_bytes, td_id_bytes, witnesses)
+        })
+        .await
+        .map_err(|e| eyre::eyre!("prove join: {e}"))?
+        .map_err(|e| eyre::eyre!("prove_ownership: {e:?}"))?
     };
 
     let su_ids_ordered: Vec<U256> = su_ids_minted.clone();

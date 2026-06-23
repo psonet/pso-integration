@@ -27,11 +27,19 @@ resolver = "2"
 #   coupling (acvm solve + barretenberg FFI); not on crates.io (git-only noir
 #   deps), so consumed via git+tag. It's generic over the core circuit seams.
 # - `pso-chain-abi` provides the typed SpendingUnit/TributeDraft entity structs;
-#   on crates.io as of pso-chain-next v0.4.1 (was a git branch dep pre-release).
+#   on crates.io (0.6.0, pso-chain-next v0.6.0).
+#   default-features = false at the workspace level → entity-only (alloy-primitives
+#   + #[derive(Entity)], no alloy-contract/tokio/reqwest). The native FFI libs
+#   (mobile/attester) inherit that; consumers needing the `#[sol(rpc)]` surface
+#   (testsuite + the alloy-RPC CLIs) opt back in with features = ["interfaces"].
 pso-protocol         = "0.8"
 pso-zk-canonical     = "0.9"
-pso-zk-backend       = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.9.0" }
-pso-chain-abi        = "0.4.1"
+# default-features = false at the workspace level so the SRS network fallback
+# (reqwest + tokio) is opt-IN per consumer: the mobile slices build without it
+# (app-provided SRS), while pso-zk-cli + the mobile crate's default feature
+# re-enable `with-network-srs` for dev/CI proving.
+pso-zk-backend       = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.10.0", default-features = false }
+pso-chain-abi        = { version = "0.6.0", default-features = false }
 
 # In-workspace FFI path deps. The testsuite + CLIs consume these directly
 # (alongside pso-chain-abi / pso-protocol) — there is no shared "l2-client"
