@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.13.3 - 2026-06-30
+#### Bug Fixes
+- (**s047**) bind ownership entity to the on-chain TD id - (f86f8d1) - Anton Velichko
+#### Tests
+- (**e2e**) S047 — wallet TD full proof (ownership + inclusion), ZK-verified - (71a5b22) - Anton Velichko
+
+- - -
+
 ## v0.13.2 - 2026-06-30
 #### Bug Fixes
 - (**deps**) bump pso-chain-abi 0.7.0 -> 0.11.0 - (3ac299c) - Anton Velichko
