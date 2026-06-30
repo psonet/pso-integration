@@ -106,6 +106,15 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // 2. Ownership half — the TD signs its OWN entity with the header key over
     //    the L1 binding. `su_ids` are hashed as a sorted set internally, so any
     //    order is fine.
+    //
+    // S001 mints the TD under a fresh random id (`outcome.td_id`), independent of
+    // the header's own id. The leaf (and the circuit) fold the TD id, so bind the
+    // ownership entity to the ACTUAL on-chain id — the header carries the key
+    // material (`derived_owner` / `nft_sk` / `nonce`), and the id is just the
+    // commitment seed, so overriding it yields exactly the minted TD's entity.
+    let mut td_header = outcome.td_header.clone();
+    td_header.id = outcome.td_id.to_be_bytes::<32>().to_vec();
+
     let wallet = pso_mobile_integration::Wallet::new(env.chain_id);
     let su_ids: Vec<Vec<u8>> = outcome
         .su_ids
@@ -114,7 +123,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .collect();
     let ownership = wallet
         .tribute_ownership_witness(
-            outcome.td_header.clone(),
+            td_header,
             worldwide_day,
             currency,
             base,
