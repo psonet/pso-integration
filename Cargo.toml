@@ -40,7 +40,7 @@ pso-zk-canonical     = "0.11"
 # (app-provided SRS), while pso-zk-cli + the mobile crate's default feature
 # re-enable `with-network-srs` for dev/CI proving.
 pso-zk-backend       = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git", tag = "v0.11.0", default-features = false }
-pso-chain-abi        = { version = "0.7.0", default-features = false }
+pso-chain-abi        = { version = "0.11.0", default-features = false }
 
 # In-workspace FFI path deps. The testsuite + CLIs consume these directly
 # (alongside pso-chain-abi / pso-protocol) — there is no shared "l2-client"
