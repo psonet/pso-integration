@@ -193,8 +193,8 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 }
 
 /// Find + decode the `LeafInserted(treeId, leafIndex, leaf)` event the
-/// TributeDraft emitted in the submit receipt.
-fn leaf_inserted(
+/// TributeDraft emitted in the submit receipt. Shared with S047 (full proof).
+pub(crate) fn leaf_inserted(
     receipt: &alloy_rpc_types_eth::TransactionReceipt,
 ) -> eyre::Result<(u64, u64, B256)> {
     for log in receipt.logs() {

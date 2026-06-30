@@ -49,6 +49,7 @@ pub mod s043_envelope_aged_proof_accepted;
 pub mod s044_wallet_nonce_lifecycle;
 pub mod s045_da_batch_committed;
 pub mod s046_cert_inclusion;
+pub mod s047_td_full_proof;
 
 use crate::scenario::Scenario;
 
@@ -98,5 +99,9 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         // --l1-rpc-url is absent, so they only run where the DA path is exposed.
         Box::new(s045_da_batch_committed::S045),
         Box::new(s046_cert_inclusion::S046),
+        // S047 needs no L1 wiring (the inclusion path is built locally from the
+        // committed leaf), so it runs wherever S001 does — kept last to preserve
+        // numeric order.
+        Box::new(s047_td_full_proof::S047),
     ]
 }

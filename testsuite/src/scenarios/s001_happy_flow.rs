@@ -45,15 +45,20 @@ type Fr = <PsoV1 as Suite>::Field;
 
 /// What [`submit_full_tribute_draft`] hands back: the on-chain ids + the
 /// wallet-derived `derivedOwner` (BE 32B), the aggregated SU ids, the
-/// submitter EOA, and the TD-submit transaction receipt (carrying the
-/// `LeafInserted` event the cert-inclusion scenario reads). Shared so S046
-/// can reuse the full happy-path TD submission verbatim.
+/// submitter EOA, the TD-submit transaction receipt (carrying the
+/// `LeafInserted` event the cert-inclusion scenario reads), and the TD's own
+/// `NftHeader` (its key + owner). Shared so S046 (cert inclusion) and S047
+/// (full proof) can reuse the full happy-path TD submission verbatim — S047
+/// rebuilds the TD's ownership half from the SAME `td_header`.
 pub(crate) struct TdSubmitOutcome {
     pub td_id: U256,
     pub td_owner_be: Vec<u8>,
     pub su_ids: Vec<U256>,
     pub sender: Address,
     pub receipt: TransactionReceipt,
+    /// The TD's own header (id == td_id, derived_owner, nft_sk, nonce) —
+    /// the key material the post-mint full proof signs the TD entity with.
+    pub td_header: pso_mobile_integration::NftHeader,
 }
 
 /// Unit struct implementing [`Scenario`]; the binary boxes it via
@@ -320,6 +325,7 @@ pub(crate) async fn submit_full_tribute_draft(env: &TestEnv) -> eyre::Result<TdS
         su_ids: su_ids_ordered,
         sender,
         receipt,
+        td_header,
     })
 }
 

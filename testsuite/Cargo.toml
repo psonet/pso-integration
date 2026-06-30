@@ -29,6 +29,14 @@ pso-vdf.workspace                  = true
 pso-mobile-integration.workspace   = true
 pso-attester-integration.workspace = true
 
+# S047 full-proof verification: the wallet generates the TD full proof
+# (ownership + Merkle inclusion) via the mobile FFI; the testsuite verifies
+# the returned proof off-chain with the SAME barretenberg backend + canonical
+# `FullProof` circuit the chain's L1 verifier uses. (The `with-network-srs`
+# feature for proving is unified in via `pso-mobile-integration`'s default.)
+pso-zk-backend.workspace           = true
+pso-zk-canonical.workspace         = true
+
 # RPC / signing / ABI — standalone alloy sub-crates, version-matched to
 # pso-chain-abi (a single alloy_provider/alloy_contract in the graph).
 alloy-primitives.workspace         = true
