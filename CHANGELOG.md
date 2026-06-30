@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.13.2 - 2026-06-30
+#### Bug Fixes
+- (**deps**) bump pso-chain-abi 0.7.0 -> 0.11.0 - (3ac299c) - Anton Velichko
+
+- - -
+
 ## v0.13.1 - 2026-06-23
 #### Bug Fixes
 - (**deps**) pso-chain-abi git branch -> published 0.7.0 - (f26ec6b) - Anton Velichko
