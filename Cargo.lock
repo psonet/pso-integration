@@ -4094,9 +4094,9 @@ dependencies = [
 
 [[package]]
 name = "pso-chain-abi"
-version = "0.7.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b295d686912847b40543d668fa14c8479877cedceb9e49566ec78e12c1c1fb6a"
+checksum = "995607e61c82dcfefe3cfcd2f42775f4618747fa8d0cee9140bae2d8e799138f"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
