@@ -30,7 +30,6 @@ use std::ops::Range;
 use alloy_primitives::Address;
 use rand::rngs::OsRng;
 use rand::RngCore;
-use sha2::{Digest, Sha256};
 
 use pso_vdf::minroot::MinRootVdf;
 use pso_vdf::types::VdfInput;
@@ -60,21 +59,23 @@ pub const VDF_BINDING_RANGE: Range<usize> = 33..169;
 /// Length of the wire up to (not including) the inner tx: type byte + header.
 pub const ENVELOPE_PREFIX_LEN: usize = 177;
 
-/// Canonical VDF input construction.
+/// Canonical input construction, delegated to the shared admission contract.
 ///
-/// `vdf_input = SHA-256(signer_be_20 || tx_nonce_le_8 || submitted_block_le_8 || chain_id_le_8)`.
+/// `input = SHA-256(signer_20 || tx_nonce_le_8 || submitted_block_le_8 || chain_id_le_8)`.
+///
+/// This used to be re-implemented here, byte for byte, alongside the node's
+/// copy and `pso-vdf`'s. Three hand-written copies of the one rule a client and
+/// a node MUST agree on — and a divergence between them is invisible: the
+/// transaction is simply never admitted, and nothing on either side says why.
+/// The suite now derives it the same way the node does, from the same crate,
+/// so a test passing here means the node would agree.
 pub fn derive_vdf_input(
     signer: Address,
     tx_nonce: u64,
     submitted_block: u64,
     chain_id: u64,
 ) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(signer.0 .0);
-    hasher.update(tx_nonce.to_le_bytes());
-    hasher.update(submitted_block.to_le_bytes());
-    hasher.update(chain_id.to_le_bytes());
-    hasher.finalize().into()
+    pso_antispam::derive_input_from(signer.0 .0, tx_nonce, submitted_block, chain_id).0
 }
 
 /// Build the full `0x76` VdfProtectedTransaction wire envelope wrapping
@@ -135,13 +136,39 @@ mod tests {
         assert_eq!(&env[ENVELOPE_PREFIX_LEN..], &inner[..]);
     }
 
+    /// The name of this test promises more than it used to check: determinism
+    /// and "a different nonce gives a different answer" both hold for a binding
+    /// that has silently diverged from the node's. Since a divergence is
+    /// invisible at runtime — the transaction is simply never admitted, with no
+    /// error on either side — the canonical bytes are pinned here.
+    ///
+    /// This vector predates the move to `pso-antispam` and is what `pso-vdf`
+    /// produced. If it fails, the suite and the node no longer agree, and every
+    /// scenario that submits a users-lane transaction is testing a fiction.
     #[test]
     fn vdf_input_matches_canonical_binding() {
         let signer = Address::from([0xcd; 20]);
         let a = derive_vdf_input(signer, 7, 100, 9_900_501);
-        let b = derive_vdf_input(signer, 7, 100, 9_900_501);
-        assert_eq!(a, b);
-        let c = derive_vdf_input(signer, 8, 100, 9_900_501);
-        assert_ne!(a, c);
+        assert_eq!(
+            hex::encode(a),
+            "bd99052f200b07d860273cb1ae689fb8b64eef287b89fa237d0ea938c1a872e4",
+            "the canonical binding changed — the suite and the node now disagree"
+        );
+
+        assert_eq!(
+            a,
+            derive_vdf_input(signer, 7, 100, 9_900_501),
+            "deterministic"
+        );
+        // Each bound field must move the result, or the replay it prevents is
+        // possible.
+        assert_ne!(a, derive_vdf_input(signer, 8, 100, 9_900_501), "nonce");
+        assert_ne!(a, derive_vdf_input(signer, 7, 101, 9_900_501), "block");
+        assert_ne!(a, derive_vdf_input(signer, 7, 100, 9_900_502), "chain");
+        assert_ne!(
+            a,
+            derive_vdf_input(Address::from([0xce; 20]), 7, 100, 9_900_501),
+            "signer"
+        );
     }
 }

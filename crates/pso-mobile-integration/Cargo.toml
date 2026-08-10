@@ -36,6 +36,7 @@ ark-std.workspace = true
 # MinRoot VDF (BLS12-381) — the proof-of-personhood challenge the wallet
 # attaches to Users-pool txs. Slow `eval` runs on a background thread.
 pso-vdf = { workspace = true, features = ["std"] }
+pso-antispam.workspace              = true
 
 # Mozilla UniFFI — generates the C-ABI scaffolding + foreign-language bindings
 # (Kotlin/Swift/Python) from `#[uniffi::export]`.
