@@ -59,6 +59,9 @@ const DOMAIN_CONSENT: u8 = 1;
 const DOMAIN_NFT: u8 = 2;
 const DOMAIN_SIGN: u8 = 3;
 const DOMAIN_PAD: u8 = 4;
+/// Anonymous-lane nullifiers (SR-43). Its own domain so a nullifier can never
+/// collide with a key derived for another purpose from the same wallet seed.
+const DOMAIN_NULLIFIER: u8 = 5;
 
 /// An NFT issued to a wallet by an attester (the consent-box report the wallet
 /// stores). All fields are 32-byte big-endian.
@@ -736,6 +739,74 @@ impl Wallet {
         })
     }
 
+    /// Build a complete `0x77` anti-spam envelope around an already-signed
+    /// inner transaction. **This is the whole client side of SR-43 in one
+    /// call.**
+    ///
+    /// ```text
+    /// 0x77 ‖ nullifier(32) ‖ scheme(1) ‖ len(solution) u32-BE ‖ solution
+    ///      ‖ submitted_block(8 BE) ‖ inner_tx_2718
+    /// ```
+    ///
+    /// It exists because the wire layout was being hand-written by every
+    /// caller — the TypeScript wallet, the e2e suite, and each scenario that
+    /// assembles one inline. Each copy is a place the format can drift from
+    /// the node's encoder, and a drift here does not raise an error: the
+    /// transaction is simply never admitted. One encoder, used by everyone,
+    /// removes that class of bug rather than documenting it.
+    ///
+    /// `seed` follows this crate's existing convention (see the proof
+    /// helpers): the CALLER supplies at least 32 bytes of platform entropy and
+    /// the nullifier is derived from it under its own domain. The nullifier
+    /// must not be derivable from the signer — this is the ANONYMOUS lane, and
+    /// a nullifier anyone could recompute from `(signer, nonce)` would link
+    /// submissions and defeat the point of the lane.
+    ///
+    /// Synchronous and cheap: at `T = 100_000` the solve is sub-millisecond,
+    /// so this does not need a background thread.
+    pub fn build_pow_envelope(
+        &self,
+        seed: Vec<u8>,
+        signer: Vec<u8>,
+        tx_nonce: u64,
+        submitted_block: u64,
+        difficulty: u64,
+        inner_tx_2718: Vec<u8>,
+    ) -> Result<Vec<u8>, MobileError> {
+        if inner_tx_2718.is_empty() {
+            return Err(MobileError::InvalidInput {
+                detail: "inner_tx_2718 must not be empty".into(),
+            });
+        }
+        let signer_arr = arr::<20>(&signer, "signer")?;
+
+        // Same seed discipline as the proof helpers: reject short entropy
+        // rather than silently producing a weak nullifier.
+        let mut rng = rng_from(&seed, DOMAIN_NULLIFIER)?;
+        let mut nullifier = [0u8; 32];
+        ark_std::rand::RngCore::fill_bytes(&mut rng, &mut nullifier);
+
+        // The SHARED binding — same crate the node uses, so the two cannot
+        // disagree about what the solution is computed against.
+        let input = pso_antispam::derive_input_from(
+            signer_arr,
+            tx_nonce,
+            submitted_block,
+            self.l2_chain_id,
+        );
+        let solved = self.solve_pow(input.0.to_vec(), difficulty)?;
+
+        let mut out = Vec::with_capacity(54 + inner_tx_2718.len());
+        out.push(0x77);
+        out.extend_from_slice(&nullifier);
+        out.push(solved.scheme);
+        out.extend_from_slice(&(solved.solution.len() as u32).to_be_bytes());
+        out.extend_from_slice(&solved.solution);
+        out.extend_from_slice(&submitted_block.to_be_bytes());
+        out.extend_from_slice(&inner_tx_2718);
+        Ok(out)
+    }
+
     /// Verify an anti-spam solution — the wallet's self-check before
     /// broadcasting, mirroring [`Self::verify_vdf`].
     ///
@@ -1021,6 +1092,83 @@ mod vdf_tests {
         let input = w.derive_vdf_input(vec![0xab; 20], 7, 100).unwrap();
         assert!(w.pow_solution_len(9).is_none());
         assert!(!w.verify_pow(input, vec![0u8; 8], 9, 1_024).unwrap());
+    }
+
+    /// The envelope this crate builds must be exactly what the node decodes.
+    /// Asserts the layout field by field rather than against a golden blob, so
+    /// a failure says WHICH field moved instead of "the bytes changed".
+    #[test]
+    fn build_pow_envelope_matches_the_wire_layout() {
+        let w = Wallet::new(19_280_501);
+        let seed = vec![0x11u8; 32];
+        let signer = vec![0xab; 20];
+        let inner = vec![0x02u8, 0xde, 0xad];
+        let t = 1_024;
+
+        let env = w
+            .build_pow_envelope(seed.clone(), signer.clone(), 7, 100, t, inner.clone())
+            .unwrap();
+
+        assert_eq!(env[0], 0x77, "type byte");
+        assert_eq!(env[33], 1, "hashcash scheme tag");
+        assert_eq!(u32::from_be_bytes(env[34..38].try_into().unwrap()), 8);
+        assert_eq!(u64::from_be_bytes(env[46..54].try_into().unwrap()), 100);
+        assert_eq!(&env[54..], &inner[..], "inner tx rides at the end");
+
+        // The solution must actually solve the canonical binding — otherwise
+        // the envelope is well-formed and still unadmittable.
+        let input = w.derive_vdf_input(signer, 7, 100).unwrap();
+        assert!(w
+            .verify_pow(input.clone(), env[38..46].to_vec(), env[33], t)
+            .unwrap());
+
+        // And the derived input must NOT be on the wire: 0x77 drops it
+        // precisely so the field cannot disagree with the derivation.
+        assert!(
+            !env.windows(32).any(|c| c == input.as_slice()),
+            "the derived input must not appear in the envelope"
+        );
+    }
+
+    /// The nullifier must not be derivable from the signer — this is the
+    /// ANONYMOUS lane, and one that anyone could recompute from
+    /// `(signer, nonce)` would link a wallet's submissions to each other.
+    #[test]
+    fn the_nullifier_varies_with_the_seed_not_the_signer() {
+        let w = Wallet::new(19_280_501);
+        let signer = vec![0xab; 20];
+        let inner = vec![0x02u8, 0xde];
+
+        let a = w
+            .build_pow_envelope(vec![0x11; 32], signer.clone(), 7, 100, 64, inner.clone())
+            .unwrap();
+        let b = w
+            .build_pow_envelope(vec![0x22; 32], signer.clone(), 7, 100, 64, inner.clone())
+            .unwrap();
+        assert_ne!(
+            a[1..33],
+            b[1..33],
+            "a fresh seed must give a fresh nullifier"
+        );
+
+        // Same seed + same submission is reproducible, so a retry after a
+        // dropped response does not burn a second nullifier.
+        let c = w
+            .build_pow_envelope(vec![0x11; 32], signer, 7, 100, 64, inner)
+            .unwrap();
+        assert_eq!(a[1..33], c[1..33]);
+    }
+
+    /// Short entropy is refused rather than silently producing a weak
+    /// nullifier — the same discipline the proof helpers already apply.
+    #[test]
+    fn build_pow_envelope_rejects_short_entropy() {
+        let w = Wallet::new(19_280_501);
+        assert!(matches!(
+            w.build_pow_envelope(vec![0u8; 31], vec![0xab; 20], 0, 0, 64, vec![0x02])
+                .unwrap_err(),
+            MobileError::InvalidInput { .. }
+        ));
     }
 
     /// Difficulty 0 is unsatisfiable; solving must report that rather than
