@@ -4060,16 +4060,16 @@ dependencies = [
 
 [[package]]
 name = "pso-antispam"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14856ee7f1583659a910a6e8ba6097d813257f840c23fa69953d179389e65cd7"
+checksum = "694af5d80d86d2c90ffa4d13da8da55a9d9841e5999046a64f11ddd7640f0cf8"
 dependencies = [
  "sha2 0.10.9",
 ]
 
 [[package]]
 name = "pso-attester-cli"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "alloy-contract",
  "alloy-network",
@@ -4090,7 +4090,7 @@ dependencies = [
 
 [[package]]
 name = "pso-attester-integration"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "alloy-primitives",
  "ark-std 0.6.0",
@@ -4116,7 +4116,7 @@ dependencies = [
 
 [[package]]
 name = "pso-e2e-testsuite"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
@@ -4162,7 +4162,7 @@ dependencies = [
 
 [[package]]
 name = "pso-mobile-integration"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "alloy-primitives",
  "ark-std 0.6.0",
@@ -4235,7 +4235,7 @@ dependencies = [
 
 [[package]]
 name = "pso-wallet-cli"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "alloy-contract",
  "alloy-network",
@@ -4294,7 +4294,7 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-cli"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "alloy-primitives",
  "anyhow",
