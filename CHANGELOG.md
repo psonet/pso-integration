@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.14.0 - 2026-08-10
+#### Features
+- (**testsuite**) 0x77 e2e coverage, and take the admission contract from pso-antispam (#33) - (c6ce69f) - Velichko Anton
+#### Miscellaneous Chores
+- (**deps**) pso-chain-abi 0.11.0 -> 0.17.5 (#34) - (5c4ab22) - Velichko Anton
+
+- - -
+
 ## v0.13.3 - 2026-06-30
 #### Bug Fixes
 - (**s047**) bind ownership entity to the on-chain TD id - (f86f8d1) - Anton Velichko
