@@ -1,9 +1,10 @@
 # pso-e2e-testsuite
 
 End-to-end test harness for the PSO L2. Ships as a single binary
-(`pso-e2e`) that drives the full Attester + Wallet round-trip plus ~40
-scenarios (negative-path invariants, envelope/VDF tampering, and the
-wallet-direct lifecycle) against a running pso-chain devnet.
+(`pso-e2e`) that drives the full Attester + Wallet round-trip plus 44
+scenarios (negative-path invariants, anti-spam envelope tampering across
+both the legacy `0x76` and the `0x77` formats, and the wallet-direct
+lifecycle) against a running pso-chain devnet.
 
 The binary is the CI artifact: pso-chain wraps it in a Docker image
 and runs it against a freshly-spun-up devnet container.
@@ -103,12 +104,27 @@ guard it exercises.
 | S044  | Sequential wallet txs (nonce 0, 1) execute with per-nonce VDF recompute; nonce-0 VDF binding replayed at nonce 2 rejects `BadVdfInputBinding`. |
 | S045  | A DA batch is committed on the L1 `DaInbox` (`hasCommitment()`), confirming the node posts finalized batches to L1. Needs `--l1-rpc-url` + `--da-inbox`. |
 | S046  | TD full-proof → `pso_getInclusionPath` (depth-32 Poseidon2 Merkle proof to root `R_M`) → `pso_getFinalizeCert` (assert `r == R_M`, recompute the signed digest) → verify the committee BLS threshold signature off-chain against the `DaInbox` group key. Needs `--l1-rpc-url` + `--da-inbox` and the node serving inclusion paths (on by default). |
+| S047  | Wallet generates a TD **full proof** (ownership + depth-32 Merkle inclusion in one Honk proof); it ZK-verifies and binds both halves to the on-chain TD id. |
+| S048  | A `0x77` anti-spam envelope is admitted **and mined** (`status == 1`) — the SR-43 happy path. Admission alone would pass even if the envelope were stripped wrongly and the inner call never ran. |
+| S049  | A one-bit corruption of the `0x77` PoW solution is refused. Without this a node that admitted `0x77` unconditionally — checking no work at all — would pass S048 perfectly. |
+| S050  | A `0x77` envelope tagged with the **retired MinRoot scheme** is refused. S048/S049 both use the hashcash tag, so a node that verified whatever scheme it was told would pass them; this is SR-43 through the front door. |
 
 S032 needs the chain spawned with `PSO_DEV_RPC=1` (gates
 `pso_dev_advanceEpoch`); the CI workflow sets it on the dev node.
 
 S045/S046 read the L1 `DaInbox`, so they only run when `--l1-rpc-url`
 (and `--da-inbox`) are supplied; otherwise they're filtered out.
+
+S048–S050 build the `0x77` envelope (SR-43); every other users-lane
+scenario builds the legacy `0x76` one, whose MinRoot proof is forgeable
+in O(1). Both formats are exercised on purpose: `0x76` is what deployed
+clients still send while the migration window is open, and `0x77` is
+what replaces it. A node under test must therefore accept `0x77` — a
+node predating SR-43 fails S048 at admission.
+
+S016/S017 have no `0x77` analogue: they tamper with the MinRoot output
+and proof, fields the new format does not carry, so they collapse into
+S049's single "the work was wrong" case.
 
 Intentional gaps in the numbering:
 
