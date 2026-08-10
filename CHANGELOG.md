@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.15.0 - 2026-08-10
+#### Features
+- (**mobile**) expose the anti-spam PoW helpers over uniffi (#36) - (3e3dfe1) - Velichko Anton
+
+- - -
+
 ## v0.14.1 - 2026-08-10
 #### Bug Fixes
 - (**testsuite**) wait for pool visibility, not just isActive (#37) - (8c2da0c) - Velichko Anton
