@@ -43,6 +43,7 @@ use pso_protocol::Codec;
 use pso_zk_backend::barretenberg::Barretenberg;
 use sha2::{Digest, Sha256};
 
+use pso_antispam::PowScheme;
 use pso_vdf::minroot::{MinRootProof, MinRootVdf};
 use pso_vdf::types::{VdfInput, VdfOutput};
 use pso_vdf::Vdf;
@@ -178,6 +179,18 @@ pub struct VdfResult {
     pub output: Vec<u8>,
     /// Wesolowski-style proof `π`.
     pub proof: Vec<u8>,
+}
+
+/// A solved anti-spam proof-of-work (SR-43) — what a `0x77` envelope carries.
+#[derive(Debug, uniffi::Record)]
+pub struct PowSolution {
+    /// Wire scheme tag; goes on the envelope so a node can verify a solution
+    /// it did not choose the scheme for.
+    pub scheme: u8,
+    /// The solution bytes. Width is fixed PER SCHEME (8 for hashcash) — exact,
+    /// not a maximum, or the same logical solution would have several
+    /// encodings on a hash-addressed transaction.
+    pub solution: Vec<u8>,
 }
 
 /// Snapshot of the VDF parameters compiled into this client.
@@ -686,6 +699,71 @@ impl Wallet {
         Ok(MinRootVdf::verify(&input, &output, &proof, difficulty))
     }
 
+    /// Solve the anti-spam proof-of-work for `input` at `difficulty` (SR-43).
+    ///
+    /// **This is what a `0x77` envelope needs**, and it replaces
+    /// [`Self::compute_vdf`]. The MinRoot VDF that method computes is not a
+    /// VDF in the sense that matters: its group has PUBLIC order, so both the
+    /// delay and the proof are forgeable in O(1). A node with the migration
+    /// window closed refuses it outright.
+    ///
+    /// Far cheaper than the thing it replaces, which changes how a wallet
+    /// should schedule it: at `T = 100_000` this is sub-millisecond, where
+    /// MinRoot at 10_000 cost over a second of SEQUENTIAL work. The
+    /// background-thread advice on `compute_vdf` does not apply here.
+    ///
+    /// `input` is the 32 bytes from [`Self::derive_vdf_input`] — unchanged by
+    /// SR-43, and still the thing that binds a solution to one submission.
+    /// Note the `0x77` wire does NOT carry it: both sides derive it, which is
+    /// why the legacy format's explicit copy and its binding check disappear.
+    pub fn solve_pow(&self, input: Vec<u8>, difficulty: u64) -> Result<PowSolution, MobileError> {
+        if difficulty == 0 {
+            return Err(MobileError::InvalidInput {
+                detail: "anti-spam difficulty must be > 0".into(),
+            });
+        }
+        let input = arr::<32>(&input, "pow input")?;
+        let scheme = PowScheme::Hashcash;
+        let mut solution = vec![0u8; scheme.solution_len()];
+        if !scheme.solve_into(&input, difficulty, &mut solution) {
+            return Err(MobileError::InvalidInput {
+                detail: "scheme cannot be solved".into(),
+            });
+        }
+        Ok(PowSolution {
+            scheme: scheme.tag(),
+            solution,
+        })
+    }
+
+    /// Verify an anti-spam solution — the wallet's self-check before
+    /// broadcasting, mirroring [`Self::verify_vdf`].
+    ///
+    /// Answers `false` rather than erroring for an unknown or retired scheme
+    /// tag: those are wire values a peer might send, not programming errors.
+    /// In particular the retired MinRoot tag NEVER verifies here, so a client
+    /// cannot opt back into the forgeable construction by asking for it.
+    pub fn verify_pow(
+        &self,
+        input: Vec<u8>,
+        solution: Vec<u8>,
+        scheme: u8,
+        difficulty: u64,
+    ) -> Result<bool, MobileError> {
+        let input = arr::<32>(&input, "pow input")?;
+        let Some(scheme) = PowScheme::from_tag(scheme) else {
+            return Ok(false);
+        };
+        Ok(scheme.verify(&input, &solution, difficulty))
+    }
+
+    /// Exact solution width for a wire scheme tag, so a caller can size a
+    /// buffer without hard-coding a per-scheme constant. `None` for an unknown
+    /// tag.
+    pub fn pow_solution_len(&self, scheme: u8) -> Option<u64> {
+        PowScheme::from_tag(scheme).map(|s| s.solution_len() as u64)
+    }
+
     /// Whether `submitted_block` is still within the validator's backward-looking
     /// acceptance `window` relative to `current_block` (so the wallet can reuse a
     /// proof instead of re-running the slow path).
@@ -883,6 +961,78 @@ mod vdf_tests {
         // Sensitive to the wallet's L2 chain id (now a setting, not an arg).
         let w2 = Wallet::new(19_280_502);
         assert_ne!(base, w2.derive_vdf_input(signer, 7, 100).unwrap());
+    }
+
+    /// SR-43. The wallet must be able to produce what a `0x77` envelope needs:
+    /// solve, then self-verify, without naming a concrete scheme — the tag
+    /// comes back from the solver, so a second scheme needs no client change.
+    #[test]
+    fn solve_pow_round_trips_through_verify() {
+        let w = wallet();
+        let input = w.derive_vdf_input(vec![0xab; 20], 7, 100).unwrap();
+        let t = 1_024;
+
+        let solved = w.solve_pow(input.clone(), t).unwrap();
+        assert_eq!(solved.scheme, 1, "hashcash is wire tag 1");
+        assert_eq!(
+            solved.solution.len() as u64,
+            w.pow_solution_len(solved.scheme).unwrap()
+        );
+        assert!(w
+            .verify_pow(input, solved.solution, solved.scheme, t)
+            .unwrap());
+    }
+
+    /// The work is bound to the input, so a solution cannot be lifted onto
+    /// another transaction. The input carries signer/nonce/block/chain, which
+    /// is what makes this the anti-replay property rather than a checksum.
+    #[test]
+    fn a_solution_does_not_transfer_to_another_submission() {
+        let w = wallet();
+        let t = 1_024;
+        let input = w.derive_vdf_input(vec![0xab; 20], 7, 100).unwrap();
+        let solved = w.solve_pow(input, t).unwrap();
+
+        // Same wallet, next nonce — a different binding.
+        let other = w.derive_vdf_input(vec![0xab; 20], 8, 100).unwrap();
+        assert!(!w
+            .verify_pow(other, solved.solution, solved.scheme, t)
+            .unwrap());
+    }
+
+    /// The retired MinRoot tag must never verify through the FFI either.
+    /// Otherwise a client could keep the new envelope shape while asking to be
+    /// checked under the forgeable construction — SR-43 through the front door.
+    #[test]
+    fn the_retired_scheme_never_verifies() {
+        let w = wallet();
+        let input = w.derive_vdf_input(vec![0xab; 20], 7, 100).unwrap();
+        // Tag 0 = MinRoot, with a correctly sized solution.
+        assert_eq!(w.pow_solution_len(0).unwrap(), 96);
+        assert!(!w.verify_pow(input, vec![0x33; 96], 0, 10_000).unwrap());
+    }
+
+    /// An unknown tag is a wire value a peer might send, not a programming
+    /// error — so it answers `false` rather than erroring, and never decodes
+    /// into some default scheme.
+    #[test]
+    fn an_unknown_scheme_tag_does_not_verify_or_decode() {
+        let w = wallet();
+        let input = w.derive_vdf_input(vec![0xab; 20], 7, 100).unwrap();
+        assert!(w.pow_solution_len(9).is_none());
+        assert!(!w.verify_pow(input, vec![0u8; 8], 9, 1_024).unwrap());
+    }
+
+    /// Difficulty 0 is unsatisfiable; solving must report that rather than
+    /// spinning forever looking for a nonce that cannot exist.
+    #[test]
+    fn solving_at_zero_difficulty_errors() {
+        let w = wallet();
+        let input = w.derive_vdf_input(vec![0xab; 20], 7, 100).unwrap();
+        assert!(matches!(
+            w.solve_pow(input, 0).unwrap_err(),
+            MobileError::InvalidInput { .. }
+        ));
     }
 
     #[test]
