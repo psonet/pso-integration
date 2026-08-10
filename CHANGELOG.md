@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.14.1 - 2026-08-10
+#### Bug Fixes
+- (**testsuite**) wait for pool visibility, not just isActive (#37) - (8c2da0c) - Velichko Anton
+#### Miscellaneous Chores
+- (**docs**) list S047-S050 in the testsuite scenario table - (f8b821a) - Anton Velichko
+
+- - -
+
 ## v0.14.0 - 2026-08-10
 #### Features
 - (**testsuite**) 0x77 e2e coverage, and take the admission contract from pso-antispam (#33) - (c6ce69f) - Velichko Anton
