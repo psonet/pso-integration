@@ -182,6 +182,14 @@ impl TestEnv {
         // broadcast; polling for receipt happens here so the
         // returned client can immediately submit.
         wait_for_active(&self.admin, target_addr, std::time::Duration::from_secs(30)).await?;
+        // `is_active` is a LATEST-state contract read; pool admission keys on
+        // the members snapshot pushed from the FINALIZED attesters index, which
+        // lags it. Without this second wait a scenario can register an attester,
+        // observe it active, and have its very first transaction rejected as
+        // Malformed("no lane claimed this transaction") — which reads like a
+        // permission bug rather than a race, and is what made S033 fail.
+        wait_for_pool_visibility(&self.admin, target_addr, std::time::Duration::from_secs(60))
+            .await?;
         AttesterClient::new(&self.rpc_url, self.chain_id, &secret)
     }
 
@@ -288,6 +296,35 @@ fn derive_address(secret: &[u8; 32]) -> eyre::Result<Address> {
 /// Spin until `admin.is_active(addr)` returns true or `timeout`
 /// elapses. Used internally by [`TestEnv::new_attester`] so the
 /// returned client can submit immediately.
+/// Wait until the NODE'S members lane can see `addr`, not merely until the
+/// registry says it is active.
+///
+/// Generous timeout relative to `wait_for_active`: this waits on finalization,
+/// which is several blocks behind latest, and a loaded CI runner stretches
+/// that further. Timing out here is a real failure — it means the attesters
+/// index never picked the registration up — so it reports that rather than
+/// letting the caller discover it as an unexplained admission rejection.
+async fn wait_for_pool_visibility(
+    admin: &AdminClient,
+    addr: Address,
+    timeout: std::time::Duration,
+) -> eyre::Result<()> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if admin.is_visible_to_pool(addr).await.unwrap_or(false) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(eyre::eyre!(
+                "timeout: {addr} active on chain but never appeared in the node's \
+                 members-lane snapshot within {timeout:?} — the attesters index is \
+                 not tracking finalized registry state"
+            ));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+}
+
 async fn wait_for_active(
     admin: &AdminClient,
     addr: Address,
