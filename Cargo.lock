@@ -4060,9 +4060,9 @@ dependencies = [
 
 [[package]]
 name = "pso-antispam"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe7e8c92bf1c388d00e2b3ab2904697df6bebfa6a7f1eb3e951a0dff41b66906"
+checksum = "14856ee7f1583659a910a6e8ba6097d813257f840c23fa69953d179389e65cd7"
 dependencies = [
  "sha2 0.10.9",
 ]

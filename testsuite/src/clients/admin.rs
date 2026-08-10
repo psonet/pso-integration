@@ -257,6 +257,35 @@ impl AdminClient {
     // Internal plumbing.
     // -----------------------------------------------------------------
 
+    /// Is `addr` present in the NODE'S members-lane snapshot?
+    ///
+    /// Distinct from [`Self::is_active`], and the distinction is the whole
+    /// point. `is_active` reads the registry at LATEST state; pool admission
+    /// keys on a snapshot the maintenance actor pushes from the FINALIZED
+    /// attesters index. Finalization lags latest, so there is a window where an
+    /// attester is active on chain but absent from the pool's map — and the
+    /// pool's membership test is a plain `contains_key`, so during that window
+    /// no lane claims its transaction and it is rejected as `Malformed`, not
+    /// as a permission error.
+    ///
+    /// Reads `attesters_list`, which is served from the pool's own lanes
+    /// handle, so it observes exactly the state admission will consult.
+    pub async fn is_visible_to_pool(&self, addr: Address) -> Result<bool, RpcError> {
+        let roster = self.raw_json_rpc("attesters_list", json!([])).await?;
+        let wanted = format!("{addr:#x}").to_lowercase();
+        Ok(roster
+            .as_array()
+            .map(|entries| {
+                entries.iter().any(|e| {
+                    e.get("address")
+                        .and_then(|a| a.as_str())
+                        .map(|a| a.to_lowercase() == wanted)
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false))
+    }
+
     /// Hand-rolled JSON-RPC POST against the RPC URL. Used for
     /// `pso_*` namespaces that aren't on the standard alloy
     /// surface.
