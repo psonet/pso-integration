@@ -44,7 +44,6 @@ use pso_zk_backend::barretenberg::Barretenberg;
 use sha2::{Digest, Sha256};
 
 use pso_vdf::minroot::{MinRootProof, MinRootVdf};
-use pso_vdf::params::VdfParams;
 use pso_vdf::types::{VdfInput, VdfOutput};
 use pso_vdf::Vdf;
 
@@ -643,7 +642,7 @@ impl Wallet {
     ) -> Result<Vec<u8>, MobileError> {
         let signer = arr::<20>(&signer, "signer")?;
         let input =
-            VdfParams::derive_input_from(signer, tx_nonce, submitted_block, self.l2_chain_id);
+            pso_antispam::derive_input_from(signer, tx_nonce, submitted_block, self.l2_chain_id);
         Ok(input.as_bytes().to_vec())
     }
 
@@ -696,17 +695,17 @@ impl Wallet {
         current_block: u64,
         window: u64,
     ) -> bool {
-        VdfParams::is_block_valid(submitted_block, current_block, window)
+        pso_antispam::is_block_valid(submitted_block, current_block, window)
     }
 
     /// The VDF parameters compiled into this client (default difficulty, epoch,
     /// validity window).
     pub fn vdf_constants(&self) -> VdfConstants {
         VdfConstants {
-            t_base: pso_vdf::T_BASE,
-            max_difficulty_adjustment_pct: pso_vdf::MAX_DIFFICULTY_ADJUSTMENT_PCT,
-            epoch_length_blocks: pso_vdf::EPOCH_LENGTH_BLOCKS,
-            proof_validity_window: pso_vdf::PROOF_VALIDITY_WINDOW,
+            t_base: pso_antispam::T_BASE,
+            max_difficulty_adjustment_pct: pso_antispam::MAX_DIFFICULTY_ADJUSTMENT_PCT,
+            epoch_length_blocks: pso_antispam::EPOCH_LENGTH_BLOCKS,
+            proof_validity_window: pso_antispam::PROOF_VALIDITY_WINDOW,
         }
     }
 }

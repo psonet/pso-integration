@@ -50,6 +50,9 @@ pub mod s044_wallet_nonce_lifecycle;
 pub mod s045_da_batch_committed;
 pub mod s046_cert_inclusion;
 pub mod s047_td_full_proof;
+mod s048_pow_envelope_admitted;
+mod s049_pow_bad_solution_rejected;
+mod s050_pow_retired_scheme_rejected;
 
 use crate::scenario::Scenario;
 
@@ -103,5 +106,11 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         // committed leaf), so it runs wherever S001 does — kept last to preserve
         // numeric order.
         Box::new(s047_td_full_proof::S047),
+        // SR-43: the 0x77 anti-spam envelope. Everything above builds the
+        // legacy 0x76 format, so without these nothing exercises the format
+        // the chain actually wants clients to use.
+        Box::new(s048_pow_envelope_admitted::S048),
+        Box::new(s049_pow_bad_solution_rejected::S049),
+        Box::new(s050_pow_retired_scheme_rejected::S050),
     ]
 }

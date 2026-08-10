@@ -26,6 +26,7 @@ path = "src/main.rs"
 pso-chain-abi = { workspace = true, features = ["interfaces"] }
 pso-protocol.workspace             = true
 pso-vdf.workspace                  = true
+pso-antispam.workspace              = true
 pso-mobile-integration.workspace   = true
 pso-attester-integration.workspace = true
 

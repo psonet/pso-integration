@@ -4059,6 +4059,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pso-antispam"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe7e8c92bf1c388d00e2b3ab2904697df6bebfa6a7f1eb3e951a0dff41b66906"
+dependencies = [
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "pso-attester-cli"
 version = "0.13.3"
 dependencies = [
@@ -4133,6 +4142,7 @@ dependencies = [
  "hex",
  "iso_currency",
  "k256 0.14.0-rc.9",
+ "pso-antispam",
  "pso-attester-integration",
  "pso-chain-abi",
  "pso-mobile-integration",
@@ -4156,6 +4166,7 @@ version = "0.13.3"
 dependencies = [
  "alloy-primitives",
  "ark-std 0.6.0",
+ "pso-antispam",
  "pso-chain-abi",
  "pso-protocol",
  "pso-vdf",

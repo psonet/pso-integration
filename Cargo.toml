@@ -53,6 +53,11 @@ pso-poseidon = "0.4"
 # MinRoot VDF over BLS12-381. Used by `pso-mobile-integration::vdf` for
 # the proof-of-personhood challenge wallets attach to Users-pool txs.
 pso-vdf      = "0.2"
+# The anonymous-lane admission contract, shared VERBATIM with the node. The
+# binding and the policy constants must not be re-implemented on either side:
+# a client and node that disagree admit nothing and log nothing, so the failure
+# looks like a dead chain rather than a mismatch.
+pso-antispam = "0.2"
 k256         = { version = "0.14.0-rc.8", features = ["std"] }
 ark-ff       = { version = "0.6", features = ["asm", "parallel"] }
 ark-bn254    = { version = "0.6", features = ["default"] }
