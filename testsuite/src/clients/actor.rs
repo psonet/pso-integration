@@ -36,6 +36,17 @@ use serde_json::{json, Value};
 
 use crate::clients::contract_errors::{decode_from_bytes, decode_text, PsoContractError};
 use crate::clients::envelope::build_vdf_envelope;
+use pso_antispam::PowScheme;
+
+/// Which anonymous-lane wire format to build.
+#[derive(Clone, Copy, Debug)]
+enum EnvelopeKind {
+    /// The retired `0x76` MinRoot envelope. Still built by most scenarios,
+    /// which predate SR-43.
+    Legacy,
+    /// The `0x77` scheme-tagged envelope.
+    Pow(PowScheme),
+}
 
 /// Users-pool client.
 #[derive(Clone)]
@@ -268,6 +279,78 @@ impl ActorClient {
     where
         F: FnOnce(Vec<u8>) -> Vec<u8>,
     {
+        self.submit_enveloped(
+            EnvelopeKind::Legacy,
+            to,
+            inner_calldata,
+            custom_difficulty,
+            pinned_block,
+            mutate,
+        )
+        .await
+    }
+
+    /// Submit a `0x77` anti-spam envelope (SR-43) — the format that replaces
+    /// the forgeable `0x76` one.
+    ///
+    /// Separate entry point rather than a flag on the legacy path, because the
+    /// two wire formats have different field layouts: a scenario that tampers
+    /// with one cannot reuse the other's byte offsets.
+    pub async fn submit_pow_tx<F>(
+        &self,
+        to: Address,
+        inner_calldata: Bytes,
+        mutate: F,
+    ) -> Result<TxHash, ActorClientError>
+    where
+        F: FnOnce(Vec<u8>) -> Vec<u8>,
+    {
+        self.submit_enveloped(
+            EnvelopeKind::Pow(PowScheme::Hashcash),
+            to,
+            inner_calldata,
+            None,
+            None,
+            mutate,
+        )
+        .await
+    }
+
+    /// [`Self::submit_pow_tx`] with an explicit scheme, so a scenario can tag
+    /// an envelope with the RETIRED MinRoot scheme and assert the refusal.
+    pub async fn submit_pow_tx_with_scheme<F>(
+        &self,
+        scheme: PowScheme,
+        to: Address,
+        inner_calldata: Bytes,
+        mutate: F,
+    ) -> Result<TxHash, ActorClientError>
+    where
+        F: FnOnce(Vec<u8>) -> Vec<u8>,
+    {
+        self.submit_enveloped(
+            EnvelopeKind::Pow(scheme),
+            to,
+            inner_calldata,
+            None,
+            None,
+            mutate,
+        )
+        .await
+    }
+
+    async fn submit_enveloped<F>(
+        &self,
+        kind: EnvelopeKind,
+        to: Address,
+        inner_calldata: Bytes,
+        custom_difficulty: Option<u64>,
+        pinned_block: Option<u64>,
+        mutate: F,
+    ) -> Result<TxHash, ActorClientError>
+    where
+        F: FnOnce(Vec<u8>) -> Vec<u8>,
+    {
         // Resolve difficulty + head. When NEITHER is overridden, a single
         // pso_vdfInfo call supplies both (it returns the head block too) — no
         // separate eth_blockNumber round-trip. When one is pinned, fetch only
@@ -313,14 +396,25 @@ impl ActorClient {
 
         // Wrap them in the `0x76` VDF envelope, then let the scenario tamper the
         // wire bytes (header field offsets are `envelope::*_RANGE`).
-        let wire = build_vdf_envelope(
-            self.address(),
-            nonce,
-            head,
-            self.inner.chain_id,
-            difficulty,
-            &inner_2718,
-        )
+        let wire = match kind {
+            EnvelopeKind::Legacy => build_vdf_envelope(
+                self.address(),
+                nonce,
+                head,
+                self.inner.chain_id,
+                difficulty,
+                &inner_2718,
+            ),
+            EnvelopeKind::Pow(scheme) => crate::clients::envelope::build_pow_envelope_with(
+                scheme,
+                self.address(),
+                nonce,
+                head,
+                self.inner.chain_id,
+                difficulty,
+                &inner_2718,
+            ),
+        }
         .map_err(|e| ActorClientError::Config(format!("envelope build: {e}")))?;
         let raw = mutate(wire);
         let raw_hex = format!("0x{}", hex::encode(&raw));

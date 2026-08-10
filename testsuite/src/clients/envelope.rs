@@ -31,6 +31,7 @@ use alloy_primitives::Address;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
+use pso_antispam::PowScheme;
 use pso_vdf::minroot::MinRootVdf;
 use pso_vdf::types::VdfInput;
 use pso_vdf::Vdf;
@@ -76,6 +77,100 @@ pub fn derive_vdf_input(
     chain_id: u64,
 ) -> [u8; 32] {
     pso_antispam::derive_input_from(signer.0 .0, tx_nonce, submitted_block, chain_id).0
+}
+
+/// EIP-2718 type byte for the SR-43 scheme-tagged anonymous-lane envelope.
+///
+/// Mirrors `POW_ENVELOPE_TYPE` on the node. It exists ALONGSIDE `0x76` rather
+/// than replacing it: deployed clients already sign the legacy format, so the
+/// old byte keeps parsing while they migrate.
+pub const POW_ENVELOPE_TYPE: u8 = 0x77;
+
+// Byte ranges into a `0x77` envelope carrying a HASHCASH solution. Unlike the
+// `0x76` constants above these are scheme-dependent — hashcash's solution is 8
+// bytes, and a future scheme's will not be — so anything generic must derive
+// offsets from `PowScheme::solution_len()` rather than reuse these.
+/// 32-byte nullifier.
+pub const POW_NULLIFIER_RANGE: Range<usize> = 1..33;
+/// 1-byte scheme tag.
+pub const POW_SCHEME_INDEX: usize = 33;
+/// 8-byte hashcash solution (after its 4-byte length prefix at `34..38`).
+pub const POW_SOLUTION_RANGE: Range<usize> = 38..46;
+/// 8-byte big-endian `submitted_block`.
+pub const POW_SUBMITTED_BLOCK_RANGE: Range<usize> = 46..54;
+/// Wire length up to (not including) the inner tx, for a hashcash solution.
+pub const POW_ENVELOPE_PREFIX_LEN: usize = 54;
+
+/// Build a `0x77` anti-spam envelope wrapping `inner_tx_2718`.
+///
+/// ```text
+/// 0x77 ‖ nullifier(32) ‖ scheme(1) ‖ len(solution) u32-BE ‖ solution
+///      ‖ submitted_block(8 BE) ‖ inner
+/// ```
+///
+/// Note what is NOT on the wire: `vdf_input`. It is derived from
+/// signer/nonce/block/chain on both sides, which is what binds the solution to
+/// one submission — a field that is computed cannot be lied about, so the
+/// legacy format's explicit copy and its separate binding check both disappear.
+///
+/// The solution is produced through [`PowScheme::solve_into`], not by calling
+/// hashcash directly, so this suite exercises the same scheme-generic path a
+/// real wallet uses.
+pub fn build_pow_envelope(
+    signer: Address,
+    tx_nonce: u64,
+    submitted_block: u64,
+    chain_id: u64,
+    difficulty: u64,
+    inner_tx_2718: &[u8],
+) -> eyre::Result<Vec<u8>> {
+    build_pow_envelope_with(
+        PowScheme::Hashcash,
+        signer,
+        tx_nonce,
+        submitted_block,
+        chain_id,
+        difficulty,
+        inner_tx_2718,
+    )
+}
+
+/// [`build_pow_envelope`] with an explicit scheme — so a scenario can build an
+/// envelope tagged with a scheme the node refuses (the retired MinRoot tag)
+/// and assert the refusal, which is not reachable through the happy path.
+pub fn build_pow_envelope_with(
+    scheme: PowScheme,
+    signer: Address,
+    tx_nonce: u64,
+    submitted_block: u64,
+    chain_id: u64,
+    difficulty: u64,
+    inner_tx_2718: &[u8],
+) -> eyre::Result<Vec<u8>> {
+    if difficulty == 0 {
+        return Err(eyre::eyre!("anti-spam difficulty must be > 0"));
+    }
+
+    let mut nullifier = [0u8; 32];
+    OsRng.fill_bytes(&mut nullifier);
+
+    let input = derive_vdf_input(signer, tx_nonce, submitted_block, chain_id);
+    let mut solution = vec![0u8; scheme.solution_len()];
+    if !scheme.solve_into(&input, difficulty, &mut solution) {
+        // Only reachable for a retired scheme; the caller wants the bytes
+        // anyway, to assert the node refuses them.
+        solution.iter_mut().for_each(|b| *b = 0);
+    }
+
+    let mut out = Vec::with_capacity(POW_ENVELOPE_PREFIX_LEN + inner_tx_2718.len());
+    out.push(POW_ENVELOPE_TYPE);
+    out.extend_from_slice(&nullifier);
+    out.push(scheme.tag());
+    out.extend_from_slice(&(solution.len() as u32).to_be_bytes());
+    out.extend_from_slice(&solution);
+    out.extend_from_slice(&submitted_block.to_be_bytes());
+    out.extend_from_slice(inner_tx_2718);
+    Ok(out)
 }
 
 /// Build the full `0x76` VdfProtectedTransaction wire envelope wrapping
@@ -145,6 +240,55 @@ mod tests {
     /// This vector predates the move to `pso-antispam` and is what `pso-vdf`
     /// produced. If it fails, the suite and the node no longer agree, and every
     /// scenario that submits a users-lane transaction is testing a fiction.
+    /// Pins the `0x77` layout against a real built envelope. The tamper
+    /// scenarios index by these constants, so a wrong offset would not fail
+    /// loudly — it would quietly corrupt a different field and the test would
+    /// still "pass" for the wrong reason.
+    #[test]
+    fn pow_envelope_has_correct_layout() {
+        let signer = Address::from([0xab; 20]);
+        let inner = vec![0x02u8, 0xde, 0xad, 0xbe, 0xef];
+        let env = build_pow_envelope(signer, 0, 1, 1, 64, &inner).unwrap();
+
+        assert_eq!(env[0], POW_ENVELOPE_TYPE);
+        assert_eq!(env.len(), POW_ENVELOPE_PREFIX_LEN + inner.len());
+        assert_eq!(env[POW_SCHEME_INDEX], PowScheme::Hashcash.tag());
+        // The 4-byte length prefix sits between the tag and the solution.
+        assert_eq!(
+            u32::from_be_bytes(env[34..38].try_into().unwrap()) as usize,
+            PowScheme::Hashcash.solution_len()
+        );
+        assert_eq!(
+            POW_SOLUTION_RANGE.len(),
+            PowScheme::Hashcash.solution_len(),
+            "the solution range must match the scheme's pinned width"
+        );
+        assert_eq!(
+            u64::from_be_bytes(env[POW_SUBMITTED_BLOCK_RANGE].try_into().unwrap()),
+            1
+        );
+        assert_eq!(&env[POW_ENVELOPE_PREFIX_LEN..], &inner[..]);
+
+        // The solution must actually solve the canonical binding — otherwise
+        // the happy-path scenario would be asserting nothing.
+        let input = derive_vdf_input(signer, 0, 1, 1);
+        assert!(PowScheme::Hashcash.verify(&input, &env[POW_SOLUTION_RANGE], 64));
+    }
+
+    /// `vdf_input` is deliberately absent from the `0x77` wire: both sides
+    /// derive it. If it ever reappeared, the field could disagree with the
+    /// derivation and the binding check would be back to trusting a client.
+    #[test]
+    fn the_pow_envelope_does_not_carry_the_derived_input() {
+        let signer = Address::from([0xab; 20]);
+        let env = build_pow_envelope(signer, 0, 1, 1, 64, &[0x02]).unwrap();
+        let input = derive_vdf_input(signer, 0, 1, 1);
+        assert!(
+            !env.windows(32).any(|w| w == input),
+            "the derived input must not appear on the 0x77 wire"
+        );
+    }
+
     #[test]
     fn vdf_input_matches_canonical_binding() {
         let signer = Address::from([0xcd; 20]);
