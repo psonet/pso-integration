@@ -26,13 +26,10 @@
 //! 4. Submit — pool tries the new `current` (fails), falls back to
 //!    `previous`, accepts.
 
-use crate::data::random_id;
+use crate::data::USERS_LANE_PROBE_DEST;
 use crate::{Scenario, TestEnv};
 use alloy_primitives::Bytes;
-use alloy_sol_types::SolCall;
 use async_trait::async_trait;
-use pso_chain_abi::addresses::SPENDING_RECORD;
-use pso_chain_abi::interfaces::ISpendingRecord;
 
 pub struct S032;
 
@@ -77,15 +74,13 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         ));
     }
 
-    let sr_id = random_id();
-    let call = ISpendingRecord::submitCall { srId: sr_id };
-    let inner = Bytes::from(call.abi_encode());
+    let inner = Bytes::new();
 
     // Compute at `old_t`, which is now the chain's `previous` slot —
     // pool tries current (fails) then falls back to previous (accepts).
     let tx_hash = env
         .new_actor_as_attester_zero()?
-        .submit_tx_with_difficulty(SPENDING_RECORD, inner, Some(old_t), |env_bytes| env_bytes)
+        .submit_tx_with_difficulty(USERS_LANE_PROBE_DEST, inner, Some(old_t), |env_bytes| env_bytes)
         .await
         .map_err(|e| eyre::eyre!("S032: expected previous-T fallback acceptance, got {e}"))?;
 

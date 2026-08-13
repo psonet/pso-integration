@@ -19,13 +19,10 @@
 //! We compute the envelope at `current_difficulty * 3` (way past
 //! the current ∪ previous window) and assert rejection.
 use crate::clients::actor::ActorClientError;
-use crate::data::random_id;
+use crate::data::USERS_LANE_PROBE_DEST;
 use crate::{Scenario, TestEnv};
 use alloy_primitives::Bytes;
-use alloy_sol_types::SolCall;
 use async_trait::async_trait;
-use pso_chain_abi::addresses::SPENDING_RECORD;
-use pso_chain_abi::interfaces::ISpendingRecord;
 pub struct S031;
 #[async_trait]
 impl Scenario for S031 {
@@ -52,12 +49,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         wrong_t,
         "submitting envelope with T outside the current ∪ previous window",
     );
-    let sr_id = random_id();
-    let call = ISpendingRecord::submitCall { srId: sr_id };
-    let inner = Bytes::from(call.abi_encode());
+    let inner = Bytes::new();
     let result = env
         .new_actor_as_attester_zero()?
-        .submit_tx_with_difficulty(SPENDING_RECORD, inner, Some(wrong_t), |env_bytes| env_bytes)
+        .submit_tx_with_difficulty(USERS_LANE_PROBE_DEST, inner, Some(wrong_t), |env_bytes| env_bytes)
         .await;
     match result {
         Err(ActorClientError::PoolRejection(msg)) => {

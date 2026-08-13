@@ -15,13 +15,10 @@
 //! if the envelope were stripped incorrectly and the inner call never ran.
 use core::time::Duration;
 
-use crate::data::random_id;
+use crate::data::USERS_LANE_PROBE_DEST;
 use crate::{Scenario, TestEnv};
 use alloy_primitives::Bytes;
-use alloy_sol_types::SolCall;
 use async_trait::async_trait;
-use pso_chain_abi::addresses::SPENDING_RECORD;
-use pso_chain_abi::interfaces::ISpendingRecord;
 
 pub struct S048;
 
@@ -39,13 +36,11 @@ impl Scenario for S048 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    let sr_id = random_id();
-    let call = ISpendingRecord::submitCall { srId: sr_id };
-    let inner = Bytes::from(call.abi_encode());
+    let inner = Bytes::new();
 
     let actor = env.new_actor_as_attester_zero()?;
     let tx = actor
-        .submit_pow_tx(SPENDING_RECORD, inner, |bytes| bytes)
+        .submit_pow_tx(USERS_LANE_PROBE_DEST, inner, |bytes| bytes)
         .await
         .map_err(|e| eyre::eyre!("S048: 0x77 envelope rejected at admission: {e}"))?;
 

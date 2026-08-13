@@ -4069,7 +4069,7 @@ dependencies = [
 
 [[package]]
 name = "pso-attester-cli"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "alloy-contract",
  "alloy-network",
@@ -4090,7 +4090,7 @@ dependencies = [
 
 [[package]]
 name = "pso-attester-integration"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "alloy-primitives",
  "ark-std 0.6.0",
@@ -4116,7 +4116,7 @@ dependencies = [
 
 [[package]]
 name = "pso-e2e-testsuite"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
@@ -4162,7 +4162,7 @@ dependencies = [
 
 [[package]]
 name = "pso-mobile-integration"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "alloy-primitives",
  "ark-std 0.6.0",
@@ -4235,7 +4235,7 @@ dependencies = [
 
 [[package]]
 name = "pso-wallet-cli"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "alloy-contract",
  "alloy-network",
@@ -4294,7 +4294,7 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-cli"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",

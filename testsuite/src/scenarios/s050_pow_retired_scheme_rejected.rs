@@ -14,14 +14,11 @@
 //! format. This is the `0x77` format carrying the retired tag, and no operator
 //! setting should make it verifiable.
 use crate::clients::actor::ActorClientError;
-use crate::data::random_id;
+use crate::data::USERS_LANE_PROBE_DEST;
 use crate::{Scenario, TestEnv};
 use alloy_primitives::Bytes;
-use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 use pso_antispam::PowScheme;
-use pso_chain_abi::addresses::SPENDING_RECORD;
-use pso_chain_abi::interfaces::ISpendingRecord;
 
 pub struct S050;
 
@@ -39,16 +36,14 @@ impl Scenario for S050 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    let sr_id = random_id();
-    let call = ISpendingRecord::submitCall { srId: sr_id };
-    let inner = Bytes::from(call.abi_encode());
+    let inner = Bytes::new();
 
     // The builder cannot solve a retired scheme, so it emits a correctly
     // shaped, correctly tagged, all-zero solution — which is exactly what an
     // attacker trying this would have.
     let result = env
         .new_actor_as_attester_zero()?
-        .submit_pow_tx_with_scheme(PowScheme::MinRoot, SPENDING_RECORD, inner, |bytes| bytes)
+        .submit_pow_tx_with_scheme(PowScheme::MinRoot, USERS_LANE_PROBE_DEST, inner, |bytes| bytes)
         .await;
 
     match result {
