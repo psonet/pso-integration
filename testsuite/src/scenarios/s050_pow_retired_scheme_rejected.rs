@@ -43,7 +43,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // attacker trying this would have.
     let result = env
         .new_actor_as_attester_zero()?
-        .submit_pow_tx_with_scheme(PowScheme::MinRoot, USERS_LANE_PROBE_DEST, inner, |bytes| bytes)
+        .submit_pow_tx_with_scheme(PowScheme::MinRoot, USERS_LANE_PROBE_DEST, inner, |bytes| {
+            bytes
+        })
         .await;
 
     match result {

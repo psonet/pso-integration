@@ -80,7 +80,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // pool tries current (fails) then falls back to previous (accepts).
     let tx_hash = env
         .new_actor_as_attester_zero()?
-        .submit_tx_with_difficulty(USERS_LANE_PROBE_DEST, inner, Some(old_t), |env_bytes| env_bytes)
+        .submit_tx_with_difficulty(USERS_LANE_PROBE_DEST, inner, Some(old_t), |env_bytes| {
+            env_bytes
+        })
         .await
         .map_err(|e| eyre::eyre!("S032: expected previous-T fallback acceptance, got {e}"))?;
 
