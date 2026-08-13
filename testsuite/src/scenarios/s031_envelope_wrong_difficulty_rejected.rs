@@ -52,7 +52,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let inner = Bytes::new();
     let result = env
         .new_actor_as_attester_zero()?
-        .submit_tx_with_difficulty(USERS_LANE_PROBE_DEST, inner, Some(wrong_t), |env_bytes| env_bytes)
+        .submit_tx_with_difficulty(USERS_LANE_PROBE_DEST, inner, Some(wrong_t), |env_bytes| {
+            env_bytes
+        })
         .await;
     match result {
         Err(ActorClientError::PoolRejection(msg)) => {
