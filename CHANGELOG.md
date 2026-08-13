@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.15.1 - 2026-08-13
+#### Bug Fixes
+- (**testsuite**) point anti-spam envelope scenarios at a neutral destination - (9ddb2f9) - Anton Velichko
+#### Style
+- cargo fmt the reworked envelope scenarios - (c4ca02d) - Anton Velichko
+
+- - -
+
 ## v0.15.0 - 2026-08-10
 #### Features
 - (**mobile**) expose the anti-spam PoW helpers over uniffi (#36) - (3e3dfe1) - Velichko Anton
