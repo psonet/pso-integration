@@ -271,6 +271,9 @@ async fn handle_mint(
     let mint_args = MintSpendingUnitArgs {
         su_id,
         derived_owner: FixedBytes::from(derived_owner_bytes),
+        // MUST equal the FFI attester's binding address — the su_hash folded
+        // it, and the chain stores the calldata value verbatim.
+        attester_address: attester_client.address(),
         referrer_address: args.referrer_address,
         currency: args.currency,
         worldwide_day: args.worldwide_day,

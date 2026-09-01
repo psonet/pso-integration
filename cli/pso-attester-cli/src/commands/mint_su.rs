@@ -94,6 +94,9 @@ pub async fn run(client: &AttesterRpc, args: Args) -> Result<()> {
         .mint_spending_unit(
             su_id,
             derived_owner,
+            // The FFI attester above is bound to the same address, so the
+            // su_hash it folded matches what the chain stores.
+            client.address(),
             referrer,
             args.currency,
             args.worldwide_day,
