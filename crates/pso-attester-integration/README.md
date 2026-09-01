@@ -17,7 +17,7 @@ adjusted records without re-deriving the identity:
   for the wallet's `consent_pk` (32-byte compressed Grumpkin point): derive the
   owner + the wallet's reconstruction material, draw a fresh NFT id. `seed` is
   ≥ 32 bytes of caller entropy (hashed); vary it per issuance.
-- `issue_with_header(header, worldwide_day, currency, base, atto, referrer_addr, spending_records, amendment_records) -> IssuedSpendingUnit`
+- `issue_with_header(header, worldwide_day, currency, base, atto, referrer_addr, reward_addr, spending_records, amendment_records) -> IssuedSpendingUnit`
   — assemble the on-chain `SpendingUnit` + the wallet's `IssuanceReport` and hash
   it. Re-callable with the **same** header but adjusted `sr`/`ar` (record
   fingerprints, each a canonical 32-byte field element): same `su_id` /
@@ -41,7 +41,7 @@ NativeLoader.ensureLoaded()
 val attester = Attester(addressBytes)               // 20 bytes
 val header   = attester.generateNftHeader(seed, consentPk)
 val issued   = attester.issueWithHeader(
-    header, 20250101u, 978.toUShort(), 100uL, 0uL, ByteArray(20), listOf(srFp), listOf(arFp),
+    header, 20250101u, 978.toUShort(), 100uL, 0uL, ByteArray(20), ByteArray(20), listOf(srFp), listOf(arFp),
 )
 ```
 
@@ -53,7 +53,7 @@ from pso_attester_integration import Attester
 attester = Attester(bytes.fromhex("ab" * 20))
 header   = attester.generate_nft_header(seed, consent_pk)
 issued   = attester.issue_with_header(header, 20250101, 978, 100, 0,
-                                      bytes(20), [sr_fp], [ar_fp])
+                                      bytes(20), bytes(20), [sr_fp], [ar_fp])
 ```
 
 ## Build

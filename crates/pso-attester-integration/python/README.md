@@ -34,6 +34,7 @@ issued = attester.issue_with_header(
     base=100,
     atto=0,
     referrer_addr=bytes(20),
+    reward_addr=bytes(20),   # zero ⇒ rewards fall back to the attester
     spending_records=[sr_fp_1, sr_fp_2],   # 32-byte canonical field elements
     amendment_records=[ar_fp_1],
 )

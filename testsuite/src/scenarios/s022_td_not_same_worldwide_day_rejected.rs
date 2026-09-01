@@ -103,6 +103,7 @@ async fn mint_su_with(
         .mint_su(SuMintArgs {
             consent_pk,
             referrer_address: alloy_primitives::Address::ZERO,
+            reward_address: alloy_primitives::Address::ZERO,
             currency,
             worldwide_day,
             amount_base: base,

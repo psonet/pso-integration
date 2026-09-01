@@ -38,6 +38,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         suId: su_id,
         derivedOwner: FixedBytes::from([0u8; 32]),
         referrerAddress: Address::ZERO,
+        rewardAddress: Address::ZERO,
         currency: shape.currency,
         worldwideDay: shape.worldwide_day,
         amountBase: shape.amount_base,

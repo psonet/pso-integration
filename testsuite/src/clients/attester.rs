@@ -37,9 +37,12 @@ pub struct MintSpendingUnitArgs {
     /// means "no referrer". TributeDraft aggregation later collects the
     /// deduplicated referrer set from the SUs.
     pub referrer_address: Address,
+    /// Stamped as the SU's `rewardAddress`; `Address::ZERO` ⇒ rewards
+    /// fall back to the attester.
+    pub reward_address: Address,
     /// ISO 4217 numeric currency code.
     pub currency: u16,
-    /// Worldwide-day count (days since 2021-01-01) — `uint32` slot.
+    /// Worldwide day (compact YYYYMMDD) — `uint32` slot.
     pub worldwide_day: u32,
     /// Amount integer part.
     pub amount_base: u64,
@@ -146,6 +149,7 @@ impl AttesterClient {
                 // `referrerAddress` — the wallet self-address from the consent
                 // session (`Address::ZERO` if none).
                 args.referrer_address,
+                args.reward_address,
                 args.currency,
                 args.worldwide_day,
                 args.amount_base,

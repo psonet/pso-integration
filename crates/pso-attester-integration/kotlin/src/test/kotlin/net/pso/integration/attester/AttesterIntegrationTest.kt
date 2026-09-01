@@ -72,7 +72,7 @@ class AttesterIntegrationTest {
 
         val issued = attester.issueWithHeader(
             header, 20_250_101u, 978.toUShort(), 100uL, 0uL,
-            ByteArray(20), listOf(fp(1), fp(2)), listOf(fp(3)),
+            ByteArray(20), ByteArray(20), listOf(fp(1), fp(2)), listOf(fp(3)),
         )
         // The on-chain SU mirrors the inputs + the header identity.
         assertContentEquals(header.nftId, issued.spendingUnit.suId)
@@ -87,7 +87,7 @@ class AttesterIntegrationTest {
         // nft_hash changes (sr/ar fold in).
         val reissued = attester.issueWithHeader(
             header, 20_250_101u, 978.toUShort(), 100uL, 0uL,
-            ByteArray(20), listOf(fp(4)), emptyList(),
+            ByteArray(20), ByteArray(20), listOf(fp(4)), emptyList(),
         )
         assertContentEquals(issued.spendingUnit.suId, reissued.spendingUnit.suId)
         assertContentEquals(issued.report.derivedOwner, reissued.report.derivedOwner)
@@ -104,7 +104,7 @@ class AttesterIntegrationTest {
         assertFailsWith<AttesterException> {
             attester.issueWithHeader(
                 header, 20_250_101u, 978.toUShort(), 100uL, 0uL,
-                ByteArray(20), listOf(ByteArray(32) { 0xFF.toByte() }), emptyList(),
+                ByteArray(20), ByteArray(20), listOf(ByteArray(32) { 0xFF.toByte() }), emptyList(),
             )
         }
     }

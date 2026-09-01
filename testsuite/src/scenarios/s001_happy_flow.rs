@@ -176,6 +176,7 @@ pub(crate) async fn submit_full_tribute_draft(env: &TestEnv) -> eyre::Result<TdS
             consent_pk: consent_pk.clone(),
             // No wallet EVM address in this harness ⇒ no referrer.
             referrer_address: Address::ZERO,
+            reward_address: Address::ZERO,
             currency: shared_shape.currency,
             worldwide_day: shared_shape.worldwide_day,
             amount_base: 100 + (i as u64 * 10),

@@ -55,6 +55,9 @@ pub struct SuMintArgs {
     /// every SU minted in this consent session as `referrerAddress`.
     /// `Address::ZERO` ⇒ no referrer.
     pub referrer_address: Address,
+    /// Stamped as the SU's `rewardAddress`; `Address::ZERO` ⇒ rewards
+    /// fall back to the attester.
+    pub reward_address: Address,
     /// ISO 4217 numeric currency code.
     pub currency: u16,
     /// Worldwide-day count (compact YYYYMMDD).
@@ -199,6 +202,7 @@ async fn handle_mint(
     // runtime can isolate.
     let consent_pk = args.consent_pk.clone();
     let referrer = args.referrer_address;
+    let reward = args.reward_address;
     let currency = args.currency;
     let worldwide_day = args.worldwide_day;
     let amount_base = args.amount_base;
@@ -244,6 +248,7 @@ async fn handle_mint(
             amount_base,
             amount_atto as u64,
             referrer.to_vec(),
+            reward.to_vec(),
             sr_fps,
             ar_fps,
         )
@@ -272,6 +277,7 @@ async fn handle_mint(
         su_id,
         derived_owner: FixedBytes::from(derived_owner_bytes),
         referrer_address: args.referrer_address,
+        reward_address: args.reward_address,
         currency: args.currency,
         worldwide_day: args.worldwide_day,
         amount_base: args.amount_base,
@@ -344,6 +350,7 @@ mod tests {
                 978,
                 100,
                 0,
+                vec![0u8; 20],
                 vec![0u8; 20],
                 vec![[0x01u8; 32].to_vec()],
                 vec![],

@@ -106,6 +106,7 @@ async fn mint_one_su(env: &TestEnv) -> eyre::Result<U256> {
     let args = SuMintArgs {
         consent_pk,
         referrer_address: alloy_primitives::Address::ZERO,
+        reward_address: alloy_primitives::Address::ZERO,
         currency: shape.currency,
         worldwide_day: shape.worldwide_day,
         amount_base: shape.amount_base,

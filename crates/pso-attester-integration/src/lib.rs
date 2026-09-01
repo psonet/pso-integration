@@ -48,6 +48,9 @@ pub struct SpendingUnit {
     pub attester: Vec<u8>,
     /// Referrer address (20 bytes).
     pub referrer: Vec<u8>,
+    /// Reward allocation address (20 bytes). All-zero ⇒ rewards fall
+    /// back to the attester.
+    pub reward: Vec<u8>,
     /// Worldwide day (YYYYMMDD).
     pub worldwide_day: u32,
     /// ISO 4217 currency code.
@@ -228,9 +231,11 @@ impl Attester {
     /// Assemble the full SpendingUnit + report from a previously-generated
     /// `header` and the body fields. Re-callable with adjusted `sr`/`ar`
     /// (e.g. after a reverted publish) reusing the same `header` — no consent
-    /// box, no new identity. `referrer_addr` is 20 bytes; `spending_records` /
-    /// `amendment_records` are record fingerprints, each a canonical field
-    /// element (32-byte big-endian `Fr`) that folds into `nft_hash`.
+    /// box, no new identity. `referrer_addr` / `reward_addr` are 20 bytes
+    /// (`reward_addr` all-zero ⇒ rewards fall back to the attester);
+    /// `spending_records` / `amendment_records` are record fingerprints, each
+    /// a canonical field element (32-byte big-endian `Fr`) that folds into
+    /// `nft_hash`.
     #[allow(clippy::too_many_arguments)]
     pub fn issue_with_header(
         &self,
@@ -240,12 +245,14 @@ impl Attester {
         base: u64,
         atto: u64,
         referrer_addr: Vec<u8>,
+        reward_addr: Vec<u8>,
         spending_records: Vec<Vec<u8>>,
         amendment_records: Vec<Vec<u8>>,
     ) -> Result<IssuedSpendingUnit, AttesterError> {
         let su_id = arr::<32>(&header.nft_id, "nft_id")?;
         let derived_owner = arr::<32>(&header.derived_owner, "derived_owner")?;
         let referrer = arr::<20>(&referrer_addr, "referrer_addr")?;
+        let reward = arr::<20>(&reward_addr, "reward_addr")?;
         // Entity `Vec<T>` fields hash as sorted sets (pso-protocol 0.9): sort the
         // record fingerprints ascending by field value + dedup. `sr[i]` IS the
         // 32-byte fingerprint of `spending_records[i]` (see `fingerprints`), so
@@ -274,6 +281,7 @@ impl Attester {
             derived_owner: B256::new(derived_owner),
             attester: Address::from(self.address),
             referrer: Address::from(referrer),
+            reward: Address::from(reward),
             worldwide_day: U64::from(worldwide_day),
             currency: U16::from(currency),
             base: U64::from(base),
@@ -288,6 +296,7 @@ impl Attester {
             derived_owner: header.derived_owner.clone(),
             attester: self.address.to_vec(),
             referrer: referrer.to_vec(),
+            reward: reward.to_vec(),
             worldwide_day,
             currency,
             base,
@@ -402,6 +411,7 @@ mod tests {
                 100,
                 0,
                 vec![0u8; 20],
+                vec![0u8; 20],
                 vec![fp(1), fp(2)],
                 vec![fp(3)],
             )
@@ -411,6 +421,7 @@ mod tests {
         assert_eq!(issued.spending_unit.su_id, header.nft_id);
         assert_eq!(issued.spending_unit.derived_owner, header.derived_owner);
         assert_eq!(issued.spending_unit.attester, vec![0xab; 20]);
+        assert_eq!(issued.spending_unit.reward, vec![0u8; 20]);
         assert_eq!(issued.spending_unit.currency, 978);
         assert_eq!(issued.report.derived_owner, header.derived_owner);
         assert_eq!(issued.report.nft_hash.len(), 32);
@@ -426,6 +437,7 @@ mod tests {
                 100,
                 0,
                 vec![0u8; 20],
+                vec![0u8; 20],
                 vec![fp(4)],
                 vec![],
             )
@@ -433,6 +445,47 @@ mod tests {
         assert_eq!(reissued.spending_unit.su_id, issued.spending_unit.su_id);
         assert_eq!(reissued.report.derived_owner, issued.report.derived_owner);
         assert_ne!(reissued.report.nft_hash, issued.report.nft_hash);
+    }
+
+    #[test]
+    fn reward_address_is_carried_and_hash_relevant() {
+        let att = Attester::new(vec![0xab; 20]).unwrap();
+        let header = att
+            .generate_nft_header(seed(4), valid_consent_pk())
+            .unwrap();
+
+        let with_reward = att
+            .issue_with_header(
+                header.clone(),
+                20_250_101,
+                978,
+                100,
+                0,
+                vec![0u8; 20],
+                vec![0x9c; 20],
+                vec![fp(1)],
+                vec![],
+            )
+            .unwrap();
+        assert_eq!(with_reward.spending_unit.reward, vec![0x9c; 20]);
+
+        let without_reward = att
+            .issue_with_header(
+                header,
+                20_250_101,
+                978,
+                100,
+                0,
+                vec![0u8; 20],
+                vec![0u8; 20],
+                vec![fp(1)],
+                vec![],
+            )
+            .unwrap();
+        assert_ne!(
+            with_reward.report.nft_hash, without_reward.report.nft_hash,
+            "reward address must fold into nft_hash"
+        );
     }
 
     #[test]
@@ -449,6 +502,7 @@ mod tests {
                 978,
                 100,
                 0,
+                vec![0u8; 20],
                 vec![0u8; 20],
                 vec![vec![0xff; 32]],
                 vec![],

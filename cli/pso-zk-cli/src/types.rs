@@ -25,6 +25,10 @@ pub struct SpendingUnitJson {
     pub attester: String,
     /// Referrer address (20-byte hex).
     pub referrer: String,
+    /// Reward address (20-byte hex); all-zero ⇒ rewards fall back to the
+    /// attester. Defaulted so pre-existing NFT files still parse.
+    #[serde(default = "zero_address_hex")]
+    pub reward: String,
     /// Worldwide day (compact YYYYMMDD).
     pub worldwide_day: u64,
     /// ISO 4217 currency code.
@@ -47,6 +51,7 @@ impl SpendingUnitJson {
             derived_owner: b256(&self.derived_owner)?,
             attester: address(&self.attester)?,
             referrer: address(&self.referrer)?,
+            reward: address(&self.reward)?,
             worldwide_day: U64::from(self.worldwide_day),
             currency: U16::from(self.currency),
             base: U64::from(self.base),
@@ -140,6 +145,10 @@ pub struct SerializableProof {
 }
 
 // -- Helpers --
+
+fn zero_address_hex() -> String {
+    format!("0x{}", "00".repeat(20))
+}
 
 fn b256(s: &str) -> Result<B256> {
     let bytes =

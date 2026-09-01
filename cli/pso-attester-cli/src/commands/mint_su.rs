@@ -27,6 +27,10 @@ pub struct Args {
     /// address (no referrer).
     #[arg(long, default_value = "0x0000000000000000000000000000000000000000")]
     pub referrer: String,
+    /// Reward allocation address stamped on the SU (20-byte hex `0x...`);
+    /// the zero default routes rewards to the attester.
+    #[arg(long, default_value = "0x0000000000000000000000000000000000000000")]
+    pub reward_address: String,
     /// ISO 4217 currency numeric code (e.g. 978 = EUR).
     #[arg(long)]
     pub currency: u16,
@@ -52,6 +56,7 @@ pub async fn run(client: &AttesterRpc, args: Args) -> Result<()> {
     let consent_pk = super::strip_hex(&args.consent_pk)?;
     let seed = super::strip_hex(&args.seed)?;
     let referrer = super::parse_address(&args.referrer)?;
+    let reward = super::parse_address(&args.reward_address)?;
     let sr_ids = super::parse_uint256_list(&args.sr_ids)?;
     let ar_ids = super::parse_uint256_list(&args.amendment_sr_ids)?;
 
@@ -81,6 +86,7 @@ pub async fn run(client: &AttesterRpc, args: Args) -> Result<()> {
             args.amount_base,
             args.amount_atto,
             referrer.to_vec(),
+            reward.to_vec(),
             sr_fps,
             ar_fps,
         )
@@ -95,6 +101,7 @@ pub async fn run(client: &AttesterRpc, args: Args) -> Result<()> {
             su_id,
             derived_owner,
             referrer,
+            reward,
             args.currency,
             args.worldwide_day,
             args.amount_base,
