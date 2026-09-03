@@ -4103,8 +4103,9 @@ dependencies = [
 
 [[package]]
 name = "pso-chain-abi"
-version = "0.23.0"
-source = "git+ssh://git@github.com/psonet/pso-chain-next.git?branch=feat%2Fsu-reward-address#fb53f372dae13fd39ca806784ef757fe319a27b4"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8138bc831c3e7900b605aa9f1a89b0a93d87f2126f26287692ddceb3e113ab6b"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
