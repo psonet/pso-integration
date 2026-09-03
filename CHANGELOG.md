@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.16.0 - 2026-09-03
+#### Features
+- (**testsuite**) mint SpendingUnits via submit2 with an explicit attester address - (a153332) - Eduard Ruzsa
+
+- - -
+
 ## v0.15.1 - 2026-08-13
 #### Bug Fixes
 - (**testsuite**) point anti-spam envelope scenarios at a neutral destination - (9ddb2f9) - Anton Velichko
