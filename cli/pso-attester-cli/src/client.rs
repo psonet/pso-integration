@@ -66,12 +66,13 @@ impl AttesterRpc {
         Ok(*pending.tx_hash())
     }
 
-    /// `SpendingUnit.submit(...)`.
+    /// `SpendingUnit.submit2(...)`.
     #[allow(clippy::too_many_arguments)]
     pub async fn mint_spending_unit(
         &self,
         su_id: U256,
         derived_owner: alloy_primitives::FixedBytes<32>,
+        attester: Address,
         referrer: Address,
         currency: u16,
         worldwide_day: u32,
@@ -82,9 +83,10 @@ impl AttesterRpc {
     ) -> Result<TxHash> {
         let inst = ISpendingUnit::new(SPENDING_UNIT, self.write_provider());
         let pending = inst
-            .submit(
+            .submit2(
                 su_id,
                 derived_owner,
+                attester,
                 referrer,
                 currency,
                 worldwide_day,
