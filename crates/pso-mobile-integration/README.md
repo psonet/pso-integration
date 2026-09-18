@@ -23,6 +23,15 @@ Ships as an **iOS staticlib + Android cdylib**.
     `l2_chain_id` from the wallet) the aggregation proof commits to; feed the SAME
     value to each `witness`. Both chain-id slots hold the wallet's own L2,
     because this proof is verified on the chain that produced it.
+  - `compute_binding_for_host(sender_address, tribute_draft_id, host_chain_id)
+    -> bytes` — the same formula for a **foreign** verifying chain:
+    (`Hash([DOMAIN, sender, id_lo, id_hi, host_chain_id, l2_chain_id])`). The
+    binding takes two chain ids and they differ whenever a proof leaves this
+    L2, so this is the general form; `compute_binding` is this call with the
+    wallet's own id as the host. Use it to derive the L1 binding up front
+    rather than reading it back out of `tribute_ownership_witness`, which folds
+    the same number internally. `sender_address` is the submitter's address
+    **on the host chain**.
   - `generate_consent(seed) -> Consent` / `load_consent(secret) -> Consent`
   - `generate_nft_header(seed) -> NftHeader` — a tribute draft's own NFT key.
   - `prove_ownership(seed, sender_address, tribute_draft_id, witnesses) -> AggregationProofResult`

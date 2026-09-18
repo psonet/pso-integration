@@ -401,6 +401,40 @@ impl Wallet {
         )?))
     }
 
+    /// Compute a submission binding for a **foreign** verifying chain:
+    /// `Hash([DOMAIN, sender, tribute_draft_id_lo, _hi, host_chain_id,
+    /// l2_chain_id])`, where `l2_chain_id` is this wallet's own.
+    ///
+    /// The binding takes two chain ids — the chain that verifies the proof and
+    /// the chain that produced the draft — and they differ whenever a proof
+    /// leaves this L2. [`Wallet::compute_binding`] covers only the case where
+    /// they are equal, so without this the exported surface could not express
+    /// the formula it implements.
+    ///
+    /// This is the value the L1 recomputes from its own copy of
+    /// `(sender, draft_id, host_chain_id, l2_chain_id)` and compares against
+    /// public word 2, so a caller can derive it up front rather than reading it
+    /// back out of [`Wallet::tribute_ownership_witness`], which folds the same
+    /// number internally. `sender_address` is the 20-byte EVM address of the
+    /// submitter **on the host chain**, `tribute_draft_id` the 32-byte
+    /// big-endian id; returns the 32-byte big-endian field element.
+    ///
+    /// Passing this wallet's own L2 id as `host_chain_id` yields exactly
+    /// [`Wallet::compute_binding`].
+    pub fn compute_binding_for_host(
+        &self,
+        sender_address: Vec<u8>,
+        tribute_draft_id: Vec<u8>,
+        host_chain_id: u64,
+    ) -> Result<Vec<u8>, MobileError> {
+        Ok(PsoV1::field_to_be_bytes(&Self::binding_fr(
+            &sender_address,
+            &tribute_draft_id,
+            host_chain_id,
+            self.l2_chain_id,
+        )?))
+    }
+
     /// Derive this wallet's consent keypair (deterministic from `seed`).
     pub fn generate_consent(&self, seed: Vec<u8>) -> Result<Arc<Consent>, MobileError> {
         let mut rng = rng_from(&seed, DOMAIN_CONSENT)?;
@@ -1256,5 +1290,69 @@ mod vdf_tests {
         assert!(w.is_vdf_block_valid(68, 100, 32));
         assert!(!w.is_vdf_block_valid(67, 100, 32));
         assert!(!w.is_vdf_block_valid(101, 100, 32));
+    }
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+
+    const L2: u64 = 19_280_501;
+    const L1: u64 = 424_242;
+
+    fn sender() -> Vec<u8> {
+        vec![0x11; 20]
+    }
+
+    fn draft_id() -> Vec<u8> {
+        (0u8..32).collect()
+    }
+
+    /// The two exported entry points must not drift: the same-chain one is the
+    /// host-explicit one with this wallet's own id passed as the host, and the
+    /// FFI would otherwise let them diverge silently.
+    #[test]
+    fn same_chain_is_the_host_explicit_call_with_our_own_id() {
+        let w = Wallet::new(L2);
+        assert_eq!(
+            w.compute_binding(sender(), draft_id()).unwrap(),
+            w.compute_binding_for_host(sender(), draft_id(), L2)
+                .unwrap(),
+        );
+    }
+
+    /// The host id occupies a distinct position from the L2 id. Were either
+    /// folded in the other's place, or one dropped, a foreign host would
+    /// produce the same digest as the local one.
+    #[test]
+    fn a_foreign_host_binds_differently() {
+        let w = Wallet::new(L2);
+        assert_ne!(
+            w.compute_binding_for_host(sender(), draft_id(), L1)
+                .unwrap(),
+            w.compute_binding(sender(), draft_id()).unwrap(),
+        );
+        // And the two ids are not interchangeable.
+        let swapped = Wallet::new(L1);
+        assert_ne!(
+            w.compute_binding_for_host(sender(), draft_id(), L1)
+                .unwrap(),
+            swapped
+                .compute_binding_for_host(sender(), draft_id(), L2)
+                .unwrap(),
+        );
+    }
+
+    /// What a caller derives up front must equal what the witness builder folds
+    /// internally, or the L1 rejects a proof the caller believed it had built.
+    #[test]
+    fn the_exported_value_matches_the_witness_builder() {
+        let w = Wallet::new(L2);
+        let expected = w
+            .compute_binding_for_host(sender(), draft_id(), L1)
+            .unwrap();
+        let internal =
+            PsoV1::field_to_be_bytes(&Wallet::binding_fr(&sender(), &draft_id(), L1, L2).unwrap());
+        assert_eq!(expected, internal);
     }
 }
