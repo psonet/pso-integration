@@ -70,14 +70,21 @@ pub enum ProofCommands {
         output: PathBuf,
 
         /// Redeemer EOA as 20-byte hex (`0x...`). The proof's binding
-        /// commits to `(redeemer, commitmentId, chainId)` so an L1
-        /// verifier can pin redemption to this address.
+        /// commits to `(redeemer, commitmentId, hostChainId, l2ChainId)`
+        /// so an L1 verifier can pin redemption to this address.
         #[arg(long)]
         redeemer: String,
 
-        /// Chain id for the binding.
+        /// Chain id of the chain that verifies the proof.
         #[arg(long)]
         chain_id: u64,
+
+        /// Chain id of the L2 that produced the draft. Folded alongside
+        /// `--chain-id` so a proof made for one L2 does not verify as
+        /// another's. Defaults to `--chain-id`, which is the right value
+        /// when the proof is redeemed on the chain that produced it.
+        #[arg(long)]
+        l2_chain_id: Option<u64>,
     },
     /// Verify a previously generated ownership proof
     Verify {
@@ -85,11 +92,11 @@ pub enum ProofCommands {
         #[arg(short, long)]
         proof: PathBuf,
     },
-    /// Generate an SU-ownership aggregation proof for TributeDraft
-    /// submission. Reads an input JSON describing the wallet's
-    /// secret key, the aggregated SU slots, and the binding-hash
-    /// parameters (sender, tribute_draft_id, chain_id), then writes
-    /// the canonical proof bytes to the output file.
+    /// Not available here: always errors. Flat-aggregation proving runs
+    /// through `pso-wallet-cli aggregate`, backed by the wallet's
+    /// `prove_ownership`, which owns the per-SU witness assembly and both
+    /// chain ids the binding folds. Kept as a subcommand so the error
+    /// names the replacement rather than clap reporting an unknown one.
     Aggregate {
         /// Path to the aggregation input JSON. See
         /// `commands::aggregate::AggregationInput` for the schema.

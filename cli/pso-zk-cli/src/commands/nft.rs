@@ -101,7 +101,7 @@ pub fn handle_nft_generate(nft_type: NftType, output: &Path) -> Result<()> {
                 worldwide_day: U64::from(20_250_101u64),
                 currency: U16::from(978u16),
                 base: U64::from(250u64),
-                atto: U64::from(0u64),
+                micro: U64::from(0u64),
                 su_ids: vec![field_b256(&mut rng)],
             };
             let nft_hash = Entity::<PsoV1>::entity_hash(&entity).context("entity_hash")?;
@@ -111,7 +111,7 @@ pub fn handle_nft_generate(nft_type: NftType, output: &Path) -> Result<()> {
                 worldwide_day: entity.worldwide_day.to::<u64>(),
                 currency: entity.currency.to::<u16>(),
                 base: entity.base.to::<u64>(),
-                atto: entity.atto.to::<u64>(),
+                micro: entity.micro.to::<u64>(),
                 su_ids: entity.su_ids.iter().map(hex_b256).collect(),
             };
             let out = build_output(

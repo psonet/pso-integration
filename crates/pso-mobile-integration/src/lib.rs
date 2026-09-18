@@ -379,8 +379,10 @@ impl Wallet {
     }
 
     /// Compute the **L2** submission binding the aggregation/ownership proof
-    /// commits to: `Hash([DOMAIN, sender, tribute_draft_id_lo, _hi, l2_chain_id])`
-    /// (mirrors `PsoV1::binding`), using the wallet's L2 chain id. Derived from
+    /// commits to: `Hash([DOMAIN, sender, tribute_draft_id_lo, _hi,
+    /// l2_chain_id, l2_chain_id])` (mirrors `PsoV1::binding`). This proof is
+    /// verified on this same L2, so the host and L2 ids are one value and the
+    /// wallet's own id fills both. Derived from
     /// the tx submitter (the per-tx opaque key's EOA) + the tribute-draft id; the
     /// SAME value must reach every [`Consent::witness`] call so the witnesses
     /// match the binding [`Wallet::prove_ownership`] recomputes. `sender_address`
@@ -394,6 +396,41 @@ impl Wallet {
         Ok(PsoV1::field_to_be_bytes(&Self::binding_fr(
             &sender_address,
             &tribute_draft_id,
+            self.l2_chain_id,
+            self.l2_chain_id,
+        )?))
+    }
+
+    /// Compute a submission binding for a **foreign** verifying chain:
+    /// `Hash([DOMAIN, sender, tribute_draft_id_lo, _hi, host_chain_id,
+    /// l2_chain_id])`, where `l2_chain_id` is this wallet's own.
+    ///
+    /// The binding takes two chain ids — the chain that verifies the proof and
+    /// the chain that produced the draft — and they differ whenever a proof
+    /// leaves this L2. [`Wallet::compute_binding`] covers only the case where
+    /// they are equal, so without this the exported surface could not express
+    /// the formula it implements.
+    ///
+    /// This is the value the L1 recomputes from its own copy of
+    /// `(sender, draft_id, host_chain_id, l2_chain_id)` and compares against
+    /// public word 2, so a caller can derive it up front rather than reading it
+    /// back out of [`Wallet::tribute_ownership_witness`], which folds the same
+    /// number internally. `sender_address` is the 20-byte EVM address of the
+    /// submitter **on the host chain**, `tribute_draft_id` the 32-byte
+    /// big-endian id; returns the 32-byte big-endian field element.
+    ///
+    /// Passing this wallet's own L2 id as `host_chain_id` yields exactly
+    /// [`Wallet::compute_binding`].
+    pub fn compute_binding_for_host(
+        &self,
+        sender_address: Vec<u8>,
+        tribute_draft_id: Vec<u8>,
+        host_chain_id: u64,
+    ) -> Result<Vec<u8>, MobileError> {
+        Ok(PsoV1::field_to_be_bytes(&Self::binding_fr(
+            &sender_address,
+            &tribute_draft_id,
+            host_chain_id,
             self.l2_chain_id,
         )?))
     }
@@ -454,7 +491,14 @@ impl Wallet {
                 detail: "no witnesses".into(),
             });
         }
-        let binding = Self::binding_fr(&sender_address, &tribute_draft_id, self.l2_chain_id)?;
+        // Verified on this L2, so both ids are its own — the same value
+        // `compute_binding` produced for the witnesses being aggregated.
+        let binding = Self::binding_fr(
+            &sender_address,
+            &tribute_draft_id,
+            self.l2_chain_id,
+            self.l2_chain_id,
+        )?;
         let binding_bytes = PsoV1::field_to_be_bytes(&binding);
 
         let mut slots: Vec<Slot> = Vec::with_capacity(witnesses.len());
@@ -511,6 +555,12 @@ impl Wallet {
     /// commits to the L1 submitter + L1 chain id (distinct from the wallet's L2
     /// identity). `tribute_draft_id` is `nft_header.id`. The remaining args are
     /// the TD body fields. Pair the result with [`Wallet::prove_full`].
+    ///
+    /// `micro` is the 1e-6 remainder of the amount. Spending units carry atto
+    /// (1e-18) and keep it; a tribute draft carries micro, and the chain folds
+    /// this exact number into `nft_hash`. Pass the draft's own value, already
+    /// rounded — this does not convert, and a value still denominated in atto
+    /// produces a hash the chain will not agree with.
     #[allow(clippy::too_many_arguments)]
     pub fn tribute_ownership_witness(
         &self,
@@ -518,7 +568,7 @@ impl Wallet {
         worldwide_day: u64,
         currency: u16,
         base: u64,
-        atto: u64,
+        micro: u64,
         su_ids: Vec<Vec<u8>>,
         l1_sender_address: Vec<u8>,
         l1_chain_id: u64,
@@ -530,11 +580,19 @@ impl Wallet {
             worldwide_day,
             currency,
             base,
-            atto,
+            micro,
             &su_ids,
         )?;
-        // L1 binding the TD's ownership signature commits to.
-        let binding = Self::binding_fr(&l1_sender_address, &nft_header.id, l1_chain_id)?;
+        // L1 binding the TD's ownership signature commits to. Both chain ids
+        // are folded: the L1 that verifies, and this wallet's L2 that produced
+        // the draft. Without the second, a proof built here would verify
+        // unchanged as another L2's under the same registered circuit.
+        let binding = Self::binding_fr(
+            &l1_sender_address,
+            &nft_header.id,
+            l1_chain_id,
+            self.l2_chain_id,
+        )?;
         // Reconstruct the signer from the header's OWN key (no key generation,
         // no seed). The signing nonce is derived deterministically below.
         let sk = PsoV1::secret_from_bytes(&arr::<32>(&nft_header.nft_sk, "nft_sk")?)?;
@@ -863,18 +921,29 @@ impl Wallet {
 // exports every method, and `Fr` / `&[u8]` aren't the FFI shapes we want here).
 impl Wallet {
     /// The submission binding as a field element: `PsoV1::binding(sender,
-    /// commitment_id, chain_id)`. `chain_id` is passed explicitly — the wallet's
-    /// L2 id for the on-device aggregation ([`Wallet::compute_binding`] /
-    /// [`Wallet::prove_ownership`]), or an L1 id for the full proof
-    /// ([`Wallet::tribute_ownership_witness`]).
+    /// commitment_id, host_chain_id, l2_chain_id)`.
+    ///
+    /// Both ids are passed explicitly. `host_chain_id` is whichever chain
+    /// verifies the proof: this wallet's own L2 for the on-device aggregation
+    /// ([`Wallet::compute_binding`] / [`Wallet::prove_ownership`]), where it
+    /// equals `l2_chain_id`, or the L1 for the full proof
+    /// ([`Wallet::tribute_ownership_witness`]), where it does not. The second
+    /// id is always this wallet's L2, which is what stops a proof built here
+    /// from verifying as another L2's.
     fn binding_fr(
         sender_address: &[u8],
         tribute_draft_id: &[u8],
-        chain_id: u64,
+        host_chain_id: u64,
+        l2_chain_id: u64,
     ) -> Result<Fr, MobileError> {
         let sender = arr::<20>(sender_address, "sender_address")?;
         let commitment_id = arr::<32>(tribute_draft_id, "tribute_draft_id")?;
-        Ok(PsoV1::binding(&sender, &commitment_id, chain_id)?)
+        Ok(PsoV1::binding(
+            &sender,
+            &commitment_id,
+            host_chain_id,
+            l2_chain_id,
+        )?)
     }
 
     /// The minted TributeDraft's `nft_hash` as a field element — `Entity::<PsoV1>`
@@ -888,7 +957,7 @@ impl Wallet {
         worldwide_day: u64,
         currency: u16,
         base: u64,
-        atto: u64,
+        micro: u64,
         su_ids: &[Vec<u8>],
     ) -> Result<Fr, MobileError> {
         use alloy_primitives::{B256, U16, U64};
@@ -907,7 +976,7 @@ impl Wallet {
             worldwide_day: U64::from(worldwide_day),
             currency: U16::from(currency),
             base: U64::from(base),
-            atto: U64::from(atto),
+            micro: U64::from(micro),
             su_ids,
         };
         Ok(pso_protocol::protocol::entity::Entity::<PsoV1>::entity_hash(&td)?)
@@ -1227,5 +1296,69 @@ mod vdf_tests {
         assert!(w.is_vdf_block_valid(68, 100, 32));
         assert!(!w.is_vdf_block_valid(67, 100, 32));
         assert!(!w.is_vdf_block_valid(101, 100, 32));
+    }
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+
+    const L2: u64 = 19_280_501;
+    const L1: u64 = 424_242;
+
+    fn sender() -> Vec<u8> {
+        vec![0x11; 20]
+    }
+
+    fn draft_id() -> Vec<u8> {
+        (0u8..32).collect()
+    }
+
+    /// The two exported entry points must not drift: the same-chain one is the
+    /// host-explicit one with this wallet's own id passed as the host, and the
+    /// FFI would otherwise let them diverge silently.
+    #[test]
+    fn same_chain_is_the_host_explicit_call_with_our_own_id() {
+        let w = Wallet::new(L2);
+        assert_eq!(
+            w.compute_binding(sender(), draft_id()).unwrap(),
+            w.compute_binding_for_host(sender(), draft_id(), L2)
+                .unwrap(),
+        );
+    }
+
+    /// The host id occupies a distinct position from the L2 id. Were either
+    /// folded in the other's place, or one dropped, a foreign host would
+    /// produce the same digest as the local one.
+    #[test]
+    fn a_foreign_host_binds_differently() {
+        let w = Wallet::new(L2);
+        assert_ne!(
+            w.compute_binding_for_host(sender(), draft_id(), L1)
+                .unwrap(),
+            w.compute_binding(sender(), draft_id()).unwrap(),
+        );
+        // And the two ids are not interchangeable.
+        let swapped = Wallet::new(L1);
+        assert_ne!(
+            w.compute_binding_for_host(sender(), draft_id(), L1)
+                .unwrap(),
+            swapped
+                .compute_binding_for_host(sender(), draft_id(), L2)
+                .unwrap(),
+        );
+    }
+
+    /// What a caller derives up front must equal what the witness builder folds
+    /// internally, or the L1 rejects a proof the caller believed it had built.
+    #[test]
+    fn the_exported_value_matches_the_witness_builder() {
+        let w = Wallet::new(L2);
+        let expected = w
+            .compute_binding_for_host(sender(), draft_id(), L1)
+            .unwrap();
+        let internal =
+            PsoV1::field_to_be_bytes(&Wallet::binding_fr(&sender(), &draft_id(), L1, L2).unwrap());
+        assert_eq!(expected, internal);
     }
 }
