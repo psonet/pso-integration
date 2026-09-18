@@ -4104,7 +4104,7 @@ dependencies = [
 [[package]]
 name = "pso-chain-abi"
 version = "0.27.1"
-source = "git+ssh://git@github.com/psonet/pso-chain-next.git?rev=0d11b3dd37527b6aec0288554fcbcfc87ecaa544#0d11b3dd37527b6aec0288554fcbcfc87ecaa544"
+source = "git+ssh://git@github.com/psonet/pso-chain-next.git?rev=a1231cd874c5ede5ddb8288023dcb5b13d0a5542#a1231cd874c5ede5ddb8288023dcb5b13d0a5542"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",

@@ -555,6 +555,12 @@ impl Wallet {
     /// commits to the L1 submitter + L1 chain id (distinct from the wallet's L2
     /// identity). `tribute_draft_id` is `nft_header.id`. The remaining args are
     /// the TD body fields. Pair the result with [`Wallet::prove_full`].
+    ///
+    /// `micro` is the 1e-6 remainder of the amount. Spending units carry atto
+    /// (1e-18) and keep it; a tribute draft carries micro, and the chain folds
+    /// this exact number into `nft_hash`. Pass the draft's own value, already
+    /// rounded — this does not convert, and a value still denominated in atto
+    /// produces a hash the chain will not agree with.
     #[allow(clippy::too_many_arguments)]
     pub fn tribute_ownership_witness(
         &self,
@@ -562,7 +568,7 @@ impl Wallet {
         worldwide_day: u64,
         currency: u16,
         base: u64,
-        atto: u64,
+        micro: u64,
         su_ids: Vec<Vec<u8>>,
         l1_sender_address: Vec<u8>,
         l1_chain_id: u64,
@@ -574,7 +580,7 @@ impl Wallet {
             worldwide_day,
             currency,
             base,
-            atto,
+            micro,
             &su_ids,
         )?;
         // L1 binding the TD's ownership signature commits to. Both chain ids
@@ -951,7 +957,7 @@ impl Wallet {
         worldwide_day: u64,
         currency: u16,
         base: u64,
-        atto: u64,
+        micro: u64,
         su_ids: &[Vec<u8>],
     ) -> Result<Fr, MobileError> {
         use alloy_primitives::{B256, U16, U64};
@@ -970,7 +976,7 @@ impl Wallet {
             worldwide_day: U64::from(worldwide_day),
             currency: U16::from(currency),
             base: U64::from(base),
-            atto: U64::from(atto),
+            micro: U64::from(micro),
             su_ids,
         };
         Ok(pso_protocol::protocol::entity::Entity::<PsoV1>::entity_hash(&td)?)

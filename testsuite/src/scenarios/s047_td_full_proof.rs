@@ -101,7 +101,9 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let currency =
         u16::try_from(td.currency).map_err(|_| eyre::eyre!("S047: currency overflow"))?;
     let base = u64::try_from(td.base).map_err(|_| eyre::eyre!("S047: base overflow"))?;
-    let atto = u64::try_from(td.atto).map_err(|_| eyre::eyre!("S047: atto overflow"))?;
+    // The draft's own unit is micro (1e-6); its spending units carry atto and
+    // keep it. Read what the chain stored rather than converting here.
+    let micro = u64::try_from(td.micro).map_err(|_| eyre::eyre!("S047: micro overflow"))?;
 
     // 2. Ownership half — the TD signs its OWN entity with the header key over
     //    the L1 binding. `su_ids` are hashed as a sorted set internally, so any
@@ -127,7 +129,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
             worldwide_day,
             currency,
             base,
-            atto,
+            micro,
             su_ids,
             L1_SENDER.to_vec(),
             L1_CHAIN_ID,

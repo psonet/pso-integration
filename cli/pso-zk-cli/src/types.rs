@@ -70,8 +70,9 @@ pub struct TributeDraftJson {
     pub currency: u16,
     /// Amount integer part.
     pub base: u64,
-    /// Amount fractional part (atto).
-    pub atto: u64,
+    /// Amount fractional part (micro, 1e-6). A tribute draft carries micro;
+    /// its spending units carry atto and keep it.
+    pub micro: u64,
     /// SU ids (each 32-byte hex).
     pub su_ids: Vec<String>,
 }
@@ -85,7 +86,7 @@ impl TributeDraftJson {
             worldwide_day: U64::from(self.worldwide_day),
             currency: U16::from(self.currency),
             base: U64::from(self.base),
-            atto: U64::from(self.atto),
+            micro: U64::from(self.micro),
             su_ids: self.su_ids.iter().map(|s| b256(s)).collect::<Result<_>>()?,
         })
     }
