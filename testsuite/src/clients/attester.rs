@@ -31,6 +31,9 @@ pub struct MintSpendingUnitArgs {
     pub su_id: U256,
     /// Wallet-supplied Poseidon ownership commitment for this SU.
     pub derived_owner: FixedBytes<32>,
+    /// Caller-supplied attester identity stored on the SU verbatim (must
+    /// match the address the FFI folded into the su_hash). Non-zero.
+    pub attester_address: Address,
     /// Wallet self-address captured at consent initiation. The Attester holds
     /// it for the consent session and stamps every SU minted in that
     /// session with it (the on-chain `referrerAddress`). `Address::ZERO`
@@ -39,7 +42,7 @@ pub struct MintSpendingUnitArgs {
     pub referrer_address: Address,
     /// ISO 4217 numeric currency code.
     pub currency: u16,
-    /// Worldwide-day count (days since 2021-01-01) — `uint32` slot.
+    /// Worldwide day (compact YYYYMMDD) — `uint32` slot.
     pub worldwide_day: u32,
     /// Amount integer part.
     pub amount_base: u64,
@@ -133,16 +136,17 @@ impl AttesterClient {
         Ok(*pending.tx_hash())
     }
 
-    /// `SpendingUnit.submit(...)`. The Attester is the on-chain submitter;
+    /// `SpendingUnit.submit2(...)`. The Attester is the on-chain submitter;
     /// the wallet supplied the `derivedOwner` commitment off-line so the
     /// chain can later verify a ZK ownership proof against it.
     pub async fn mint_spending_unit(&self, args: MintSpendingUnitArgs) -> Result<TxHash, RpcError> {
         let provider = self.inner.write_provider()?;
         let inst = ISpendingUnit::new(SPENDING_UNIT, provider);
         let pending = inst
-            .submit(
+            .submit2(
                 args.su_id,
                 args.derived_owner,
+                args.attester_address,
                 // `referrerAddress` — the wallet self-address from the consent
                 // session (`Address::ZERO` if none).
                 args.referrer_address,

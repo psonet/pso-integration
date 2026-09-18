@@ -18,13 +18,10 @@
 //! succeeds or reverts on-chain — only the pool's view of
 //! "nullifier already seen" matters.
 use crate::clients::actor::ActorClientError;
-use crate::data::random_id;
+use crate::data::USERS_LANE_PROBE_DEST;
 use crate::{Scenario, TestEnv};
 use alloy_primitives::Bytes;
-use alloy_sol_types::SolCall;
 use async_trait::async_trait;
-use pso_chain_abi::addresses::SPENDING_RECORD;
-use pso_chain_abi::interfaces::ISpendingRecord;
 use std::sync::{Arc, Mutex};
 pub struct S014;
 #[async_trait]
@@ -44,12 +41,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // rolled (the 0x76 wire's NULLIFIER_RANGE).
     let first_nullifier: Arc<Mutex<Option<[u8; 32]>>> = Arc::new(Mutex::new(None));
     let captured = first_nullifier.clone();
-    let sr_id_a = random_id();
-    let call_a = ISpendingRecord::submitCall { srId: sr_id_a };
-    let inner_a = Bytes::from(call_a.abi_encode());
+    let inner_a = Bytes::new();
     let first = env
         .new_actor_as_attester_zero()?
-        .submit_tx_with_envelope(SPENDING_RECORD, inner_a, move |bytes| {
+        .submit_tx_with_envelope(USERS_LANE_PROBE_DEST, inner_a, move |bytes| {
             let mut n = [0u8; 32];
             n.copy_from_slice(&bytes[crate::clients::envelope::NULLIFIER_RANGE]);
             *captured.lock().expect("nullifier capture") = Some(n);
@@ -91,12 +86,10 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // Second submission: build a fresh envelope (new VDF / fresh
     // submitted_block / fresh inner) but force the nullifier slot to
     // the captured value from the first.
-    let sr_id_b = random_id();
-    let call_b = ISpendingRecord::submitCall { srId: sr_id_b };
-    let inner_b = Bytes::from(call_b.abi_encode());
+    let inner_b = Bytes::new();
     let result = env
         .new_actor_as_attester_zero()?
-        .submit_tx_with_envelope(SPENDING_RECORD, inner_b, move |mut bytes| {
+        .submit_tx_with_envelope(USERS_LANE_PROBE_DEST, inner_b, move |mut bytes| {
             bytes[crate::clients::envelope::NULLIFIER_RANGE].copy_from_slice(&nullifier);
             tracing::info!(
                 target: "pso_e2e::scenario",

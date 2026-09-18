@@ -10,7 +10,7 @@
 //! generators. Anything that needs a round-trip to L2 lives on the
 //! client or the bridge.
 
-use alloy_primitives::U256;
+use alloy_primitives::{address, Address, U256};
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField};
 use ark_std::UniformRand;
@@ -19,6 +19,19 @@ use iso_currency::Currency;
 use rand::rngs::OsRng;
 use rand::Rng;
 use rand::RngCore;
+
+/// Neutral users-lane destination for the anti-spam envelope scenarios: a
+/// plain address with no code behind it, so an ADMITTED envelope's inner
+/// (empty) call always mines with `status = 1`, and a REJECTED envelope fails
+/// on exactly the anti-spam check under test — never on destination policy.
+///
+/// These scenarios used to target the SpendingRecord predeploy with a real
+/// `submit` call. That routed a permission-mask-gated method through the
+/// anonymous lane — precisely the mask-bypass the v0.18 audit's H9 closed —
+/// and the node now refuses such destinations at users-lane admission
+/// (`UseMembersLane`), which both failed the acceptance scenarios and let
+/// every rejection scenario "pass" without its intended check ever running.
+pub const USERS_LANE_PROBE_DEST: Address = address!("00000000000000000000000000000000000e0a17");
 
 /// Random `uint256` id (used for SR / AR / SU / TD ids on chain).
 ///

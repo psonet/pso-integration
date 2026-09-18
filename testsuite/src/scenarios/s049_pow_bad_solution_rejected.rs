@@ -15,13 +15,10 @@
 //! output and proof respectively — fields `0x77` does not have — so they have
 //! no direct analogue and collapse into this single "the work was wrong" case.
 use crate::clients::actor::ActorClientError;
-use crate::data::random_id;
+use crate::data::USERS_LANE_PROBE_DEST;
 use crate::{Scenario, TestEnv};
 use alloy_primitives::Bytes;
-use alloy_sol_types::SolCall;
 use async_trait::async_trait;
-use pso_chain_abi::addresses::SPENDING_RECORD;
-use pso_chain_abi::interfaces::ISpendingRecord;
 
 pub struct S049;
 
@@ -39,13 +36,11 @@ impl Scenario for S049 {
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    let sr_id = random_id();
-    let call = ISpendingRecord::submitCall { srId: sr_id };
-    let inner = Bytes::from(call.abi_encode());
+    let inner = Bytes::new();
 
     let result = env
         .new_actor_as_attester_zero()?
-        .submit_pow_tx(SPENDING_RECORD, inner, |mut bytes| {
+        .submit_pow_tx(USERS_LANE_PROBE_DEST, inner, |mut bytes| {
             // Flip the low bit of the last solution byte. The rest of the
             // envelope stays valid, so the ONLY thing wrong is the work —
             // which is what this scenario is about.
