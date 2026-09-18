@@ -4103,9 +4103,8 @@ dependencies = [
 
 [[package]]
 name = "pso-chain-abi"
-version = "0.24.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53bab32bfb19c7ba0a71e27822f5e4bb5fd555f73e0bbba0c834c898d48d11b7"
+version = "0.27.1"
+source = "git+ssh://git@github.com/psonet/pso-chain-next.git?rev=0d11b3dd37527b6aec0288554fcbcfc87ecaa544#0d11b3dd37527b6aec0288554fcbcfc87ecaa544"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -4190,8 +4189,9 @@ dependencies = [
 
 [[package]]
 name = "pso-protocol"
-version = "0.9.0"
-source = "git+ssh://git@github.com/psonet/pso-protocol.git?branch=feat%2Fbinding-l2-chain-id#7b85b8a25835dbb37daaa46596abb2d162f8e211"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ea96132edd119725dc6a60f5b62623fbb1fb88c912cfe7cee1432a57af912cc"
 dependencies = [
  "alloy-primitives",
  "ark-bn254",
@@ -4210,9 +4210,9 @@ dependencies = [
 
 [[package]]
 name = "pso-protocol-derive"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "996016092bb61835abafd435b1e007d72824274b90836aafe1d4cc613bbd3f56"
+checksum = "58e46423401981aa82d677571c599ec9908b7fcff2be78663622178c85ee12b5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4258,8 +4258,8 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-backend"
-version = "0.11.0"
-source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?tag=v0.11.0#7301eee902fe31d2598c00e53c78cf1a1f3c1012"
+version = "0.13.0"
+source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?tag=v0.13.0#edcbede7d813d2125639f1958ad0033f51f10b1f"
 dependencies = [
  "acir",
  "acvm",
@@ -4276,9 +4276,9 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-canonical"
-version = "0.11.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "906992a15e8c64a90be935430c52c259ab743f750574837e72450d5d1cc821e9"
+checksum = "5301df789f53b6b601896a3b4164a543ea37aa5e2a7e6e36d795692ce83db782"
 dependencies = [
  "ark-bn254",
  "ark-ff 0.6.0",
