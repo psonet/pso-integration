@@ -95,9 +95,10 @@ self-registers its attester via the admin key):
 
 ```bash
 pso-e2e \
-  --rpc-url       http://127.0.0.1:8546 \   # attesters pool
-  --actor-rpc-url http://127.0.0.1:8545 \   # users pool
-  --chain-id      9900501 \
+  --rpc-url       http://127.0.0.1:19545 \  # agents pool (attester-key calls)
+  --actor-rpc-url http://127.0.0.1:8546 \   # actor pool (wallet flows)
+  --chain-id      19280501 \                # devnet genesis; folded TWICE
+                                            # into every submission binding
   --admin-key     0xac09…  --attester-key 0x59c6… \
   --only S001                               # optional scenario filter
 ```

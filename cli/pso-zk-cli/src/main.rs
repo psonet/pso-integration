@@ -4,10 +4,16 @@
 //!
 //! ```text
 //! pso-zk-cli nft generate --type tribute-draft -o output.json
-//! pso-zk-cli proof generate --nft output.json --circuit full_proof.json -o proof.json
-//! pso-zk-cli proof verify --proof proof.json --circuit full_proof.json
-//! pso-zk-cli proof aggregate --input aggregation_input.json -o proof.json
+//! pso-zk-cli proof generate --nft output.json -o proof.json \
+//!     --redeemer 0x… --chain-id 19280501 [--l2-chain-id 19280501]
+//! pso-zk-cli proof verify --proof proof.json
 //! ```
+//!
+//! `proof aggregate` exists as a subcommand but always errors: flat
+//! aggregation runs through `pso-wallet-cli aggregate` instead.
+//!
+//! The circuit is not a flag. Its frozen ACIR and verifying key are
+//! compiled in from `pso-zk-canonical`.
 
 use clap::Parser;
 

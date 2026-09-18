@@ -2,7 +2,7 @@
 
 UniFFI bindings for the PSO **wallet** — on-device ZK proving + the
 proof-of-personhood VDF. Built on [`pso-protocol`](https://github.com/psonet/pso-protocol)
-0.8, the [`pso-zk-canonical`](https://github.com/psonet/pso-zk-circuits) circuits,
+0.10, the [`pso-zk-canonical`](https://github.com/psonet/pso-zk-circuits) circuits,
 and the `pso-zk-backend` barretenberg prover (real UltraHonkKeccak, on-device).
 Ships as an **iOS staticlib + Android cdylib**.
 
@@ -18,9 +18,11 @@ Ships as an **iOS staticlib + Android cdylib**.
     proof; the on-device path (mobile builds ship without the network SRS
     fallback, so the SRS *must* be provided this way — see [SRS](#srs)).
   - `compute_binding(sender_address, tribute_draft_id) -> bytes` — the **L2**
-    submission binding (`Hash([DOMAIN, sender, id_lo, id_hi, l2_chain_id])`,
+    submission binding
+    (`Hash([DOMAIN, sender, id_lo, id_hi, l2_chain_id, l2_chain_id])`,
     `l2_chain_id` from the wallet) the aggregation proof commits to; feed the SAME
-    value to each `witness`.
+    value to each `witness`. Both chain-id slots hold the wallet's own L2,
+    because this proof is verified on the chain that produced it.
   - `generate_consent(seed) -> Consent` / `load_consent(secret) -> Consent`
   - `generate_nft_header(seed) -> NftHeader` — a tribute draft's own NFT key.
   - `prove_ownership(seed, sender_address, tribute_draft_id, witnesses) -> AggregationProofResult`
@@ -31,8 +33,11 @@ Ships as an **iOS staticlib + Android cdylib**.
   - **Full proof** (the minted TD's **L1** proof = ownership ∥ Merkle inclusion):
     - `tribute_ownership_witness(nft_header, worldwide_day, currency, base, atto, su_ids, l1_sender_address, l1_chain_id) -> NftOwnershipWitness`
       — the TD's *own* ownership half: signed by the `nft_header` key over the
-      **L1** binding (`binding(l1_sender, nft_header.id, l1_chain_id)`), `nft_hash`
-      folded internally from the TD fields. (`tribute_draft_id == nft_header.id`.)
+      **L1** binding
+      (`binding(l1_sender, nft_header.id, l1_chain_id, l2_chain_id)` — the
+      verifying L1 and the wallet's own L2, which is what stops this proof
+      verifying as another L2's), `nft_hash` folded internally from the TD
+      fields. (`tribute_draft_id == nft_header.id`.)
     - `prove_full(ownership: NftOwnershipWitness, inclusion: NftInclusionWitness) -> FullProofResult`
       — combines that with the inclusion half (the node's `pso_getInclusionPath`,
       a [`NftInclusionWitness`]); the circuit checks the path against

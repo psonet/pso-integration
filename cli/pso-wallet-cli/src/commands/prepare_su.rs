@@ -22,8 +22,10 @@ pub struct Args {
     #[arg(long)]
     pub sender: String,
     /// Tribute-draft id (32-byte hex) — the binding's commitment. The witness
-    /// commits to `binding = Poseidon(DOMAIN, sender, tributeDraftId, chainId)`,
-    /// computed from these + the global `--chain-id`; the SAME sender +
+    /// commits to `binding = Poseidon(DOMAIN, sender, tdId_lo, tdId_hi,
+    /// hostChainId, l2ChainId)`, where the id is split into two 128-bit limbs
+    /// and both chain ids are the wallet's own L2 for an aggregation verified
+    /// there; computed from these + the global `--chain-id`; the SAME sender +
     /// tribute-draft-id must be used for every witness in a TD and at
     /// `aggregate` time.
     #[arg(long = "tribute-draft-id")]

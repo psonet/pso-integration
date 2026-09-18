@@ -92,11 +92,11 @@ pub enum ProofCommands {
         #[arg(short, long)]
         proof: PathBuf,
     },
-    /// Generate an SU-ownership aggregation proof for TributeDraft
-    /// submission. Reads an input JSON describing the wallet's
-    /// secret key, the aggregated SU slots, and the binding-hash
-    /// parameters (sender, tribute_draft_id, chain_id), then writes
-    /// the canonical proof bytes to the output file.
+    /// Not available here: always errors. Flat-aggregation proving runs
+    /// through `pso-wallet-cli aggregate`, backed by the wallet's
+    /// `prove_ownership`, which owns the per-SU witness assembly and both
+    /// chain ids the binding folds. Kept as a subcommand so the error
+    /// names the replacement rather than clap reporting an unknown one.
     Aggregate {
         /// Path to the aggregation input JSON. See
         /// `commands::aggregate::AggregationInput` for the schema.
