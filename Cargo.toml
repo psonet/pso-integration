@@ -149,3 +149,19 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 strip = true
+
+# TEMPORARY, remove in the same pull request that lands the published releases.
+#
+# The six-element binding lives in pso-protocol and is not on crates.io yet, so
+# the version requirement above cannot resolve to it. This points the whole
+# graph at the branch carrying it, which is what lets CI build and test the
+# wallet against the preimage it will actually submit under.
+#
+# pso-zk-backend stays on its v0.11.0 tag deliberately: its library never
+# computes a binding, only its own tests do, so it compiles unchanged against
+# the new signature. Move it to the matching tag when both repositories release.
+#
+# When pso-protocol releases, bump the version requirement above and delete this
+# section. Leaving it in place would pin the build to a branch that can move.
+[patch.crates-io]
+pso-protocol = { git = "ssh://git@github.com/psonet/pso-protocol.git", branch = "feat/binding-l2-chain-id" }

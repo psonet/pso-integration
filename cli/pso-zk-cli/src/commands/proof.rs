@@ -41,7 +41,8 @@ pub fn handle_proof_generate(
     nft_path: &Path,
     output: &Path,
     redeemer: &[u8; 20],
-    chain_id: u64,
+    host_chain_id: u64,
+    l2_chain_id: u64,
 ) -> Result<()> {
     let content = std::fs::read_to_string(nft_path)
         .with_context(|| format!("Failed to read NFT file: {}", nft_path.display()))?;
@@ -64,7 +65,8 @@ pub fn handle_proof_generate(
         .context("decode nft_id")?
         .try_into()
         .map_err(|_| anyhow!("nft_id must be 32 bytes"))?;
-    let binding = PsoV1::binding(redeemer, &commitment_id, chain_id).context("binding")?;
+    let binding =
+        PsoV1::binding(redeemer, &commitment_id, host_chain_id, l2_chain_id).context("binding")?;
 
     let mut seed = [0u8; 32];
     OsRng.fill_bytes(&mut seed);

@@ -379,8 +379,10 @@ impl Wallet {
     }
 
     /// Compute the **L2** submission binding the aggregation/ownership proof
-    /// commits to: `Hash([DOMAIN, sender, tribute_draft_id_lo, _hi, l2_chain_id])`
-    /// (mirrors `PsoV1::binding`), using the wallet's L2 chain id. Derived from
+    /// commits to: `Hash([DOMAIN, sender, tribute_draft_id_lo, _hi,
+    /// l2_chain_id, l2_chain_id])` (mirrors `PsoV1::binding`). This proof is
+    /// verified on this same L2, so the host and L2 ids are one value and the
+    /// wallet's own id fills both. Derived from
     /// the tx submitter (the per-tx opaque key's EOA) + the tribute-draft id; the
     /// SAME value must reach every [`Consent::witness`] call so the witnesses
     /// match the binding [`Wallet::prove_ownership`] recomputes. `sender_address`
@@ -394,6 +396,7 @@ impl Wallet {
         Ok(PsoV1::field_to_be_bytes(&Self::binding_fr(
             &sender_address,
             &tribute_draft_id,
+            self.l2_chain_id,
             self.l2_chain_id,
         )?))
     }
@@ -454,7 +457,14 @@ impl Wallet {
                 detail: "no witnesses".into(),
             });
         }
-        let binding = Self::binding_fr(&sender_address, &tribute_draft_id, self.l2_chain_id)?;
+        // Verified on this L2, so both ids are its own — the same value
+        // `compute_binding` produced for the witnesses being aggregated.
+        let binding = Self::binding_fr(
+            &sender_address,
+            &tribute_draft_id,
+            self.l2_chain_id,
+            self.l2_chain_id,
+        )?;
         let binding_bytes = PsoV1::field_to_be_bytes(&binding);
 
         let mut slots: Vec<Slot> = Vec::with_capacity(witnesses.len());
@@ -533,8 +543,16 @@ impl Wallet {
             atto,
             &su_ids,
         )?;
-        // L1 binding the TD's ownership signature commits to.
-        let binding = Self::binding_fr(&l1_sender_address, &nft_header.id, l1_chain_id)?;
+        // L1 binding the TD's ownership signature commits to. Both chain ids
+        // are folded: the L1 that verifies, and this wallet's L2 that produced
+        // the draft. Without the second, a proof built here would verify
+        // unchanged as another L2's under the same registered circuit.
+        let binding = Self::binding_fr(
+            &l1_sender_address,
+            &nft_header.id,
+            l1_chain_id,
+            self.l2_chain_id,
+        )?;
         // Reconstruct the signer from the header's OWN key (no key generation,
         // no seed). The signing nonce is derived deterministically below.
         let sk = PsoV1::secret_from_bytes(&arr::<32>(&nft_header.nft_sk, "nft_sk")?)?;
@@ -863,18 +881,29 @@ impl Wallet {
 // exports every method, and `Fr` / `&[u8]` aren't the FFI shapes we want here).
 impl Wallet {
     /// The submission binding as a field element: `PsoV1::binding(sender,
-    /// commitment_id, chain_id)`. `chain_id` is passed explicitly — the wallet's
-    /// L2 id for the on-device aggregation ([`Wallet::compute_binding`] /
-    /// [`Wallet::prove_ownership`]), or an L1 id for the full proof
-    /// ([`Wallet::tribute_ownership_witness`]).
+    /// commitment_id, host_chain_id, l2_chain_id)`.
+    ///
+    /// Both ids are passed explicitly. `host_chain_id` is whichever chain
+    /// verifies the proof: this wallet's own L2 for the on-device aggregation
+    /// ([`Wallet::compute_binding`] / [`Wallet::prove_ownership`]), where it
+    /// equals `l2_chain_id`, or the L1 for the full proof
+    /// ([`Wallet::tribute_ownership_witness`]), where it does not. The second
+    /// id is always this wallet's L2, which is what stops a proof built here
+    /// from verifying as another L2's.
     fn binding_fr(
         sender_address: &[u8],
         tribute_draft_id: &[u8],
-        chain_id: u64,
+        host_chain_id: u64,
+        l2_chain_id: u64,
     ) -> Result<Fr, MobileError> {
         let sender = arr::<20>(sender_address, "sender_address")?;
         let commitment_id = arr::<32>(tribute_draft_id, "tribute_draft_id")?;
-        Ok(PsoV1::binding(&sender, &commitment_id, chain_id)?)
+        Ok(PsoV1::binding(
+            &sender,
+            &commitment_id,
+            host_chain_id,
+            l2_chain_id,
+        )?)
     }
 
     /// The minted TributeDraft's `nft_hash` as a field element — `Entity::<PsoV1>`

@@ -29,8 +29,16 @@ fn main() {
                 output,
                 redeemer,
                 chain_id,
-            } => decode_redeemer(&redeemer)
-                .and_then(|r| proof::handle_proof_generate(&nft, &output, &r, chain_id)),
+                l2_chain_id,
+            } => decode_redeemer(&redeemer).and_then(|r| {
+                proof::handle_proof_generate(
+                    &nft,
+                    &output,
+                    &r,
+                    chain_id,
+                    l2_chain_id.unwrap_or(chain_id),
+                )
+            }),
             ProofCommands::Verify { proof } => proof::handle_proof_verify(&proof),
             ProofCommands::Aggregate { input, output } => {
                 aggregate::handle_proof_aggregate(&input, &output)

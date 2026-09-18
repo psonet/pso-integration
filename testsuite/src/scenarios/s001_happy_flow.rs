@@ -204,16 +204,23 @@ pub(crate) async fn submit_full_tribute_draft(env: &TestEnv) -> eyre::Result<TdS
     // -----------------------------------------------------------------
     // 4. The TD is submitted by a fresh, never-registered per-tx opaque
     //    key whose EOA is `msg.sender` on-chain. Create it BEFORE
-    //    proving: the aggregation proof's `binding = Poseidon(sender,
-    //    tdId, chainId)` commits to this exact submitter, so it must be
-    //    fixed up front and the SAME key must sign the submit below.
+    //    proving: the aggregation proof's `binding = Poseidon(DOMAIN,
+    //    sender, tdId_lo, tdId_hi, hostChainId, l2ChainId)` commits to
+    //    this exact submitter, so it must be fixed up front and the SAME
+    //    key must sign the submit below. This aggregation is verified on
+    //    the L2 that produced it, so both chain ids are the same value.
     // -----------------------------------------------------------------
     let wallet = env.new_actor()?;
     let sender = wallet.address();
     let chain_id = wallet.chain_id();
     let td_id = random_id();
-    let binding = PsoV1::binding(&sender.into_array(), &td_id.to_be_bytes::<32>(), chain_id)
-        .map_err(|e| eyre::eyre!("compute binding: {e}"))?;
+    let binding = PsoV1::binding(
+        &sender.into_array(),
+        &td_id.to_be_bytes::<32>(),
+        chain_id,
+        chain_id,
+    )
+    .map_err(|e| eyre::eyre!("compute binding: {e}"))?;
     let binding_bytes = PsoV1::field_to_be_bytes(&binding);
 
     // -----------------------------------------------------------------

@@ -70,14 +70,21 @@ pub enum ProofCommands {
         output: PathBuf,
 
         /// Redeemer EOA as 20-byte hex (`0x...`). The proof's binding
-        /// commits to `(redeemer, commitmentId, chainId)` so an L1
-        /// verifier can pin redemption to this address.
+        /// commits to `(redeemer, commitmentId, hostChainId, l2ChainId)`
+        /// so an L1 verifier can pin redemption to this address.
         #[arg(long)]
         redeemer: String,
 
-        /// Chain id for the binding.
+        /// Chain id of the chain that verifies the proof.
         #[arg(long)]
         chain_id: u64,
+
+        /// Chain id of the L2 that produced the draft. Folded alongside
+        /// `--chain-id` so a proof made for one L2 does not verify as
+        /// another's. Defaults to `--chain-id`, which is the right value
+        /// when the proof is redeemed on the chain that produced it.
+        #[arg(long)]
+        l2_chain_id: Option<u64>,
     },
     /// Verify a previously generated ownership proof
     Verify {
