@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.17.0 - 2026-09-18
+#### Features
+- (**mobile**) expose the binding for a foreign verifying chain - (1ab6e81) - Anton Velichko
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>carry the tribute draft's amount in micro - (7cec556) - Anton Velichko
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>fold the L2 chain id into every binding the wallet builds - (ee1c74b) - Anton Velichko
+#### Documentation
+- correct the binding contract in the wallet's public docs - (8f4b530) - Anton Velichko
+#### Build system
+- consume the released binding stack - (1746e9e) - Anton Velichko
+#### Miscellaneous Chores
+- (**deps**) repin pso-chain-abi to the 0.24.0 registry release - (33a6ce7) - Eduard Ruzsa
+- take main's pso-chain-abi bump into the merge - (cbc101d) - Anton Velichko
+
+- - -
+
 ## v0.16.0 - 2026-09-03
 #### Features
 - (**testsuite**) mint SpendingUnits via submit2 with an explicit attester address - (a153332) - Eduard Ruzsa
