@@ -156,7 +156,7 @@ mod tests {
         // the way S046 will: through the EIP-2537 -> compressed -> commonware
         // group-key path. Validates the proposal/LEB128 encoding, the G2
         // conversion, and the commonware decode + verify wiring — no devnet.
-        let (private, public) = keypair::<_, MinSig>(&mut rand::thread_rng());
+        let (private, public) = keypair::<_, MinSig>(&mut rand::rng());
 
         let (epoch, view, parent) = (7u64, 9u64, 3u64);
         let digest = [0x5au8; 32];

@@ -34,8 +34,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use alloy_primitives::{Address, FixedBytes, TxHash, U256};
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::Rng;
 use tokio::sync::{mpsc, oneshot};
 
 use pso_attester_integration::{Attester, IssuanceReport};
@@ -222,7 +221,7 @@ async fn handle_mint(
         // reference binding, but a fresh 32-byte random seed per call is
         // equally distinct (the suite never re-issues with the same seed).
         let mut seed = [0u8; 32];
-        OsRng.fill_bytes(&mut seed);
+        rand::rng().fill_bytes(&mut seed);
         let header = attester.generate_nft_header(seed.to_vec(), consent_pk)?;
 
         // Record fingerprints are 32-byte big-endian field elements; the

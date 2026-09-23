@@ -16,8 +16,7 @@ use anyhow::{Context, Result};
 use ark_std::rand::rngs::StdRng;
 use ark_std::rand::SeedableRng;
 use ark_std::UniformRand;
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::Rng;
 
 use alloy_primitives::{Address, B256, U16, U64};
 use pso_chain_abi::entity::{SpendingUnit, TributeDraft};
@@ -36,7 +35,7 @@ type Fr = <PsoV1 as Suite>::Field;
 /// and prints a summary table.
 pub fn handle_nft_generate(nft_type: NftType, output: &Path) -> Result<()> {
     // Deterministic-from-entropy RNG for the field/curve math.
-    let mut os = OsRng;
+    let mut os = rand::rng();
     let mut seed = [0u8; 32];
     os.fill_bytes(&mut seed);
     let mut rng = StdRng::from_seed(seed);
@@ -185,7 +184,9 @@ fn field_b256(rng: &mut StdRng) -> B256 {
     B256::from_slice(&PsoV1::field_to_be_bytes(&f))
 }
 
-fn rand_address(rng: &mut OsRng) -> Address {
+// Generic over the RNG rather than naming one: rand 0.10 dropped `OsRng`,
+// and the caller's concrete type is an implementation detail.
+fn rand_address(rng: &mut impl Rng) -> Address {
     let mut bytes = [0u8; 20];
     rng.fill_bytes(&mut bytes);
     Address::from(bytes)

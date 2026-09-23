@@ -40,8 +40,7 @@
 
 use alloy_primitives::Address;
 use k256::SecretKey;
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::Rng;
 
 use crate::bridge::{spawn_attester_loop, Bridge};
 use crate::cli::Cli;
@@ -278,7 +277,7 @@ impl TestEnv {
 /// negligible — every downstream constructor revalidates anyway.
 pub(crate) fn roll_random_key() -> [u8; 32] {
     let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     bytes
 }
 

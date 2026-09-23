@@ -10,8 +10,7 @@
 
 use alloy_primitives::Address;
 use async_trait::async_trait;
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::Rng;
 
 use crate::clients::attester::into_pso_error;
 use crate::{PsoContractError, Scenario, TestEnv};
@@ -36,7 +35,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // genesis registry contents (Hardhat #0, Hardhat #1, any
     // freshly minted Attester from a prior scenario) are negligible.
     let mut bytes = [0u8; 20];
-    OsRng.fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     let phantom = Address::from(bytes);
 
     let err = env
