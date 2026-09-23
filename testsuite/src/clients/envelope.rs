@@ -28,8 +28,7 @@
 use std::ops::Range;
 
 use alloy_primitives::Address;
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::Rng;
 
 use pso_antispam::PowScheme;
 use pso_vdf::minroot::MinRootVdf;
@@ -152,7 +151,7 @@ pub fn build_pow_envelope_with(
     }
 
     let mut nullifier = [0u8; 32];
-    OsRng.fill_bytes(&mut nullifier);
+    rand::rng().fill_bytes(&mut nullifier);
 
     let input = derive_vdf_input(signer, tx_nonce, submitted_block, chain_id);
     let mut solution = vec![0u8; scheme.solution_len()];
@@ -193,7 +192,7 @@ pub fn build_vdf_envelope(
     }
 
     let mut nullifier = [0u8; 32];
-    OsRng.fill_bytes(&mut nullifier);
+    rand::rng().fill_bytes(&mut nullifier);
 
     let vdf_input_bytes = derive_vdf_input(signer, tx_nonce, submitted_block, chain_id);
     let vdf_input = VdfInput::from_bytes(vdf_input_bytes);

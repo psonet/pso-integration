@@ -91,7 +91,7 @@ async fn mint_su_with(
     // Fresh consent per SU (distinct owners).
     let wallet = pso_mobile_integration::Wallet::new(env.chain_id);
     let mut seed = [0u8; 32];
-    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+    rand::Rng::fill_bytes(&mut rand::rng(), &mut seed);
     let consent = wallet
         .generate_consent(seed.to_vec())
         .map_err(|e| eyre::eyre!("consent: {e:?}"))?;

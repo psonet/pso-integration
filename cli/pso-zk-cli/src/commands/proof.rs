@@ -19,8 +19,7 @@ use std::path::Path;
 use anyhow::{anyhow, Context, Result};
 use ark_std::rand::rngs::StdRng;
 use ark_std::rand::SeedableRng;
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::Rng;
 
 use pso_protocol::protocol::key::{NftSecret, Signer};
 use pso_protocol::protocol::zk::{Circuit, ProofGenerator, ProofVerifier};
@@ -69,7 +68,7 @@ pub fn handle_proof_generate(
         PsoV1::binding(redeemer, &commitment_id, host_chain_id, l2_chain_id).context("binding")?;
 
     let mut seed = [0u8; 32];
-    OsRng.fill_bytes(&mut seed);
+    rand::rng().fill_bytes(&mut seed);
     let mut rng = StdRng::from_seed(seed);
 
     // Build the ownership witness from the entity (which carries the

@@ -40,7 +40,7 @@ use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::SolCall;
 use alloy_transport_http::reqwest::{Client as HttpClient, Url};
 use async_trait::async_trait;
-use rand::RngCore;
+use rand::Rng;
 use serde_json::{json, Value};
 
 use pso_chain_abi::addresses::TRIBUTE_DRAFT;
@@ -100,7 +100,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // Fresh wallet identity — never registered anywhere, no balance
     // (the users lane is feeless).
     let mut sk = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut sk);
+    rand::rng().fill_bytes(&mut sk);
     let signer = PrivateKeySigner::from_slice(&sk)?.with_chain_id(Some(env.chain_id));
     let wallet_addr = signer.address();
 
@@ -154,7 +154,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     }
     .abi_encode();
     let mut nullifier = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut nullifier);
+    rand::rng().fill_bytes(&mut nullifier);
 
     // 4. Build & sign the INNER tx with CLEAN calldata. The VDF fields ride
     //    the node's 0x76 wire envelope (not the calldata, unlike pso-chain's

@@ -44,7 +44,7 @@ pso-zk-backend       = { git = "ssh://git@github.com/psonet/pso-zk-circuits.git"
 # six-element binding and the micro-denominated TributeDraft. Anything older
 # implements Entity for the 0.9 PsoV1, which is a different type from the one
 # this workspace uses, so the requirement is not merely a minimum.
-pso-chain-abi        = { version = "0.28", default-features = false }
+pso-chain-abi        = { version = "0.31", default-features = false }
 
 # In-workspace FFI path deps. The testsuite + CLIs consume these directly
 # (alongside pso-chain-abi / pso-protocol) — there is no shared "l2-client"
@@ -56,18 +56,18 @@ pso-attester-integration = { path = "crates/pso-attester-integration" }
 pso-poseidon = "0.4"
 # MinRoot VDF over BLS12-381. Used by `pso-mobile-integration::vdf` for
 # the proof-of-personhood challenge wallets attach to Users-pool txs.
-pso-vdf      = "0.2"
+pso-vdf      = "0.3"
 # The anonymous-lane admission contract, shared VERBATIM with the node. The
 # binding and the policy constants must not be re-implemented on either side:
 # a client and node that disagree admit nothing and log nothing, so the failure
 # looks like a dead chain rather than a mismatch.
 pso-antispam = "0.4"
-k256         = { version = "0.14.0-rc.8", features = ["std"] }
+k256         = { version = "0.14.0", features = ["std"] }
 ark-ff       = { version = "0.6", features = ["asm", "parallel"] }
 ark-bn254    = { version = "0.6", features = ["default"] }
 ark-std      = { version = "0.6", default-features = false }
 bs58 = "0.5"
-rand = "0.8"
+rand = "0.10"
 # Standalone alloy sub-crates, version-matched to `pso-chain-abi`
 # (provider/contract/network/signer/consensus/eips/rpc-types = "2",
 # primitives/sol-types = "1"). The `alloy` umbrella v1.x re-exports the
@@ -86,7 +86,7 @@ alloy-consensus     = { version = "2", features = ["serde"] }
 alloy-eips          = { version = "2", features = ["serde"] }
 alloy-rpc-types-eth = "2"
 alloy-transport-http = { version = "2", features = ["reqwest"] }
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -102,11 +102,11 @@ hex = "0.4"
 # (S046). The exact crate + version the chain SIGNS with, so the off-chain
 # verify is byte-compatible by construction; `blst` decompresses the EIP-2537
 # G2 group key read from the DaInbox into commonware's point format.
-commonware-cryptography = "2026.5.0"
+commonware-cryptography = "2026.9.0"
 # commonware-codec: the Encode/Decode traits for commonware's BLS point types
 # (group key / signature), version-matched to commonware-cryptography.
-commonware-codec = "2026.5.0"
-blst = "0.3.16"
+commonware-codec = "2026.9.0"
+blst = "0.3.17"
 
 # Async runtime — needed by the L2 client + CLIs + e2e tests.
 tokio = { version = "1", features = ["full"] }
@@ -153,3 +153,4 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 strip = true
+

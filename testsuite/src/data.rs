@@ -13,12 +13,11 @@
 use alloy_primitives::{address, Address, U256};
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField};
+use ark_std::rand::SeedableRng as _;
 use ark_std::UniformRand;
 use chrono::{Datelike, NaiveDate};
 use iso_currency::Currency;
-use rand::rngs::OsRng;
-use rand::Rng;
-use rand::RngCore;
+use rand::{Rng, RngExt};
 
 /// Neutral users-lane destination for the anti-spam envelope scenarios: a
 /// plain address with no code behind it, so an ADMITTED envelope's inner
@@ -45,7 +44,12 @@ pub const USERS_LANE_PROBE_DEST: Address = address!("000000000000000000000000000
 /// sample exceeds it ~80% of the time). The field is ~2^254, so the
 /// reduction keeps collisions negligible.
 pub fn random_id() -> U256 {
-    let fr = Fr::rand(&mut OsRng);
+    // `Fr::rand` wants ark_std's rand (0.8), which is a different crate from
+    // the `rand` 0.10 used elsewhere here — so seed an ark RNG from the OS
+    // rather than handing it a rand 0.10 generator.
+    let mut seed = [0u8; 32];
+    rand::rng().fill_bytes(&mut seed);
+    let fr = Fr::rand(&mut ark_std::rand::rngs::StdRng::from_seed(seed));
     U256::from_be_slice(&fr.into_bigint().to_bytes_be())
 }
 
@@ -54,7 +58,7 @@ pub fn random_id() -> U256 {
 /// not going to happen, but the API forces the check).
 pub fn random_secret_key() -> [u8; 32] {
     let mut sk = [0u8; 32];
-    OsRng.fill_bytes(&mut sk);
+    rand::rng().fill_bytes(&mut sk);
     sk
 }
 
@@ -82,31 +86,31 @@ pub struct SuTemplate {
 /// Roll a [`SuTemplate`] with plausible currency / amount / wwd /
 /// fingerprint-count values (EUR, a recent past day, 1-4 SRs, 0-2 ARs).
 pub fn random_su_args() -> SuTemplate {
-    let mut rng = OsRng;
+    let mut rng = rand::rng();
     let today = chrono::Utc::now().date_naive();
     // Recent past day: 1-6 days ago.
-    let days_shift = rng.gen_range(1..7);
+    let days_shift = rng.random_range(1..7);
     let wwd_date = today - chrono::Duration::days(days_shift as i64);
     SuTemplate {
         currency: Currency::EUR.numeric(),
         worldwide_day: worldwide_day(&wwd_date),
-        amount_base: rng.gen_range(10..500),
+        amount_base: rng.random_range(10..500),
         amount_atto: 0,
-        sr_count: rng.gen_range(1..5),
-        ar_count: rng.gen_range(0..3),
+        sr_count: rng.random_range(1..5),
+        ar_count: rng.random_range(0..3),
     }
 }
 
 /// Roll a TD-style shape — currency / wwd / amounts (no SR/AR).
 pub fn random_td_args() -> SuTemplate {
-    let mut rng = OsRng;
+    let mut rng = rand::rng();
     let today = chrono::Utc::now().date_naive();
-    let days_shift = rng.gen_range(1..7);
+    let days_shift = rng.random_range(1..7);
     let wwd_date = today - chrono::Duration::days(days_shift as i64);
     SuTemplate {
         currency: Currency::EUR.numeric(),
         worldwide_day: worldwide_day(&wwd_date),
-        amount_base: rng.gen_range(250..2000),
+        amount_base: rng.random_range(250..2000),
         amount_atto: 0,
         sr_count: 0,
         ar_count: 0,
