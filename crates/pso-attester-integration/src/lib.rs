@@ -23,7 +23,7 @@ use ark_std::rand::rngs::StdRng;
 use ark_std::rand::SeedableRng;
 use ark_std::UniformRand;
 
-use alloy_primitives::{Address, B256, U16, U64};
+use alloy_primitives::{Address, B256, U16, U256, U64};
 use sha2::{Digest, Sha256};
 
 use pso_protocol::protocol::entity::Entity;
@@ -60,6 +60,50 @@ pub struct SpendingUnit {
     pub spending_records: Vec<Vec<u8>>,
     /// Amendment-record fingerprints (each 32 bytes).
     pub amendment_records: Vec<Vec<u8>>,
+}
+
+/// A SpendingUnit **v2** as submitted on-chain (the FFI mirror of the `sol!`
+/// struct). Field elements / addresses are big-endian `Vec<u8>`.
+///
+/// What changed from [`SpendingUnit`]: the record fingerprint lists are gone
+/// with the per-record path, and the batch this SU settles is named by
+/// `(ctx, seal_id)` — the loader context and the seal attempt the fingerprint
+/// committee certified. Those two fold into `nft_hash` where `sr`/`ar` used
+/// to, so a wallet holding a v2 SU proves ownership of a different preimage
+/// with the same circuits: the ownership proof takes `nft_hash` as a value
+/// and never re-derives it.
+#[derive(Debug, uniffi::Record)]
+pub struct SpendingUnitV2 {
+    /// Spending-unit id (32 bytes).
+    pub su_id: Vec<u8>,
+    /// `derivedOwner` commitment (32 bytes).
+    pub derived_owner: Vec<u8>,
+    /// Minting attester address (20 bytes).
+    pub attester: Vec<u8>,
+    /// Referrer address (20 bytes).
+    pub referrer: Vec<u8>,
+    /// Worldwide day (YYYYMMDD), as the committee stated it.
+    pub worldwide_day: u64,
+    /// ISO 4217 currency code.
+    pub currency: u16,
+    /// Amount integer part.
+    pub base: u64,
+    /// Amount fractional part (1e-18).
+    pub atto: u64,
+    /// The loader context of the batch this SU settles (32 bytes).
+    pub ctx: Vec<u8>,
+    /// The seal attempt it selects (32 bytes).
+    pub seal_id: Vec<u8>,
+}
+
+/// The result of issuing a v2 SpendingUnit: the on-chain struct plus the
+/// wallet's report.
+#[derive(Debug, uniffi::Record)]
+pub struct IssuedSpendingUnitV2 {
+    /// The SpendingUnit as `submitSU` takes it.
+    pub spending_unit: SpendingUnitV2,
+    /// The report the wallet stores to later prove ownership.
+    pub report: IssuanceReport,
 }
 
 /// The report an attester hands back to the wallet after issuing an NFT via the
@@ -310,6 +354,73 @@ impl Attester {
             report,
         })
     }
+
+    /// Assemble a **v2** SpendingUnit + report from a previously-generated
+    /// `header` and the settled batch.
+    ///
+    /// Same consent-box identity as [`Self::issue_with_header`] — only the
+    /// body differs: `(ctx, seal_id)` name the batch the fingerprint
+    /// committee certified, in place of the record fingerprint lists. Both
+    /// are 32-byte values taken verbatim from the seal, **not** field
+    /// elements: they are SHA-256 outputs, so they fold as limb pairs and any
+    /// 32 bytes are valid.
+    ///
+    /// Re-callable with the same header after a reverted publish, like the v1
+    /// path; adjusting the body re-derives only `nft_hash`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn issue_v2_with_header(
+        &self,
+        header: NftHeader,
+        worldwide_day: u64,
+        currency: u16,
+        base: u64,
+        atto: u64,
+        referrer_addr: Vec<u8>,
+        ctx: Vec<u8>,
+        seal_id: Vec<u8>,
+    ) -> Result<IssuedSpendingUnitV2, AttesterError> {
+        let su_id = arr::<32>(&header.nft_id, "nft_id")?;
+        let derived_owner = arr::<32>(&header.derived_owner, "derived_owner")?;
+        let referrer = arr::<20>(&referrer_addr, "referrer_addr")?;
+        let ctx_bytes = arr::<32>(&ctx, "ctx")?;
+        let seal_id_bytes = arr::<32>(&seal_id, "seal_id")?;
+
+        let entity = pso_chain_abi::entity::SpendingUnitV2 {
+            id: B256::new(su_id),
+            derived_owner: B256::new(derived_owner),
+            attester: Address::from(self.address),
+            referrer: Address::from(referrer),
+            worldwide_day: U64::from(worldwide_day),
+            currency: U16::from(currency),
+            base: U64::from(base),
+            atto: U64::from(atto),
+            ctx: U256::from_be_bytes(ctx_bytes),
+            seal_id: U256::from_be_bytes(seal_id_bytes),
+        };
+        let nft_hash = Entity::<PsoV1>::entity_hash(&entity)?;
+
+        Ok(IssuedSpendingUnitV2 {
+            spending_unit: SpendingUnitV2 {
+                su_id: header.nft_id.clone(),
+                derived_owner: header.derived_owner.clone(),
+                attester: self.address.to_vec(),
+                referrer: referrer.to_vec(),
+                worldwide_day,
+                currency,
+                base,
+                atto,
+                ctx: ctx_bytes.to_vec(),
+                seal_id: seal_id_bytes.to_vec(),
+            },
+            report: IssuanceReport {
+                nft_id: header.nft_id,
+                derived_owner: header.derived_owner,
+                nft_hash: PsoV1::field_to_be_bytes(&nft_hash),
+                opaque_pk: header.opaque_pk,
+                nonce: header.nonce,
+            },
+        })
+    }
 }
 
 #[cfg(test)]
@@ -433,6 +544,108 @@ mod tests {
         assert_eq!(reissued.spending_unit.su_id, issued.spending_unit.su_id);
         assert_eq!(reissued.report.derived_owner, issued.report.derived_owner);
         assert_ne!(reissued.report.nft_hash, issued.report.nft_hash);
+    }
+
+    /// The v2 body: `(ctx, seal_id)` fold where `sr`/`ar` used to, the header
+    /// identity is untouched, and an out-of-field value — which most real
+    /// seal ids are — is accepted rather than rejected.
+    #[test]
+    fn issue_v2_binds_the_batch_and_keeps_the_identity() {
+        let att = Attester::new(vec![0xab; 20]).unwrap();
+        let header = att
+            .generate_nft_header(seed(11), valid_consent_pk())
+            .unwrap();
+
+        let ctx = vec![0x11; 32];
+        // A SHA-256-shaped value above the BN254 modulus: the case the v1
+        // fingerprint path rejects and the v2 limbed fold accepts.
+        let seal_id = vec![0xff; 32];
+
+        let issued = att
+            .issue_v2_with_header(
+                header.clone(),
+                20_260_924,
+                978,
+                100,
+                567_890_000_000_000_000,
+                vec![0u8; 20],
+                ctx.clone(),
+                seal_id.clone(),
+            )
+            .expect("an out-of-field seal id folds as limbs");
+
+        assert_eq!(issued.spending_unit.su_id, header.nft_id);
+        assert_eq!(issued.spending_unit.derived_owner, header.derived_owner);
+        assert_eq!(issued.spending_unit.ctx, ctx);
+        assert_eq!(issued.spending_unit.seal_id, seal_id);
+        assert_eq!(issued.spending_unit.worldwide_day, 20_260_924);
+        assert_eq!(issued.report.nft_hash.len(), 32);
+
+        // The batch is bound: another attempt of the same context is another
+        // SU hash, under the same wallet identity.
+        let moved = att
+            .issue_v2_with_header(
+                header.clone(),
+                20_260_924,
+                978,
+                100,
+                567_890_000_000_000_000,
+                vec![0u8; 20],
+                ctx,
+                vec![0xfe; 32],
+            )
+            .unwrap();
+        assert_eq!(moved.spending_unit.su_id, issued.spending_unit.su_id);
+        assert_eq!(moved.report.derived_owner, issued.report.derived_owner);
+        assert_ne!(moved.report.nft_hash, issued.report.nft_hash);
+
+        // And a v1 SU with the same header and amount is a different preimage
+        // entirely — the two shapes never collide.
+        let v1 = att
+            .issue_with_header(
+                header,
+                20_260_924,
+                978,
+                100,
+                567_890_000_000_000_000,
+                vec![0u8; 20],
+                vec![fp(1)],
+                vec![],
+            )
+            .unwrap();
+        assert_ne!(v1.report.nft_hash, issued.report.nft_hash);
+    }
+
+    #[test]
+    fn issue_v2_rejects_a_wrong_length_batch_reference() {
+        let att = Attester::new(vec![0xab; 20]).unwrap();
+        let header = att
+            .generate_nft_header(seed(12), valid_consent_pk())
+            .unwrap();
+        assert!(att
+            .issue_v2_with_header(
+                header.clone(),
+                20_260_924,
+                978,
+                100,
+                0,
+                vec![0u8; 20],
+                vec![0x11; 31],
+                vec![0x22; 32],
+            )
+            .is_err());
+        assert!(att
+            .issue_v2_with_header(
+                header,
+                20_260_924,
+                978,
+                100,
+                0,
+                vec![0u8; 20],
+                vec![0x11; 32],
+                vec![0x22; 33],
+            )
+            .is_err());
     }
 
     #[test]
