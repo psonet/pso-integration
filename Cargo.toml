@@ -107,6 +107,9 @@ commonware-cryptography = "2026.9.0"
 # (group key / signature), version-matched to commonware-cryptography.
 commonware-codec = "2026.9.0"
 blst = "0.3.17"
+# Strict Ed25519 verification of the enclave's settlement signature, the only
+# signature over a settled batch's amount.
+ed25519-dalek = "2.2"
 
 # Async runtime — needed by the L2 client + CLIs + e2e tests.
 tokio = { version = "1", features = ["full"] }

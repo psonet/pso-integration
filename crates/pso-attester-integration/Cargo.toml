@@ -17,6 +17,11 @@ pso-chain-abi.workspace = true
 alloy-primitives.workspace = true
 ark-std.workspace = true
 sha2.workspace = true
+# The provider's two signatures, verified before an SU is minted: the
+# committee's BLS12-381 MinSig handle (same curve and DST the chain's
+# EIP-2537 path uses) and the enclave's strict Ed25519 settlement.
+blst.workspace = true
+ed25519-dalek.workspace = true
 
 uniffi = { version = "0.31", features = ["cli"] }
 thiserror = "2"
