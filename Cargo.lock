@@ -1769,7 +1769,7 @@ dependencies = [
  "cpufeatures 0.3.1",
  "crc-fast",
  "ctutils",
- "curve25519-dalek",
+ "curve25519-dalek 5.0.0",
  "ecdsa 0.17.0",
  "fixedbitset",
  "getrandom 0.2.17",
@@ -2103,6 +2103,22 @@ dependencies = [
 
 [[package]]
 name = "curve25519-dalek"
+version = "4.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2be"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "curve25519-dalek-derive",
+ "digest 0.10.7",
+ "fiat-crypto 0.2.9",
+ "rustc_version 0.4.1",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "curve25519-dalek"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5eed333089e2e1c1ac8c6c0398e5e2497b4c9926ca6d0365ed1e099afa5bc23"
@@ -2111,7 +2127,7 @@ dependencies = [
  "cpufeatures 0.3.1",
  "curve25519-dalek-derive",
  "digest 0.11.3",
- "fiat-crypto",
+ "fiat-crypto 0.3.0",
  "rustc_version 0.4.1",
  "subtle",
  "zeroize",
@@ -2393,6 +2409,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "ed25519"
+version = "2.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53"
+dependencies = [
+ "pkcs8 0.10.2",
+ "signature 2.2.0",
+]
+
+[[package]]
+name = "ed25519-dalek"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
+dependencies = [
+ "curve25519-dalek 4.1.3",
+ "ed25519",
+ "serde",
+ "sha2 0.10.9",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
 name = "educe"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2548,6 +2588,12 @@ dependencies = [
  "rand_core 0.10.1",
  "subtle",
 ]
+
+[[package]]
+name = "fiat-crypto"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
 name = "fiat-crypto"
@@ -2900,9 +2946,9 @@ dependencies = [
 
 [[package]]
 name = "hex-literal"
-version = "0.4.1"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
+checksum = "e712f64ec3850b98572bffac52e2c6f282b29fe6c5fa6d42334b30be438d95c1"
 
 [[package]]
 name = "hmac"
@@ -4047,7 +4093,7 @@ version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
 dependencies = [
- "toml_edit 0.25.15+spec-1.1.0",
+ "toml_edit",
 ]
 
 [[package]]
@@ -4154,6 +4200,8 @@ version = "0.17.0"
 dependencies = [
  "alloy-primitives",
  "ark-std 0.6.0",
+ "blst",
+ "ed25519-dalek",
  "pso-chain-abi",
  "pso-protocol",
  "sha2 0.10.9",
@@ -4163,9 +4211,8 @@ dependencies = [
 
 [[package]]
 name = "pso-chain-abi"
-version = "0.31.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "657604327f8448c4f13c7d829c2d03608ad21a178e3af28f26b53b304c0177e7"
+version = "0.32.0"
+source = "git+ssh://git@github.com/psonet/pso-chain-next.git?branch=feat%2Fspending-unit-v2#0cc81597aab937bf3d0ac35d373d60f68afc7855"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -4250,9 +4297,9 @@ dependencies = [
 
 [[package]]
 name = "pso-protocol"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ea96132edd119725dc6a60f5b62623fbb1fb88c912cfe7cee1432a57af912cc"
+checksum = "2636bbaec74feee9d68f7069937bc61742a9884343b1be41a7ed204cad1ad5d6"
 dependencies = [
  "alloy-primitives",
  "ark-bn254",
@@ -4264,6 +4311,7 @@ dependencies = [
  "blake2 0.10.6",
  "generic-array 1.4.5",
  "pso-poseidon",
+ "sha3",
  "thiserror 2.0.20",
  "zeroize",
  "zeroize_derive",
@@ -4271,9 +4319,9 @@ dependencies = [
 
 [[package]]
 name = "pso-protocol-derive"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58e46423401981aa82d677571c599ec9908b7fcff2be78663622178c85ee12b5"
+checksum = "1158df8367b8162a2536947586a8f8b496f97310e44822a06df37198130f533a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4319,8 +4367,8 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-backend"
-version = "0.13.0"
-source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?tag=v0.13.0#edcbede7d813d2125639f1958ad0033f51f10b1f"
+version = "0.14.0"
+source = "git+ssh://git@github.com/psonet/pso-zk-circuits.git?tag=v0.14.0#2cc3c153e84fc5358e1623db10dd3b459e402296"
 dependencies = [
  "acir",
  "acvm",
@@ -4337,9 +4385,9 @@ dependencies = [
 
 [[package]]
 name = "pso-zk-canonical"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5301df789f53b6b601896a3b4164a543ea37aa5e2a7e6e36d795692ce83db782"
+checksum = "ab3d6142b292ef509a299d806e8043a29c53737eed68c188b093cec70ec6d8a3"
 dependencies = [
  "ark-bn254",
  "ark-ff 0.6.0",
@@ -4349,7 +4397,7 @@ dependencies = [
  "pso-protocol",
  "serde_json",
  "tiny-keccak",
- "toml 0.8.23",
+ "toml 1.1.6+spec-1.1.0",
 ]
 
 [[package]]
@@ -5161,15 +5209,6 @@ dependencies = [
 
 [[package]]
 name = "serde_spanned"
-version = "0.6.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "serde_spanned"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
@@ -5749,25 +5788,13 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.8.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc1beb996b9d83529a9e75c17a1686767d148d70663143c7854d8b4a09ced362"
-dependencies = [
- "serde",
- "serde_spanned 0.6.9",
- "toml_datetime 0.6.11",
- "toml_edit 0.22.27",
-]
-
-[[package]]
-name = "toml"
 version = "0.9.12+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
 dependencies = [
  "indexmap 2.14.2",
  "serde_core",
- "serde_spanned 1.1.1",
+ "serde_spanned",
  "toml_datetime 0.7.5+spec-1.1.0",
  "toml_parser",
  "toml_writer",
@@ -5782,20 +5809,11 @@ checksum = "920602543f0911ab71da12c50d59701da54c196d1a2bf5cb4b75667f137a406a"
 dependencies = [
  "indexmap 2.14.2",
  "serde_core",
- "serde_spanned 1.1.1",
+ "serde_spanned",
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
  "toml_writer",
  "winnow 1.0.4",
-]
-
-[[package]]
-name = "toml_datetime"
-version = "0.6.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22cddaf88f4fbc13c51aebbf5f8eceb5c7c5a9da2ac40a13519eb5b0a0e8f11c"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -5818,20 +5836,6 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.22.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
-dependencies = [
- "indexmap 2.14.2",
- "serde",
- "serde_spanned 0.6.9",
- "toml_datetime 0.6.11",
- "toml_write",
- "winnow 0.7.15",
-]
-
-[[package]]
-name = "toml_edit"
 version = "0.25.15+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1340ea94a5856333492c9064b02c778b191dd2c853778d9609debdcdfea3a614"
@@ -5850,12 +5854,6 @@ checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow 1.0.4",
 ]
-
-[[package]]
-name = "toml_write"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "toml_writer"
@@ -6573,7 +6571,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7e8131a03190127fb2263afc72b322ecadae46b6ff8c6f399ff5d02f5559af6"
 dependencies = [
- "curve25519-dalek",
+ "curve25519-dalek 5.0.0",
  "rand_core 0.10.1",
  "zeroize",
 ]
