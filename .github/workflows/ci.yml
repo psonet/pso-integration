@@ -218,6 +218,11 @@ jobs:
   coverage:
     name: coverage
     runs-on: ubuntu-latest
+    # Scoped to this job rather than the workflow: the sticky comment is the
+    # only thing here that writes to the pull request.
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
