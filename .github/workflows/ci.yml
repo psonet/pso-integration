@@ -231,6 +231,19 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,cargo-nextest
+
+      # barretenberg-rs links the C++ runtime; without libc++ the link fails
+      # with `rust-lld: error: unable to find library -lc++`. Same package list
+      # the `check` job uses.
+      - name: Install C++ toolchain (barretenberg-rs build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang \
+            libstdc++-12-dev \
+            libc++-dev libc++abi-dev \
+            pkg-config libssl-dev
+
       - run: cargo llvm-cov nextest --workspace --profile ci --lcov --output-path lcov.info
 
       # `--summary-only` prints a fixed-width table meant for a terminal, which
