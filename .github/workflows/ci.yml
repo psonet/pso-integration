@@ -261,8 +261,18 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
     steps:
       - uses: actions/checkout@v4
+      # pso-mobile-integration depends on pso-zk-backend over
+      # ssh://git@github.com/psonet/pso-zk-circuits, so `cargo metadata` needs
+      # the credential helper before it can resolve the workspace at all.
+      # Every other Rust job here gets it from its composite action; this one
+      # builds its own toolchain, so it has to ask for it.
+      - uses: ./.github/actions/configure-private-git
+        with:
+          token: ${{ secrets.PSONET_REPO_TOKEN }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: llvm-tools-preview
