@@ -11,6 +11,7 @@ Usage: coverage_report.py <coverage.json> [--title TITLE]
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -64,6 +65,12 @@ def totals_table(totals: dict) -> str:
     )
 
 
+def repo_relative(name: str) -> str:
+    """llvm-cov reports absolute paths; a PR comment wants the repo-relative one."""
+    root = os.environ.get("GITHUB_WORKSPACE") or os.getcwd()
+    return name.removeprefix(root.rstrip("/") + "/")
+
+
 def file_rows(files: list[dict]) -> tuple[list[str], int]:
     """Per-file rows, worst line coverage first. Returns (rows, hidden_count)."""
     scored = []
@@ -81,8 +88,10 @@ def file_rows(files: list[dict]) -> tuple[list[str], int]:
 
     rows = []
     for percent, name, summary in shown:
-        # Paths are repo-relative already; keep them whole so they are
-        # clickable in a PR comment rather than truncated to ambiguity.
+        # Keep the path whole so it stays clickable in a PR comment rather
+        # than truncated to ambiguity — but relative, not the runner's
+        # /home/runner/work/<repo>/<repo>/ prefix.
+        name = repo_relative(name)
         lcov, ltot, lpct = metric(summary, "lines")
         _, _, fpct = metric(summary, "functions")
         rows.append(
