@@ -23,7 +23,7 @@ use ark_std::rand::rngs::StdRng;
 use ark_std::rand::SeedableRng;
 use ark_std::UniformRand;
 
-use alloy_primitives::{Address, B256, U16, U64};
+use alloy_primitives::{Address, B256, U16, U256, U64};
 use sha2::{Digest, Sha256};
 
 use pso_protocol::protocol::entity::Entity;
@@ -60,6 +60,119 @@ pub struct SpendingUnit {
     pub spending_records: Vec<Vec<u8>>,
     /// Amendment-record fingerprints (each 32 bytes).
     pub amendment_records: Vec<Vec<u8>>,
+}
+
+/// A SpendingUnit **v2** as submitted on-chain (the FFI mirror of the `sol!`
+/// struct). Field elements / addresses are big-endian `Vec<u8>`.
+///
+/// What changed from [`SpendingUnit`]: the record fingerprint lists are gone
+/// with the per-record path, and the batch this SU settles is named by
+/// `(ctx, seal_id)` — the loader context and the seal attempt the fingerprint
+/// committee certified. Those two fold into `nft_hash` where `sr`/`ar` used
+/// to, so a wallet holding a v2 SU proves ownership of a different preimage
+/// with the same circuits: the ownership proof takes `nft_hash` as a value
+/// and never re-derives it.
+#[derive(Debug, uniffi::Record)]
+pub struct SpendingUnitV2 {
+    /// Spending-unit id (32 bytes).
+    pub su_id: Vec<u8>,
+    /// `derivedOwner` commitment (32 bytes).
+    pub derived_owner: Vec<u8>,
+    /// Minting attester address (20 bytes).
+    pub attester: Vec<u8>,
+    /// Referrer address (20 bytes).
+    pub referrer: Vec<u8>,
+    /// Worldwide day (YYYYMMDD), as the committee stated it.
+    pub worldwide_day: u64,
+    /// ISO 4217 currency code.
+    pub currency: u16,
+    /// Amount integer part.
+    pub base: u64,
+    /// Amount fractional part (1e-18).
+    pub atto: u64,
+    /// The loader context of the batch this SU settles (32 bytes).
+    pub ctx: Vec<u8>,
+    /// The seal attempt it selects (32 bytes).
+    pub seal_id: Vec<u8>,
+}
+
+/// A sealed batch as the bank-data provider hands it over: the committee's
+/// certificate, the enclave's settlement statement, and the facts both cover.
+///
+/// Everything here is evidence, not configuration — the attester verifies it
+/// before minting rather than trusting the provider that produced it, and the
+/// same two signatures are re-checked on chain by `SpendingUnitV2.submitSU`.
+#[derive(Debug, uniffi::Record)]
+pub struct SealedBatch {
+    /// Loader context of the batch (32 bytes).
+    pub ctx: Vec<u8>,
+    /// The seal attempt this SU settles (32 bytes).
+    pub seal_id: Vec<u8>,
+    /// The fingerprint-service epoch whose committee signed the handle.
+    pub fs_epoch: u32,
+    /// Worldwide day (YYYYMMDD) as the committee stated it.
+    pub worldwide_day: u64,
+    /// Claims the handle certifies.
+    pub count: u64,
+    /// Fold over the batch's fingerprints (32 bytes).
+    pub f_fold: Vec<u8>,
+    /// The committee key the enclave verified the handle under: compressed
+    /// BLS12-381 G2, 96 bytes.
+    pub fs_group_key: Vec<u8>,
+    /// The committee's threshold signature over the handle: compressed G1,
+    /// 48 bytes.
+    pub handle_sig: Vec<u8>,
+    /// The batch's commitment root, as the seal discloses it.
+    pub commitment_root: Vec<u8>,
+    /// The enclave's per-context sequence number for this settlement.
+    pub sequence: u64,
+    /// ISO 4217 currency code.
+    pub currency: u16,
+    /// Amount integer part.
+    pub base: u64,
+    /// Amount fractional part (1e-18).
+    pub atto: u64,
+    /// The enclave's Ed25519 settlement signature, 64 bytes. The only
+    /// signature covering the amount.
+    pub settle_sig: Vec<u8>,
+}
+
+/// The deployment as the chain's `EnclaveRegistry` holds it — what the
+/// settlement signature is checked against.
+#[derive(Debug, uniffi::Record)]
+pub struct RegisteredEnclave {
+    /// The registered enclave key (32-byte Ed25519 verifying key).
+    pub enclave_pk: Vec<u8>,
+    /// The manifest digest the enclave was registered with (32 bytes). Taken
+    /// from the registry, never from the provider: it is part of the signed
+    /// settlement statement, so a settlement made under another configuration
+    /// does not verify.
+    pub rm_digest: Vec<u8>,
+}
+
+/// One epoch of the fingerprint-service key directory, as
+/// `FsEpochRegistry.keyFor` returns it (the key converted to commonware's
+/// compressed form).
+#[derive(Debug, uniffi::Record)]
+pub struct FsEpochKey {
+    /// `PK_att` for the epoch: compressed BLS12-381 G2, 96 bytes.
+    pub pk_att: Vec<u8>,
+    /// The epoch's RFC 9380 hash-to-curve tag.
+    pub dst: Vec<u8>,
+    /// First worldwide day this key seals.
+    pub start_wwd: u32,
+    /// First day it no longer seals; 0 while the epoch is the head.
+    pub end_wwd_exclusive: u32,
+}
+
+/// The result of issuing a v2 SpendingUnit: the on-chain struct plus the
+/// wallet's report.
+#[derive(Debug, uniffi::Record)]
+pub struct IssuedSpendingUnitV2 {
+    /// The SpendingUnit as `submitSU` takes it.
+    pub spending_unit: SpendingUnitV2,
+    /// The report the wallet stores to later prove ownership.
+    pub report: IssuanceReport,
 }
 
 /// The report an attester hands back to the wallet after issuing an NFT via the
@@ -122,6 +235,21 @@ pub enum AttesterError {
     /// Issuance (consent box / entity hashing) failed.
     #[error("issuance failed: {detail}")]
     Issuance { detail: String },
+    /// The seal's day falls outside the epoch's window, so the committee key
+    /// it was signed under is not the one that seals that day.
+    #[error("worldwide day {day} is outside epoch {epoch}'s window")]
+    DayOutsideEpochWindow { day: u64, epoch: u32 },
+    /// The key the enclave verified the handle under is not the epoch's key:
+    /// the seal certifies nothing about this committee.
+    #[error("the seal's committee key is not epoch {epoch}'s key")]
+    GroupKeyMismatch { epoch: u32 },
+    /// The committee's threshold signature does not verify over the batch.
+    #[error("committee handle does not verify for epoch {epoch}: {detail}")]
+    HandleSignatureInvalid { epoch: u32, detail: String },
+    /// The enclave's settlement signature does not verify under the
+    /// registered enclave key — including over the amount.
+    #[error("settlement signature does not verify under the registered enclave key: {detail}")]
+    SettlementSignatureInvalid { detail: String },
 }
 
 impl From<pso_protocol::error::Error> for AttesterError {
@@ -310,6 +438,235 @@ impl Attester {
             report,
         })
     }
+
+    /// Mint a **v2** SpendingUnit from a batch the provider has sealed.
+    ///
+    /// The provider is not trusted for any of it. Before the SU exists, this
+    /// re-runs the two checks the chain will run at `submitSU`, in the same
+    /// order and over the same bytes, so a batch that would revert fails here
+    /// with a reason instead of costing a submission:
+    ///
+    /// 1. the seal's day falls in `epoch`'s window, and the key the enclave
+    ///    verified the handle under **is** that epoch's key — an entry naming
+    ///    some other committee certifies nothing about this seal;
+    /// 2. the committee's threshold signature verifies over
+    ///    `"bdp-fs-handle-v3" ‖ attester ‖ ctx ‖ lp(seal_id) ‖ count ‖ f_fold
+    ///    ‖ fs_epoch ‖ wwd` under that key and tag — so a handle issued to
+    ///    another attester, or moved onto a batch of another size, is refused;
+    /// 3. the enclave's settlement signature verifies under the **registered**
+    ///    enclave key over the statement rebuilt with the **registered**
+    ///    manifest digest. That signature is the only one covering the
+    ///    amount, which is why the amount comes from the batch and not from a
+    ///    caller argument.
+    ///
+    /// Then `(ctx, seal_id)` fold into `nft_hash` where v1's record
+    /// fingerprints did, under the same consent-box identity.
+    pub fn issue_from_sealed_batch(
+        &self,
+        header: NftHeader,
+        batch: SealedBatch,
+        enclave: RegisteredEnclave,
+        epoch: FsEpochKey,
+        referrer_addr: Vec<u8>,
+    ) -> Result<IssuedSpendingUnitV2, AttesterError> {
+        let su_id = arr::<32>(&header.nft_id, "nft_id")?;
+        let derived_owner = arr::<32>(&header.derived_owner, "derived_owner")?;
+        let referrer = arr::<20>(&referrer_addr, "referrer_addr")?;
+        let ctx = arr::<32>(&batch.ctx, "ctx")?;
+        let seal_id = arr::<32>(&batch.seal_id, "seal_id")?;
+        let f_fold = arr::<32>(&batch.f_fold, "f_fold")?;
+        let enclave_pk = arr::<32>(&enclave.enclave_pk, "enclave_pk")?;
+        let rm_digest = arr::<32>(&enclave.rm_digest, "rm_digest")?;
+        let settle_sig = arr::<64>(&batch.settle_sig, "settle_sig")?;
+        let handle_sig = arr::<48>(&batch.handle_sig, "handle_sig")?;
+        let group_key = arr::<96>(&batch.fs_group_key, "fs_group_key")?;
+        let pk_att = arr::<96>(&epoch.pk_att, "pk_att")?;
+
+        // 1. The window, then the key. Both are about which committee the
+        //    seal belongs to, and neither needs curve arithmetic.
+        let day = batch.worldwide_day;
+        if day < u64::from(epoch.start_wwd)
+            || (epoch.end_wwd_exclusive != 0 && day >= u64::from(epoch.end_wwd_exclusive))
+        {
+            return Err(AttesterError::DayOutsideEpochWindow {
+                day,
+                epoch: batch.fs_epoch,
+            });
+        }
+        if group_key != pk_att {
+            return Err(AttesterError::GroupKeyMismatch {
+                epoch: batch.fs_epoch,
+            });
+        }
+
+        // 2. The committee's statement about the batch.
+        verify_handle(
+            &pk_att,
+            &handle_sig,
+            &epoch.dst,
+            &handle_message(
+                &self.address,
+                &ctx,
+                &seal_id,
+                batch.count,
+                &f_fold,
+                batch.fs_epoch,
+                day,
+            ),
+        )
+        .map_err(|detail| AttesterError::HandleSignatureInvalid {
+            epoch: batch.fs_epoch,
+            detail,
+        })?;
+
+        // 3. The enclave's statement about the amount.
+        let settlement =
+            settlement_message(&batch, &ctx, &seal_id, &f_fold, &group_key, &rm_digest);
+        verify_settlement(&enclave_pk, &settle_sig, &settlement)
+            .map_err(|detail| AttesterError::SettlementSignatureInvalid { detail })?;
+
+        let entity = pso_chain_abi::entity::SpendingUnitV2 {
+            id: B256::new(su_id),
+            derived_owner: B256::new(derived_owner),
+            attester: Address::from(self.address),
+            referrer: Address::from(referrer),
+            worldwide_day: U64::from(day),
+            currency: U16::from(batch.currency),
+            base: U64::from(batch.base),
+            atto: U64::from(batch.atto),
+            ctx: U256::from_be_bytes(ctx),
+            seal_id: U256::from_be_bytes(seal_id),
+        };
+        let nft_hash = Entity::<PsoV1>::entity_hash(&entity)?;
+
+        Ok(IssuedSpendingUnitV2 {
+            spending_unit: SpendingUnitV2 {
+                su_id: header.nft_id.clone(),
+                derived_owner: header.derived_owner.clone(),
+                attester: self.address.to_vec(),
+                referrer: referrer.to_vec(),
+                worldwide_day: day,
+                currency: batch.currency,
+                base: batch.base,
+                atto: batch.atto,
+                ctx: ctx.to_vec(),
+                seal_id: seal_id.to_vec(),
+            },
+            report: IssuanceReport {
+                nft_id: header.nft_id,
+                derived_owner: header.derived_owner,
+                nft_hash: PsoV1::field_to_be_bytes(&nft_hash),
+                opaque_pk: header.opaque_pk,
+                nonce: header.nonce,
+            },
+        })
+    }
+}
+
+// ── The provider's two preimages ─────────────────────────────────────────
+//
+// Mirrored from `bdp-seal-codec` (the provider's wire) and re-mirrored in
+// `SpendingUnitV2.sol`, because neither side can depend on the other's crate.
+// Little-endian integers, `u32le` length prefixes on the variable fields.
+// A parity fixture published by the provider would pin all three; until then
+// these two functions and the contract's `_settlementMessage` /
+// `_verifyHandle` are the definition, and the tests below pin the bytes.
+
+/// Domain separation of everything the enclave signs.
+const BDP_DST: &[u8] = b"bdp-enclave-v1";
+/// The settlement statement's tag.
+const TAG_SETTLEMENT: u8 = 0x12;
+/// The committee handle's message prefix (RFC-0015 v3).
+const HANDLE_PREFIX: &[u8] = b"bdp-fs-handle-v3";
+
+fn push_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
+    out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(bytes);
+}
+
+/// `"bdp-fs-handle-v3" ‖ attester(20) ‖ ctx(32) ‖ lp(seal_id) ‖ u64le(count)
+///  ‖ f_fold(32) ‖ u32le(fs_epoch) ‖ u64le(worldwide_day)`.
+fn handle_message(
+    attester: &[u8; 20],
+    ctx: &[u8; 32],
+    seal_id: &[u8; 32],
+    count: u64,
+    f_fold: &[u8; 32],
+    fs_epoch: u32,
+    worldwide_day: u64,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(HANDLE_PREFIX.len() + 160);
+    out.extend_from_slice(HANDLE_PREFIX);
+    out.extend_from_slice(attester);
+    out.extend_from_slice(ctx);
+    push_len_prefixed(&mut out, seal_id);
+    out.extend_from_slice(&count.to_le_bytes());
+    out.extend_from_slice(f_fold);
+    out.extend_from_slice(&fs_epoch.to_le_bytes());
+    out.extend_from_slice(&worldwide_day.to_le_bytes());
+    out
+}
+
+/// `DST ‖ 0x12 ‖ ctx ‖ lp(seal_id) ‖ u32le(fs_epoch) ‖ lp(fs_group_key)
+///  ‖ rm_digest ‖ lp(commitment_root) ‖ u64le(sequence) ‖ u16le(currency)
+///  ‖ u64le(base) ‖ u64le(atto) ‖ u64le(wwd) ‖ u64le(count) ‖ f_fold`.
+fn settlement_message(
+    batch: &SealedBatch,
+    ctx: &[u8; 32],
+    seal_id: &[u8; 32],
+    f_fold: &[u8; 32],
+    group_key: &[u8; 96],
+    rm_digest: &[u8; 32],
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(BDP_DST.len() + 320);
+    out.extend_from_slice(BDP_DST);
+    out.push(TAG_SETTLEMENT);
+    out.extend_from_slice(ctx);
+    push_len_prefixed(&mut out, seal_id);
+    out.extend_from_slice(&batch.fs_epoch.to_le_bytes());
+    push_len_prefixed(&mut out, group_key);
+    out.extend_from_slice(rm_digest);
+    push_len_prefixed(&mut out, &batch.commitment_root);
+    out.extend_from_slice(&batch.sequence.to_le_bytes());
+    out.extend_from_slice(&batch.currency.to_le_bytes());
+    out.extend_from_slice(&batch.base.to_le_bytes());
+    out.extend_from_slice(&batch.atto.to_le_bytes());
+    out.extend_from_slice(&batch.worldwide_day.to_le_bytes());
+    out.extend_from_slice(&batch.count.to_le_bytes());
+    out.extend_from_slice(f_fold);
+    out
+}
+
+/// The committee's threshold signature: BLS12-381 **MinSig** (signature in
+/// G1, key in G2) over `H2C(message, dst)` — the same pairing the chain's
+/// `BLS.verify` computes through the EIP-2537 precompiles.
+fn verify_handle(
+    pk_att: &[u8; 96],
+    sig: &[u8; 48],
+    dst: &[u8],
+    message: &[u8],
+) -> Result<(), String> {
+    if dst.is_empty() || dst.len() > 255 {
+        return Err(format!("dst is {} bytes, expected 1..=255", dst.len()));
+    }
+    let pk = blst::min_sig::PublicKey::key_validate(pk_att)
+        .map_err(|e| format!("committee key is not a valid G2 point: {e:?}"))?;
+    let signature = blst::min_sig::Signature::sig_validate(sig, true)
+        .map_err(|e| format!("handle signature is not a valid G1 point: {e:?}"))?;
+    match signature.verify(true, message, dst, &[], &pk, true) {
+        blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
+        e => Err(format!("{e:?}")),
+    }
+}
+
+/// The enclave's settlement signature: strict Ed25519, so a non-canonical
+/// encoding or a small-order key is a refusal — the same rule `0x0208`
+/// applies on chain.
+fn verify_settlement(enclave_pk: &[u8; 32], sig: &[u8; 64], message: &[u8]) -> Result<(), String> {
+    let key = ed25519_dalek::VerifyingKey::from_bytes(enclave_pk)
+        .map_err(|e| format!("enclave key is not a valid Ed25519 point: {e}"))?;
+    key.verify_strict(message, &ed25519_dalek::Signature::from_bytes(sig))
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -433,6 +790,274 @@ mod tests {
         assert_eq!(reissued.spending_unit.su_id, issued.spending_unit.su_id);
         assert_eq!(reissued.report.derived_owner, issued.report.derived_owner);
         assert_ne!(reissued.report.nft_hash, issued.report.nft_hash);
+    }
+
+    // ── v2: minting from a sealed batch ──────────────────────────────
+
+    const TEST_DST: &[u8] = b"PSO-FP-v1-SEAL_BLS12381G1_XMD:SHA-256_SSWU_RO_";
+    const ATTESTER_ADDR: [u8; 20] = [0xab; 20];
+    const RM_DIGEST: [u8; 32] = [0x5a; 32];
+
+    fn committee() -> blst::min_sig::SecretKey {
+        blst::min_sig::SecretKey::key_gen(&[7u8; 32], &[]).expect("committee key")
+    }
+
+    fn enclave_key() -> ed25519_dalek::SigningKey {
+        ed25519_dalek::SigningKey::from_bytes(&[9u8; 32])
+    }
+
+    /// A batch the provider would hand over: both signatures real, over the
+    /// same preimages the chain rebuilds.
+    fn sealed_batch(
+        sk: &blst::min_sig::SecretKey,
+        enclave: &ed25519_dalek::SigningKey,
+    ) -> SealedBatch {
+        use ed25519_dalek::Signer as _;
+
+        let mut batch = SealedBatch {
+            ctx: vec![0x11; 32],
+            // A SHA-256-shaped id above the BN254 modulus: ordinary here.
+            seal_id: vec![0xff; 32],
+            fs_epoch: 3,
+            worldwide_day: 20_260_924,
+            count: 42,
+            f_fold: vec![0xf0; 32],
+            fs_group_key: sk.sk_to_pk().compress().to_vec(),
+            handle_sig: Vec::new(),
+            commitment_root: vec![0x44; 32],
+            sequence: 7,
+            currency: 978,
+            base: 1_234,
+            atto: 567_890_000_000_000_000,
+            settle_sig: Vec::new(),
+        };
+
+        let handle = handle_message(
+            &ATTESTER_ADDR,
+            &arr::<32>(&batch.ctx, "ctx").unwrap(),
+            &arr::<32>(&batch.seal_id, "seal_id").unwrap(),
+            batch.count,
+            &arr::<32>(&batch.f_fold, "f_fold").unwrap(),
+            batch.fs_epoch,
+            batch.worldwide_day,
+        );
+        batch.handle_sig = sk.sign(&handle, TEST_DST, &[]).compress().to_vec();
+
+        let settlement = settlement_message(
+            &batch,
+            &arr::<32>(&batch.ctx, "ctx").unwrap(),
+            &arr::<32>(&batch.seal_id, "seal_id").unwrap(),
+            &arr::<32>(&batch.f_fold, "f_fold").unwrap(),
+            &arr::<96>(&batch.fs_group_key, "group_key").unwrap(),
+            &RM_DIGEST,
+        );
+        batch.settle_sig = enclave.sign(&settlement).to_bytes().to_vec();
+        batch
+    }
+
+    fn deployment(enclave: &ed25519_dalek::SigningKey) -> RegisteredEnclave {
+        RegisteredEnclave {
+            enclave_pk: enclave.verifying_key().to_bytes().to_vec(),
+            rm_digest: RM_DIGEST.to_vec(),
+        }
+    }
+
+    fn epoch_key(sk: &blst::min_sig::SecretKey) -> FsEpochKey {
+        FsEpochKey {
+            pk_att: sk.sk_to_pk().compress().to_vec(),
+            dst: TEST_DST.to_vec(),
+            start_wwd: 20_260_101,
+            end_wwd_exclusive: 0,
+        }
+    }
+
+    fn attester_and_header(seed_n: u8) -> (Arc<Attester>, NftHeader) {
+        let att = Attester::new(ATTESTER_ADDR.to_vec()).unwrap();
+        let header = att
+            .generate_nft_header(seed(seed_n), valid_consent_pk())
+            .unwrap();
+        (att, header)
+    }
+
+    #[test]
+    fn issue_from_sealed_batch_mints_and_binds_the_batch() {
+        let (att, header) = attester_and_header(11);
+        let sk = committee();
+        let enclave = enclave_key();
+        let batch = sealed_batch(&sk, &enclave);
+
+        let issued = att
+            .issue_from_sealed_batch(
+                header.clone(),
+                sealed_batch(&sk, &enclave),
+                deployment(&enclave),
+                epoch_key(&sk),
+                vec![0u8; 20],
+            )
+            .expect("a genuine batch mints");
+
+        assert_eq!(issued.spending_unit.su_id, header.nft_id);
+        assert_eq!(issued.spending_unit.derived_owner, header.derived_owner);
+        assert_eq!(issued.spending_unit.ctx, batch.ctx);
+        assert_eq!(issued.spending_unit.seal_id, batch.seal_id);
+        // The amounts come from the signed batch, not from an argument.
+        assert_eq!(issued.spending_unit.base, batch.base);
+        assert_eq!(issued.spending_unit.atto, batch.atto);
+        assert_eq!(issued.spending_unit.worldwide_day, batch.worldwide_day);
+        assert_eq!(issued.report.nft_hash.len(), 32);
+
+        // A v1 SU under the same header and amount is a different preimage.
+        let v1 = att
+            .issue_with_header(
+                header,
+                20_260_924,
+                978,
+                batch.base,
+                batch.atto,
+                vec![0u8; 20],
+                vec![fp(1)],
+                vec![],
+            )
+            .unwrap();
+        assert_ne!(v1.report.nft_hash, issued.report.nft_hash);
+    }
+
+    /// The amount rides on the enclave's signature: changing it after the
+    /// fact does not produce an SU, it produces a refusal.
+    #[test]
+    fn issue_from_sealed_batch_refuses_an_unsigned_amount() {
+        let (att, header) = attester_and_header(12);
+        let sk = committee();
+        let enclave = enclave_key();
+        let mut batch = sealed_batch(&sk, &enclave);
+        batch.base += 1;
+
+        assert!(matches!(
+            att.issue_from_sealed_batch(
+                header,
+                batch,
+                deployment(&enclave),
+                epoch_key(&sk),
+                vec![0u8; 20],
+            ),
+            Err(AttesterError::SettlementSignatureInvalid { .. })
+        ));
+    }
+
+    /// The settlement covers the registered manifest, so a deployment record
+    /// naming another one refuses — the same reason the chain rebuilds the
+    /// message from the registry rather than from calldata.
+    #[test]
+    fn issue_from_sealed_batch_refuses_another_manifest() {
+        let (att, header) = attester_and_header(13);
+        let sk = committee();
+        let enclave = enclave_key();
+        let mut record = deployment(&enclave);
+        record.rm_digest = vec![0x5b; 32];
+
+        assert!(matches!(
+            att.issue_from_sealed_batch(
+                header,
+                sealed_batch(&sk, &enclave),
+                record,
+                epoch_key(&sk),
+                vec![0u8; 20],
+            ),
+            Err(AttesterError::SettlementSignatureInvalid { .. })
+        ));
+    }
+
+    /// The handle covers `count`, so a seal cannot be moved onto a batch of
+    /// another size — and the check fires before the settlement one.
+    #[test]
+    fn issue_from_sealed_batch_refuses_a_tampered_batch_statement() {
+        let (att, header) = attester_and_header(14);
+        let sk = committee();
+        let enclave = enclave_key();
+        let mut batch = sealed_batch(&sk, &enclave);
+        batch.count += 1;
+
+        assert!(matches!(
+            att.issue_from_sealed_batch(
+                header,
+                batch,
+                deployment(&enclave),
+                epoch_key(&sk),
+                vec![0u8; 20],
+            ),
+            Err(AttesterError::HandleSignatureInvalid { .. })
+        ));
+    }
+
+    /// A handle issued to another attester does not verify under this one:
+    /// the attester address is in the signed message.
+    #[test]
+    fn issue_from_sealed_batch_refuses_a_handle_for_another_attester() {
+        let (_, header) = attester_and_header(15);
+        let other = Attester::new(vec![0xcd; 20]).unwrap();
+        let sk = committee();
+        let enclave = enclave_key();
+
+        assert!(matches!(
+            other.issue_from_sealed_batch(
+                header,
+                sealed_batch(&sk, &enclave),
+                deployment(&enclave),
+                epoch_key(&sk),
+                vec![0u8; 20],
+            ),
+            Err(AttesterError::HandleSignatureInvalid { .. })
+        ));
+    }
+
+    /// The seal's key must be the epoch's key; an entry for some other
+    /// committee certifies nothing about this seal. Checked before any curve
+    /// arithmetic.
+    #[test]
+    fn issue_from_sealed_batch_refuses_another_committees_key() {
+        let (att, header) = attester_and_header(16);
+        let sk = committee();
+        let enclave = enclave_key();
+        let mut epoch = epoch_key(&sk);
+        epoch.pk_att = blst::min_sig::SecretKey::key_gen(&[8u8; 32], &[])
+            .unwrap()
+            .sk_to_pk()
+            .compress()
+            .to_vec();
+
+        assert!(matches!(
+            att.issue_from_sealed_batch(
+                header,
+                sealed_batch(&sk, &enclave),
+                deployment(&enclave),
+                epoch,
+                vec![0u8; 20],
+            ),
+            Err(AttesterError::GroupKeyMismatch { epoch: 3 })
+        ));
+    }
+
+    #[test]
+    fn issue_from_sealed_batch_refuses_a_day_outside_the_epoch_window() {
+        let (att, header) = attester_and_header(17);
+        let sk = committee();
+        let enclave = enclave_key();
+        let mut epoch = epoch_key(&sk);
+        epoch.end_wwd_exclusive = 20_260_901; // closed before the seal's day
+
+        assert!(matches!(
+            att.issue_from_sealed_batch(
+                header,
+                sealed_batch(&sk, &enclave),
+                deployment(&enclave),
+                epoch,
+                vec![0u8; 20],
+            ),
+            Err(AttesterError::DayOutsideEpochWindow {
+                day: 20_260_924,
+                epoch: 3
+            })
+        ));
     }
 
     #[test]

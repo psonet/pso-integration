@@ -93,6 +93,9 @@ iso_currency.workspace             = true
 commonware-cryptography.workspace  = true
 commonware-codec.workspace         = true
 blst.workspace                     = true
+# S053: the enclave's Ed25519 settlement signature over a sealed batch, the
+# same strict verification `0x0208` does on chain.
+ed25519-dalek.workspace            = true
 
 # CLI parsing.
 clap.workspace                     = true

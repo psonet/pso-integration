@@ -43,6 +43,8 @@ pub mod s037_revoke_unknown_rejected;
 // has no such L2 contracts — sequencer-epoch/leader election and slashing live
 // in the consensus layer (pso-chain-node consensus/slashing.rs, pso-da
 // election.rs, pso-rotation anchor.rs), not at 0x5200..02/03.
+/// Keys, preimages and bindings S051–S053 share.
+mod registries;
 pub mod s041_users_envelope_unregistered_wallet_admitted;
 pub mod s042_mobile_api_wallet_flow;
 pub mod s043_envelope_aged_proof_accepted;
@@ -53,6 +55,9 @@ pub mod s047_td_full_proof;
 mod s048_pow_envelope_admitted;
 mod s049_pow_bad_solution_rejected;
 mod s050_pow_retired_scheme_rejected;
+mod s051_fs_epoch_chain_advances;
+mod s052_enclave_registered_for_attester;
+mod s053_su_v2_settles_sealed_batch;
 
 use crate::scenario::Scenario;
 
@@ -112,5 +117,10 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s048_pow_envelope_admitted::S048),
         Box::new(s049_pow_bad_solution_rejected::S049),
         Box::new(s050_pow_retired_scheme_rejected::S050),
+        // The sealing path, in order: the epoch chain, the deployment that
+        // signs settlements, then a batch settling into an SU under both.
+        Box::new(s051_fs_epoch_chain_advances::S051),
+        Box::new(s052_enclave_registered_for_attester::S052),
+        Box::new(s053_su_v2_settles_sealed_batch::S053),
     ]
 }
