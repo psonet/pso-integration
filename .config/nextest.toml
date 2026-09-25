@@ -21,7 +21,7 @@ path = "junit.xml"
 # more than one thread of load, and a hung endpoint should fail the test
 # rather than the job.
 [[profile.ci.overrides]]
-filter = "package(pso-e2e)"
+filter = "package(pso-e2e-testsuite)"
 threads-required = 4
 priority = -100
 slow-timeout = { period = "15m", terminate-after = 1 }

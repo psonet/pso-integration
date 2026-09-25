@@ -1,7 +1,7 @@
 name: Rust unit & integration tests
 description: >-
-  cargo test across the workspace, network-free targets only. Same
-  shape as rust-check but the cache scope and the actual cargo
+  cargo nextest across the workspace, network-free targets only.
+  Same shape as rust-check but the cache scope and the actual cargo
   invocation differ. Mirrors psonet/bank-data-provider.
 
 inputs:
@@ -49,11 +49,39 @@ runs:
         shared-key: ${{ inputs.cache-key }}
         save-if: ${{ inputs.save-cache }}
 
-    # `cargo test --lib --tests` excludes integration tests that
-    # need a live PSO L2 node. The testsuite's own integration
-    # tests under `testsuite/tests/framework.rs` are network-free
-    # by construction (envelope encoding, errors decoder, data
-    # shape) so they participate here.
-    - name: cargo test (workspace, --lib + tests/)
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-nextest
+
+    # `--lib --tests` excludes integration tests that need a live
+    # PSO L2 node. The testsuite's own integration tests under
+    # `testsuite/tests/framework.rs` are network-free by
+    # construction (envelope encoding, errors decoder, data shape)
+    # so they participate here.
+    #
+    # --profile ci: retries, fail-fast off and the JUnit report the
+    # flaky reporter below reads. Same runner, same profile name,
+    # in every psonet repo.
+    - name: Test (nextest, workspace --lib + tests/)
       shell: bash
-      run: cargo test --workspace --lib --tests
+      run: cargo nextest run --workspace --lib --tests --profile ci
+
+    # Retries turn a slow runner into a pass and hide that the test is
+    # unstable. This reads the JUnit report back and warns per test that only
+    # survived on a retry. Never fails the job.
+    - name: Report flaky tests
+      if: always()
+      shell: bash
+      run: |
+        command -v python3 >/dev/null 2>&1 || {
+          echo "::notice::python3 unavailable; skipping the flaky-test report"
+          exit 0
+        }
+        python3 .github/scripts/warn_flaky.py target/nextest/ci/junit.xml
+
+    # nextest builds and runs each test in its own process, which is
+    # what makes retries and partitioning possible — but it cannot run
+    # doctests. Without this they would silently stop being tested.
+    - name: cargo test --doc
+      shell: bash
+      run: cargo test --doc --workspace
