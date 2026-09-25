@@ -4211,8 +4211,9 @@ dependencies = [
 
 [[package]]
 name = "pso-chain-abi"
-version = "0.32.0"
-source = "git+ssh://git@github.com/psonet/pso-chain-next.git?branch=feat%2Fspending-unit-v2#0cc81597aab937bf3d0ac35d373d60f68afc7855"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6023418142735a594679c081a14ab75cebef936ba1c40b75aacc132c6f3fde5"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -4245,6 +4246,7 @@ dependencies = [
  "clap",
  "commonware-codec",
  "commonware-cryptography",
+ "ed25519-dalek",
  "eyre",
  "hex",
  "iso_currency",
