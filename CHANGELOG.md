@@ -2,6 +2,25 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.19.0 - 2026-09-25
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**attester**) mint a v2 SpendingUnit from a verified sealed batch - (ad7a459) - Anton Velichko
+- (**attester**) issue a v2 SpendingUnit bound to its sealed batch - (4ef8393) - Anton Velichko
+#### Bug Fixes
+- (**ci**) print repo-relative paths in the coverage table - (c4bf3f4) - Anton Velichko
+- (**ci**) let the coverage job resolve the private git dependency - (746ae9a) - Anton Velichko
+- (**ci**) give every repo the same supply-chain job and test runner - (60c6e09) - Anton Velichko
+- (**ci**) give the coverage job the C++ toolchain it needs - (bfce69b) - Anton Velichko
+- (**ci**) grant the coverage job permission to write its PR comment - (35c2b11) - Anton Velichko
+- (**ci**) add the shared psonet quality gates - (0d74297) - Anton Velichko
+#### Tests
+- (**e2e**) settle a sealed batch end to end — epoch chain, enclave, SU v2 - (6d5cea7) - Anton Velichko
+#### Build system
+- (**deps**) pso-chain-abi 0.34 from crates.io, not the chain branch - (f8e09f6) - Anton Velichko
+- (**deps**) take pso-chain-abi from the chain branch for the v2 entity - (e827db9) - Anton Velichko
+
+- - -
+
 ## v0.18.0 - 2026-09-23
 #### Features
 - (**deps**) commonware 2026.9.0, pso-chain-abi 0.31, pso-vdf 0.3 - (62c38b9) - Anton Velichko

@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.18.0"
+version = "0.19.0"
 edition = "2021"
 # The repository ships a MIT LICENSE; without this the manifests claimed no
 # licence at all, which is what `cargo deny check licenses` reported.
