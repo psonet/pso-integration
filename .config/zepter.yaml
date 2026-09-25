@@ -1,0 +1,38 @@
+version:
+  format: 1
+  binary: 0.13.2
+
+# Catches a feature declared on a workspace crate but not propagated to a
+# dependency exposing the same one — a build that succeeds while compiling
+# that dependency in the wrong shape.
+#
+# The list holds only names whose propagation is meaningful AND that do not
+# collide with an unrelated third-party feature. `default` is out (propagating
+# it would demand our default turn on each dependency's default, the opposite
+# of the intent wherever a dep is taken with default-features = false), and so
+# is anything sharing a name with a third-party feature of different meaning.
+workflows:
+  check:
+    - [
+        "lint",
+        "propagate-feature",
+        "--features=std,with-network-srs,alloy,interfaces,bindings",
+        "--left-side-feature-missing=ignore",
+        "--left-side-outside-workspace=ignore",
+        "--offline",
+        "--locked",
+        "--show-path",
+        "--quiet",
+      ]
+  default:
+    - [$check.0, "--fix"]
+
+help:
+  text: |
+    Zepter found a Cargo feature declared on a workspace crate but not
+    propagated to a dependency exposing the same feature.
+
+    Install it (`cargo install zepter --locked`) and run `zepter` in the
+    workspace root to apply the fix automatically.
+  links:
+    - "https://github.com/ggwpez/zepter"

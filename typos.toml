@@ -1,0 +1,38 @@
+# typos (https://github.com/crate-ci/typos) configuration.
+#
+# Entries are checked false positives from a real run, not guesses.
+
+[files]
+extend-exclude = [
+  # cocogitto writes a short SHA into every changelog line.
+  "CHANGELOG.md",
+  "Cargo.lock",
+  "*.lock",
+  "**/*.json",
+]
+
+[default]
+extend-ignore-re = [
+  # Commit SHAs in vendoring/provenance comments.
+  "@ [0-9a-f]{7,40}\\b",
+  # Rust byte-string literals are opaque fixtures, not prose.
+  "b\"[A-Za-z0-9_]*\"",
+]
+
+[default.extend-words]
+# Correct English the dictionary flags as near-misses.
+mis = "mis"
+unparseable = "unparseable"
+# Cryptography and protocol vocabulary.
+poseidon = "poseidon"
+merkle = "merkle"
+nullifier = "nullifier"
+blst = "blst"
+bls = "bls"
+attester = "attester"
+attesters = "attesters"
+# Scenario / protocol vocabulary.
+su = "su"
+td = "td"
+sra = "sra"
+acir = "acir"

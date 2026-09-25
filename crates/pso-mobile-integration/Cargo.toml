@@ -1,6 +1,7 @@
 [package]
 name = "pso-mobile-integration"
 version.workspace = true
+license.workspace = true
 edition = "2021"
 description = "Mobile-friendly UniFFI wrapper for PSO ZK proof generation (wallet side)"
 
@@ -58,3 +59,8 @@ with-network-srs = ["pso-zk-backend/with-network-srs"]
 [[bin]]
 name = "uniffi-bindgen-mobile"
 path = "uniffi-bindgen.rs"
+
+# Inherit [workspace.lints]. Without this the table at the workspace root
+# applies to nothing.
+[lints]
+workspace = true

@@ -1,0 +1,89 @@
+# cargo-deny configuration. Run locally with `cargo deny check`.
+
+[graph]
+all-features = true
+
+[advisories]
+yanked = "deny"
+# Each entry needs a reason and, where one exists, the upgrade that retires
+# it. An ignore without a reason is indistinguishable from an oversight.
+ignore = []
+
+[bans]
+# Warn first: the duplicate-version count here is inherited from upstream
+# graphs we do not pick versions in. Promote to deny after reading a report.
+multiple-versions = "warn"
+# The real target is a PUBLISHED `version = "*"`; an intra-workspace path dep
+# has no version requirement by design, and `allow-wildcard-paths` exempts
+# only crates marked `publish = false`.
+wildcards = "warn"
+allow-wildcard-paths = true
+highlight = "all"
+deny = [
+  # rustls is the TLS stack here. An openssl arriving transitively means
+  # something pulled in native-tls, which drags a C dependency and a second
+  # TLS implementation along with it.
+  { name = "openssl" },
+  { name = "openssl-sys" },
+]
+skip = []
+skip-tree = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+private = { ignore = true }
+unused-allowed-license = "warn"
+allow = [
+  "MIT",
+  # NOT a routine entry — read this before adding anything near it.
+  #
+  # `pso-chain-abi` is GPL-3.0-or-later, and it reaches `pso-mobile-integration`
+  # and `pso-attester-integration`, both of which build a cdylib that ships
+  # inside a mobile application. GPLv3 is copyleft: linking it does not become
+  # MIT because the wrapper crate says MIT, so on the face of it the
+  # distributed artifact carries GPLv3 terms and this repository's own MIT
+  # LICENSE describes only the code written here.
+  #
+  # That is a licensing decision, not a lint configuration, and nobody should
+  # take this line as having settled it. It exists so the other three checks
+  # can run; the question it papers over is whether pso-chain-abi should be
+  # dual-licensed for downstream consumers, or whether these artifacts should
+  # say GPLv3.
+  "GPL-3.0-or-later",
+  "MIT-0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-1-Clause",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "0BSD",
+  "CC0-1.0",
+  "ISC",
+  "Unlicense",
+  "Unicode-3.0",
+  "Zlib",
+  "CDLA-Permissive-2.0",
+  "MPL-2.0",
+  "LGPL-2.1-or-later",
+  "LicenseRef-rustls-webpki",
+]
+exceptions = []
+
+[[licenses.clarify]]
+name = "rustls-webpki"
+expression = "LicenseRef-rustls-webpki"
+license-files = [{ path = "LICENSE", hash = 0x001c7e6c }]
+
+[sources]
+unknown-registry = "deny"
+# A git dependency is code no registry yanked, no advisory database indexes
+# and no review gate saw. Listing the hosts makes adding one a decision.
+unknown-git = "deny"
+allow-git = [
+  # acir / acvm / noirc-*, reached transitively through pso-zk-backend.
+  "https://github.com/noir-lang/noir.git",
+  # pso-zk-backend: the acvm + barretenberg seam, git-only because its own noir deps are.
+  "ssh://git@github.com/psonet/pso-zk-circuits.git",
+]

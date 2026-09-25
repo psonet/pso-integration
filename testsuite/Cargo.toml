@@ -1,6 +1,7 @@
 [package]
 name        = "pso-e2e-testsuite"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 description = "Standalone CLI binary that exercises the PSO L2 end-to-end against a running devnet (agents pool + actor pool)."
 publish     = false
@@ -109,3 +110,8 @@ serde = { workspace = true }
 # the typed error decoder, and the data generators. They do NOT
 # require a running L2 node; `cargo test -p pso-e2e-testsuite --lib`
 # stays useful in dev.
+
+# Inherit [workspace.lints]. Without this the table at the workspace root
+# applies to nothing.
+[lints]
+workspace = true
