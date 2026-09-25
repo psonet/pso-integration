@@ -193,24 +193,62 @@ jobs:
         with:
           config: ./typos.toml
 
-  # Cargo features declared on a workspace crate but not propagated to a
-  # dependency exposing the same one. Builds cleanly today and silently
-  # compiles that dependency in the wrong shape.
-  zepter:
-    name: zepter
+  # --------------------------------------------------------------- #
+  # Supply chain. One job, the same four questions in every psonet repo:
+  # are the licences ones we may ship, do the git sources resolve to hosts
+  # we trust, are duplicate versions under control, and is anything in the
+  # tree the subject of a published advisory.
+  # --------------------------------------------------------------- #
+  supply-chain:
+    name: supply chain
     runs-on: ubuntu-latest
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      # `cargo metadata` resolves the private psonet/pso-zk-circuits dep.
       - uses: ./.github/actions/configure-private-git
         with:
           token: ${{ secrets.PSONET_REPO_TOKEN }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-audit
+      # zepter has no install-action manifest, so it builds from source here.
+      - name: Install zepter
+        run: cargo install zepter --locked --version ^0.13
+
+      # Licences, git sources and bans gate. All three pass on this tree
+      # today, so a regression here is a new fact and fails the build.
+      - name: cargo deny (licenses, sources, bans)
+        run: cargo deny --all-features check licenses sources bans
+
+      # Advisories report rather than gate. The two entries here are
+      # unmaintained-crate notices, not vulnerabilities: `paste`
+      # (RUSTSEC-2024-0436) and `proc-macro-error2` (RUSTSEC-2026-0173),
+      # both transitive and neither with a drop-in replacement on offer.
+      # Retiring them is a dependency decision with its own trade-offs and
+      # does not belong to a CI wiring change. This keeps them on the log of
+      # every run; delete the continue-on-error line to make it gate.
+      - name: cargo deny (advisories)
         continue-on-error: true
-      # No install-action manifest for zepter, so it builds from source.
-      - run: cargo install zepter --locked --version ^0.13
-      - run: cargo metadata --format-version=1 --all-features --locked > /dev/null
-      - run: zepter run check
+        run: |
+          cargo deny --all-features check advisories \
+            || echo "::warning::cargo deny found advisories; see the log. Not gating yet."
+
+      # A separate RUSTSEC database revision from cargo-deny's, so a
+      # freshly-published advisory surfaces from whichever updates first.
+      # Reports rather than gates: the gate above is the one with a
+      # deliberate ignore list behind it.
+      - name: cargo audit
+        continue-on-error: true
+        run: cargo audit || echo "::warning::cargo audit found advisories. Not gating yet."
+
+      # Eagerly resolve before zepter so a fetch failure reads as a fetch
+      # failure rather than a zepter parse error.
+      - name: cargo metadata
+        run: cargo metadata --format-version=1 --all-features --locked > /dev/null
+
+      - name: zepter
+        run: zepter run check
 
   # Coverage. Reported, never enforced: a threshold set before anyone has seen
   # the number is a guess. Deliberately outside the `ci` aggregator's needs, so
@@ -279,7 +317,7 @@ jobs:
     name: ci
     runs-on: ubuntu-latest
     if: always()
-    needs: [check, unit, typos, zepter]
+    needs: [check, unit, typos, supply-chain]
     steps:
       - name: Check dependency results
         env:
