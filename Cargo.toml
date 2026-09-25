@@ -1,6 +1,9 @@
 [workspace.package]
 version = "0.18.0"
 edition = "2021"
+# The repository ships a MIT LICENSE; without this the manifests claimed no
+# licence at all, which is what `cargo deny check licenses` reported.
+license = "MIT"
 
 [workspace]
 members = [
@@ -163,3 +166,9 @@ lto = "fat"
 codegen-units = 1
 strip = true
 
+# Rustdoc lints. An intra-doc link that stops resolving is a silent docs
+# regression — nothing reads the rendered output, so nothing notices. CI runs
+# `cargo doc` with `-D warnings`, which turns a dead [`Type`] link into a
+# build failure instead.
+[workspace.lints.rustdoc]
+all = "warn"

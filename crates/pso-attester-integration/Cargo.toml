@@ -29,3 +29,8 @@ thiserror = "2"
 [[bin]]
 name = "uniffi-bindgen-attester"
 path = "src/bin/uniffi-bindgen.rs"
+
+# Inherit [workspace.lints]. Without this the table at the workspace root
+# applies to nothing.
+[lints]
+workspace = true

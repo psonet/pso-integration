@@ -1,6 +1,7 @@
 [package]
 name        = "pso-attester-cli"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 description = "CLI for PSO Attester-side L2 operations: register SR / amendment records, mint SpendingUnits."
 
@@ -27,3 +28,8 @@ eyre.workspace       = true
 hex.workspace        = true
 tracing.workspace            = true
 tracing-subscriber.workspace = true
+
+# Inherit [workspace.lints]. Without this the table at the workspace root
+# applies to nothing.
+[lints]
+workspace = true
