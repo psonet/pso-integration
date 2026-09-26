@@ -13,27 +13,27 @@
 use pso_e2e_testsuite::cli::parse_hex32;
 use pso_e2e_testsuite::clients::contract_errors::{decode_from_bytes, decode_text};
 use pso_e2e_testsuite::clients::envelope::{
-    build_vdf_envelope, derive_vdf_input, ENVELOPE_PREFIX_LEN, VDF_ENVELOPE_TYPE,
+    build_pow_envelope, derive_vdf_input, POW_ENVELOPE_PREFIX_LEN, POW_ENVELOPE_TYPE,
 };
 use pso_e2e_testsuite::data::{currency_eur, random_id, random_su_args};
 use pso_e2e_testsuite::PsoContractError;
 
-/// Sanity-check the `0x76` envelope layout: 1B type byte + 32B nullifier
-/// + 32B vdf_input + (4B len + 48B) vdf_output + (4B len + 48B) vdf_proof
-/// + 8B submitted_block = 177B prefix, followed by the inner 2718 tx verbatim.
+/// Sanity-check the `0x77` envelope layout: 1B type byte, 32B nullifier, 1B
+/// scheme, a 4B length prefix plus an 8B solution, then 8B submitted_block —
+/// a 54B prefix, followed by the inner 2718 tx verbatim.
 #[test]
 fn envelope_header_layout() {
     let signer = alloy_primitives::Address::from([0xab; 20]);
     let inner = vec![0u8; 96]; // stand-in inner 2718 bytes
-    let env = build_vdf_envelope(signer, 0, 1, 19_280_501, 16, &inner).unwrap();
-    assert_eq!(env[0], VDF_ENVELOPE_TYPE);
-    assert_eq!(env.len(), ENVELOPE_PREFIX_LEN + inner.len());
-    assert_eq!(&env[ENVELOPE_PREFIX_LEN..], &inner[..]);
+    let env = build_pow_envelope(signer, 0, 1, 19_280_501, 16, &inner).unwrap();
+    assert_eq!(env[0], POW_ENVELOPE_TYPE);
+    assert_eq!(env.len(), POW_ENVELOPE_PREFIX_LEN + inner.len());
+    assert_eq!(&env[POW_ENVELOPE_PREFIX_LEN..], &inner[..]);
 }
 
-/// Confirm the VDF binding is deterministic on identical inputs and
-/// changes on any input change. Drift here would break the chain's
-/// re-derivation step and surface as `BadVdfInputBinding`.
+/// Confirm the binding is deterministic on identical inputs and changes on any
+/// input change. It is derived on both sides and never transmitted, so drift
+/// here makes the node solve for a different input and refuse the solution.
 #[test]
 fn vdf_input_binding_is_canonical() {
     let signer = alloy_primitives::Address::from([0xcd; 20]);
@@ -44,13 +44,12 @@ fn vdf_input_binding_is_canonical() {
     assert_ne!(a, c, "differs on nonce change");
 }
 
-/// The `0x76` envelope type byte must match the node's `VDF_ENVELOPE_TYPE`
-/// (the anonymous-lane discriminator, replacing pso-chain's calldata magic).
-/// If this changes, both sides have to update in lockstep — pin it so the
-/// drift is loud.
+/// The envelope type byte must match the node's `POW_ENVELOPE_TYPE` — the
+/// anonymous-lane discriminator. If it changes, both sides have to update in
+/// lockstep, so pin it and make the drift loud.
 #[test]
-fn vdf_envelope_type_pinned() {
-    assert_eq!(VDF_ENVELOPE_TYPE, 0x76);
+fn envelope_type_pinned() {
+    assert_eq!(POW_ENVELOPE_TYPE, 0x77);
 }
 
 /// Typed-error decoder round trip for a no-arg selector.

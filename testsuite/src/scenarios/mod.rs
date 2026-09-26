@@ -17,6 +17,11 @@ pub mod s009_su_with_foreign_sr_rejected;
 pub mod s010_su_double_spend_rejected;
 pub mod s011_su_with_nonexistent_sr_rejected;
 pub mod s012_td_empty_array_rejected;
+// S013-S017 are NOT in `all()`. They tamper with the retired `0x76` header at
+// fixed byte offsets, and two of them assert on the MinRoot output/proof pair
+// that the current scheme has no counterpart for. The modules stay compiled so
+// the tampering shapes survive for a `0x77` rewrite, but they would index past
+// the end of a `0x77` prefix if run.
 pub mod s013_envelope_bad_magic_rejected;
 pub mod s014_envelope_nullifier_replay_rejected;
 pub mod s015_envelope_stale_submitted_block_rejected;
@@ -77,11 +82,6 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s010_su_double_spend_rejected::S010),
         Box::new(s011_su_with_nonexistent_sr_rejected::S011),
         Box::new(s012_td_empty_array_rejected::S012),
-        Box::new(s013_envelope_bad_magic_rejected::S013),
-        Box::new(s014_envelope_nullifier_replay_rejected::S014),
-        Box::new(s015_envelope_stale_submitted_block_rejected::S015),
-        Box::new(s016_envelope_bad_vdf_proof_rejected::S016),
-        Box::new(s017_envelope_wrong_vdf_output_rejected::S017),
         Box::new(s018_td_malformed_aggregation_proof_rejected::S018),
         Box::new(s019_td_invalid_aggregation_proof_rejected::S019),
         Box::new(s020_su_with_foreign_ar_rejected::S020),

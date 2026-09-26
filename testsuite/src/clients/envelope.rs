@@ -31,13 +31,10 @@ use alloy_primitives::Address;
 use rand::Rng;
 
 use pso_antispam::PowScheme;
-use pso_vdf::minroot::MinRootVdf;
-use pso_vdf::types::VdfInput;
-use pso_vdf::Vdf;
 
-/// EIP-2718 type byte identifying a VDF-protected anonymous-lane envelope.
-/// Mirrors `VDF_ENVELOPE_TYPE` on the node (replaces pso-chain's `0xCAFED00D`
-/// calldata magic as the lane discriminator).
+/// EIP-2718 type byte of the RETIRED anonymous-lane envelope. The node no
+/// longer decodes it; kept, with the field offsets below, as the layout the
+/// deregistered tamper scenarios are written against.
 pub const VDF_ENVELOPE_TYPE: u8 = 0x76;
 
 // Byte ranges into the full `0x76` wire envelope (type byte at index 0). The
@@ -172,73 +169,10 @@ pub fn build_pow_envelope_with(
     Ok(out)
 }
 
-/// Build the full `0x76` VdfProtectedTransaction wire envelope wrapping
-/// `inner_tx_2718` (the signed inner standard tx's EIP-2718 bytes).
-///
-/// Rolls a fresh 32-byte nullifier, derives `vdf_input` per the canonical
-/// binding, runs MinRoot at `difficulty` iterations, and assembles
-/// `0x76 || header || inner`. The returned bytes are ready to hex-encode into
-/// `eth_sendRawTransaction`.
-pub fn build_vdf_envelope(
-    signer: Address,
-    tx_nonce: u64,
-    submitted_block: u64,
-    chain_id: u64,
-    difficulty: u64,
-    inner_tx_2718: &[u8],
-) -> eyre::Result<Vec<u8>> {
-    if difficulty == 0 {
-        return Err(eyre::eyre!("VDF difficulty must be > 0"));
-    }
-
-    let mut nullifier = [0u8; 32];
-    rand::rng().fill_bytes(&mut nullifier);
-
-    let vdf_input_bytes = derive_vdf_input(signer, tx_nonce, submitted_block, chain_id);
-    let vdf_input = VdfInput::from_bytes(vdf_input_bytes);
-    let (vdf_output, vdf_proof) = MinRootVdf::eval(&vdf_input, difficulty);
-    debug_assert_eq!(vdf_output.0.len(), 48, "VdfOutput is 48 bytes");
-    debug_assert_eq!(vdf_proof.inner.len(), 48, "VdfProof is 48 bytes");
-
-    let mut out = Vec::with_capacity(ENVELOPE_PREFIX_LEN + inner_tx_2718.len());
-    out.push(VDF_ENVELOPE_TYPE);
-    out.extend_from_slice(&nullifier);
-    out.extend_from_slice(&vdf_input_bytes);
-    out.extend_from_slice(&(vdf_output.0.len() as u32).to_be_bytes());
-    out.extend_from_slice(&vdf_output.0);
-    out.extend_from_slice(&(vdf_proof.inner.len() as u32).to_be_bytes());
-    out.extend_from_slice(&vdf_proof.inner);
-    out.extend_from_slice(&submitted_block.to_be_bytes());
-    out.extend_from_slice(inner_tx_2718);
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn envelope_has_correct_layout() {
-        let signer = Address::from([0xab; 20]);
-        let inner = vec![0x02u8, 0xde, 0xad, 0xbe, 0xef]; // stand-in inner 2718
-        let env = build_vdf_envelope(signer, 0, 1, 1, 16, &inner).unwrap();
-        assert_eq!(env[0], VDF_ENVELOPE_TYPE);
-        assert_eq!(env.len(), ENVELOPE_PREFIX_LEN + inner.len());
-        // output/proof length prefixes are the constant 48.
-        assert_eq!(u32::from_be_bytes(env[65..69].try_into().unwrap()), 48);
-        assert_eq!(u32::from_be_bytes(env[117..121].try_into().unwrap()), 48);
-        assert_eq!(&env[ENVELOPE_PREFIX_LEN..], &inner[..]);
-    }
-
-    /// The name of this test promises more than it used to check: determinism
-    /// and "a different nonce gives a different answer" both hold for a binding
-    /// that has silently diverged from the node's. Since a divergence is
-    /// invisible at runtime — the transaction is simply never admitted, with no
-    /// error on either side — the canonical bytes are pinned here.
-    ///
-    /// This vector predates the move to `pso-antispam` and is what `pso-vdf`
-    /// produced. If it fails, the suite and the node no longer agree, and every
-    /// scenario that submits a users-lane transaction is testing a fiction.
     /// Pins the `0x77` layout against a real built envelope. The tamper
     /// scenarios index by these constants, so a wrong offset would not fail
     /// loudly — it would quietly corrupt a different field and the test would
@@ -288,6 +222,12 @@ mod tests {
         );
     }
 
+    /// Determinism and "a different nonce gives a different answer" both hold
+    /// for a binding that has silently diverged from the node's, so the
+    /// canonical bytes are pinned instead. A divergence is invisible at runtime
+    /// — the transaction is simply never admitted, with no error on either side
+    /// — and every scenario that submits a users-lane transaction would be
+    /// testing a fiction.
     #[test]
     fn vdf_input_matches_canonical_binding() {
         let signer = Address::from([0xcd; 20]);

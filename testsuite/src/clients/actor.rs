@@ -35,15 +35,12 @@ use alloy_transport_http::reqwest::{Client as HttpClient, Url};
 use serde_json::{json, Value};
 
 use crate::clients::contract_errors::{decode_from_bytes, decode_text, PsoContractError};
-use crate::clients::envelope::build_vdf_envelope;
 use pso_antispam::PowScheme;
 
-/// Which anonymous-lane wire format to build.
+/// Which anonymous-lane wire format to build. One variant today; kept as an
+/// enum so a second scheme is a variant rather than a new submit path.
 #[derive(Clone, Copy, Debug)]
 enum EnvelopeKind {
-    /// The retired `0x76` MinRoot envelope. Still built by most scenarios,
-    /// which predate SR-43.
-    Legacy,
     /// The `0x77` scheme-tagged envelope.
     Pow(PowScheme),
 }
@@ -237,11 +234,10 @@ impl ActorClient {
     }
 
     /// Like [`Self::submit_tx_with_envelope`] but lets the caller
-    /// pick a custom VDF iteration count `T` to compute the proof
+    /// pick the difficulty to solve the proof
     /// at. `None` falls back to `fetch_difficulty()` (canonical
     /// happy-path source — `pso_vdfInfo` against the chain's
-    /// current epoch). `Some(t)` runs MinRoot at exactly `t`
-    /// iterations.
+    /// current epoch).
     ///
     /// Useful for difficulty-mismatch scenarios (S031) — pass a
     /// value outside the chain's accepted `current ∪ previous`
@@ -262,7 +258,7 @@ impl ActorClient {
 
     /// Like [`Self::submit_tx_with_difficulty`] but additionally lets
     /// the caller pin `submitted_block` instead of using the current
-    /// head. The envelope's VDF binding is derived for the pinned
+    /// head. The envelope's binding is derived for the pinned
     /// block, so the proof is genuinely "as of" that height —
     /// admission then depends solely on the chain-side age window
     /// (`PSO_PROOF_MAX_AGE`). Used by the proof-aging scenario (S043)
@@ -280,7 +276,7 @@ impl ActorClient {
         F: FnOnce(Vec<u8>) -> Vec<u8>,
     {
         self.submit_enveloped(
-            EnvelopeKind::Legacy,
+            EnvelopeKind::Pow(PowScheme::Hashcash),
             to,
             inner_calldata,
             custom_difficulty,
@@ -290,12 +286,9 @@ impl ActorClient {
         .await
     }
 
-    /// Submit a `0x77` anti-spam envelope (SR-43) — the format that replaces
-    /// the forgeable `0x76` one.
-    ///
-    /// Separate entry point rather than a flag on the legacy path, because the
-    /// two wire formats have different field layouts: a scenario that tampers
-    /// with one cannot reuse the other's byte offsets.
+    /// Submit a `0x77` anti-spam envelope. Identical to [`Self::submit_tx`] —
+    /// kept as a name a scenario can read as "the anti-spam path" where that is
+    /// the point of the test.
     pub async fn submit_pow_tx<F>(
         &self,
         to: Address,
@@ -394,17 +387,9 @@ impl ActorClient {
         let mut inner_2718 = Vec::with_capacity(256);
         alloy_eips::eip2718::Encodable2718::encode_2718(&inner_envelope, &mut inner_2718);
 
-        // Wrap them in the `0x76` VDF envelope, then let the scenario tamper the
-        // wire bytes (header field offsets are `envelope::*_RANGE`).
+        // Wrap them in the anti-spam envelope, then let the scenario tamper the
+        // wire bytes (header field offsets are `envelope::POW_*`).
         let wire = match kind {
-            EnvelopeKind::Legacy => build_vdf_envelope(
-                self.address(),
-                nonce,
-                head,
-                self.inner.chain_id,
-                difficulty,
-                &inner_2718,
-            ),
             EnvelopeKind::Pow(scheme) => crate::clients::envelope::build_pow_envelope_with(
                 scheme,
                 self.address(),
