@@ -4256,7 +4256,6 @@ dependencies = [
  "pso-chain-abi",
  "pso-mobile-integration",
  "pso-protocol",
- "pso-vdf",
  "pso-zk-backend",
  "pso-zk-canonical",
  "rand 0.10.3",
