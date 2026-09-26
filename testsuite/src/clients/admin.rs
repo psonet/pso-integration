@@ -218,7 +218,7 @@ impl AdminClient {
     // Network parameter reads.
     // -----------------------------------------------------------------
 
-    /// `pso_vdfInfo` — the chain's current MinRoot VDF iteration count `T`
+    /// `pso_vdfInfo` — the chain's current anti-spam difficulty `T`
     /// (the `current_difficulty` field). Served on both gated ports.
     #[allow(dead_code)]
     pub async fn current_difficulty(&self) -> Result<u64, RpcError> {
