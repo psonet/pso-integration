@@ -63,6 +63,10 @@ mod s050_pow_retired_scheme_rejected;
 mod s051_fs_epoch_chain_advances;
 mod s052_enclave_registered_for_attester;
 mod s053_su_v2_settles_sealed_batch;
+// The `0x77` replacements for the deregistered S014/S015: the same two
+// properties (nullifier replay, proof freshness) at the current layout.
+mod s054_pow_nullifier_replay_rejected;
+mod s055_pow_stale_submitted_block_rejected;
 
 use crate::scenario::Scenario;
 
@@ -122,5 +126,7 @@ pub fn all() -> Vec<Box<dyn Scenario>> {
         Box::new(s051_fs_epoch_chain_advances::S051),
         Box::new(s052_enclave_registered_for_attester::S052),
         Box::new(s053_su_v2_settles_sealed_batch::S053),
+        Box::new(s054_pow_nullifier_replay_rejected::S054),
+        Box::new(s055_pow_stale_submitted_block_rejected::S055),
     ]
 }
