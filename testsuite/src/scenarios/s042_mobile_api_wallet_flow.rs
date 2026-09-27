@@ -3,23 +3,21 @@
 //!
 //! Every other envelope scenario goes through the testsuite's own
 //! builders (`clients/envelope.rs` + `ActorClient`). Real wallets
-//! don't: they call `pso-mobile-integration`'s UniFFI surface
-//! (`derive_vdf_input` / `compute_vdf` / `verify_vdf`) and assemble
-//! the transaction themselves. That divergence is exactly where
-//! wallet-only bugs hide (e.g. the gasLimit=1000 intrinsic-gas bug
-//! that CI never saw).
+//! don't: they call `pso-mobile-integration`'s UniFFI surface and
+//! assemble the transaction from there. That divergence is exactly
+//! where wallet-only bugs hide (e.g. the gasLimit=1000 intrinsic-gas
+//! bug that CI never saw).
 //!
 //! This scenario plays the mobile wallet, using NOTHING from the
 //! testsuite's envelope machinery:
 //!
-//! 1. VDF input + proof via `pso_mobile_integration::{derive_vdf_input,
-//!    compute_vdf}` (the same code the UniFFI bindings wrap), sanity
-//!    `verify_vdf` before broadcast as `vdf.rs` recommends.
+//! 1. Binding + solution via `pso_mobile_integration::{derive_vdf_input,
+//!    solve_pow}` (the same code the UniFFI bindings wrap), sanity-checked
+//!    with `verify_pow` before broadcast.
 //! 2. Inner EIP-1559 tx (clean calldata) signed with gasLimit = 5M and
-//!    zero fee caps, then wrapped inline in the node's `0x76`
-//!    VdfProtectedTransaction wire envelope: `0x76` ‖ nullifier ‖
-//!    vdf_input ‖ (len ‖ vdf_output) ‖ (len ‖ vdf_proof) ‖
-//!    submitted_block(BE) ‖ inner_2718.
+//!    zero fee caps, then wrapped by the mobile API's own
+//!    `build_pow_envelope` — the one encoder the wallet, the bindings and
+//!    this scenario share, so the wire layout cannot drift between them.
 //! 3. Broadcast via raw JSON-RPC `eth_sendRawTransaction` against the
 //!    actor RPC.
 //!
@@ -126,39 +124,33 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .await?,
     )?;
 
-    // 2. VDF through the MOBILE API — the exact `Wallet` methods the
-    //    UniFFI bindings export to React Native.
+    // 2. Anti-spam work through the MOBILE API — the exact `Wallet` methods
+    //    the UniFFI bindings export to React Native. The wallet checks its own
+    //    solution before spending a broadcast on it.
     let mobile = pso_mobile_integration::Wallet::new(env.chain_id);
-    let vdf_input = mobile
+    let binding = mobile
         .derive_vdf_input(wallet_addr.0 .0.to_vec(), nonce, head)
         .map_err(|e| eyre::eyre!("mobile derive_vdf_input: {e:?}"))?;
-    let vdf = mobile
-        .compute_vdf(vdf_input.clone(), difficulty)
-        .map_err(|e| eyre::eyre!("mobile compute_vdf: {e:?}"))?;
+    let pow = mobile
+        .solve_pow(binding.clone(), difficulty)
+        .map_err(|e| eyre::eyre!("mobile solve_pow: {e:?}"))?;
     let verified = mobile
-        .verify_vdf(
-            vdf_input.clone(),
-            vdf.output.clone(),
-            vdf.proof.clone(),
-            difficulty,
-        )
-        .map_err(|e| eyre::eyre!("mobile verify_vdf: {e:?}"))?;
+        .verify_pow(binding, pow.solution.clone(), pow.scheme, difficulty)
+        .map_err(|e| eyre::eyre!("mobile verify_pow: {e:?}"))?;
     if !verified {
-        return Err(eyre::eyre!("S042: mobile verify_vdf failed on own output"));
+        return Err(eyre::eyre!(
+            "S042: mobile verify_pow failed on its own solution"
+        ));
     }
 
-    // 3. Envelope assembled inline per the wire spec — no testsuite
-    //    builder involved.
     let inner = ITdViewS042::getDataCall {
         tdId: U256::from(7u64),
     }
     .abi_encode();
-    let mut nullifier = [0u8; 32];
-    rand::rng().fill_bytes(&mut nullifier);
 
-    // 4. Build & sign the INNER tx with CLEAN calldata. The VDF fields ride
-    //    the node's 0x76 wire envelope (not the calldata, unlike pso-chain's
-    //    0xCAFED00D prefix). gasLimit 5M; zero fee caps for the feeless lane.
+    // 3. Build & sign the INNER tx with CLEAN calldata. The anti-spam fields
+    //    ride the wire envelope, not the calldata. gasLimit 5M; zero fee caps
+    //    for the feeless lane.
     let mut tx = TxEip1559 {
         chain_id: env.chain_id,
         nonce,
@@ -175,19 +167,22 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     let mut inner_2718 = Vec::with_capacity(512);
     alloy_eips::eip2718::Encodable2718::encode_2718(&inner_envelope, &mut inner_2718);
 
-    // 5. Wrap the inner 2718 bytes in the 0x76 VdfProtectedTransaction wire
-    //    envelope, assembled inline per the node's wire spec.
-    let mut raw =
-        Vec::with_capacity(crate::clients::envelope::ENVELOPE_PREFIX_LEN + inner_2718.len());
-    raw.push(crate::clients::envelope::VDF_ENVELOPE_TYPE); // 0x76
-    raw.extend_from_slice(&nullifier); //                     32B nullifier
-    raw.extend_from_slice(&vdf_input); //                     32B vdf_input
-    raw.extend_from_slice(&(vdf.output.len() as u32).to_be_bytes());
-    raw.extend_from_slice(&vdf.output); //                    MinRoot output
-    raw.extend_from_slice(&(vdf.proof.len() as u32).to_be_bytes());
-    raw.extend_from_slice(&vdf.proof); //                     MinRoot proof
-    raw.extend_from_slice(&head.to_be_bytes()); //            8B submitted_block (BE)
-    raw.extend_from_slice(&inner_2718); //                    inner EIP-2718 tx
+    // 4. Wrap the inner 2718 bytes through the mobile API's own encoder. It
+    //    solves its own proof and derives its own nullifier from the seed, which
+    //    is what a wallet actually calls — the sanity leg above is the wallet
+    //    checking the work it can do, not a value this consumes.
+    let mut seed = [0u8; 32];
+    rand::rng().fill_bytes(&mut seed);
+    let raw = mobile
+        .build_pow_envelope(
+            seed.to_vec(),
+            wallet_addr.0 .0.to_vec(),
+            nonce,
+            head,
+            difficulty,
+            inner_2718,
+        )
+        .map_err(|e| eyre::eyre!("mobile build_pow_envelope: {e:?}"))?;
 
     let tx_hash = rpc(
         &url,
