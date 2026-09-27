@@ -40,6 +40,18 @@ impl Scenario for S053 {
     }
 }
 
+/// A canonical field element derived from `label`.
+///
+/// The entity encoding folds `bytes32` roles as field elements and REJECTS a
+/// word at or above the BN254 modulus with `NonCanonicalFieldElement` rather
+/// than reducing it. A raw keccak output is uniformly random over 2^256, so it
+/// clears the modulus roughly four times in five — shifting right by 8 bits
+/// puts it below 2^248 and therefore always inside the field, while keeping one
+/// distinct value per label.
+fn field_element(label: &str) -> B256 {
+    B256::from(U256::from_be_bytes(keccak256(label).0) >> 8)
+}
+
 fn seal(ctx: B256, seal_id: B256, group_key: Vec<u8>) -> ISpendingUnitV2::Seal {
     ISpendingUnitV2::Seal {
         ctx,
@@ -47,7 +59,7 @@ fn seal(ctx: B256, seal_id: B256, group_key: Vec<u8>) -> ISpendingUnitV2::Seal {
         fsEpoch: 1,
         worldwideDay: BATCH_WWD,
         count: 42,
-        fFold: keccak256("S053 f_fold"),
+        fFold: field_element("S053 f_fold"),
         fsGroupKey: group_key.into(),
         commitmentRoot: keccak256("S053 commitment root").to_vec().into(),
         sequence: 7,
@@ -69,13 +81,13 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // registry's, and the settlement signature covers this copy.
     let group_key = committee.sk_to_pk().compress().to_vec();
 
-    let ctx = keccak256("S053 loader context");
-    let seal_id = keccak256("S053 seal attempt");
+    let ctx = field_element("S053 loader context");
+    let seal_id = field_element("S053 seal attempt");
     let batch = seal(ctx, seal_id, group_key.clone());
 
     let mint = ISpendingUnitV2::Mint {
         suId: U256::from_be_bytes(keccak256("S053 su id").0) >> 8, // < field modulus
-        derivedOwner: keccak256("S053 derived owner"),
+        derivedOwner: field_element("S053 derived owner"),
         referrerAddress: Address::ZERO,
         enclavePk: enclave_pk,
         providerId: provider_id(),
@@ -159,7 +171,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     // The handle moved to a fresh context: the seal id is spent too, which is
     // what stops a certificate being reused across batches. A new context
     // needs a new handle signature, so the committee signs the moved seal.
-    let moved = seal(keccak256("S053 another context"), seal_id, group_key);
+    let moved = seal(field_element("S053 another context"), seal_id, group_key);
     let moved_mint = ISpendingUnitV2::Mint {
         suId: mint.suId + U256::from(2u64),
         ..mint

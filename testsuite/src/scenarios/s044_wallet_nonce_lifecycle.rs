@@ -1,19 +1,24 @@
 //! S044 — wallet account lifecycle across nonces.
 //!
-//! A real wallet sends tx after tx. The VDF binding bakes the tx
-//! nonce into the input (`SHA-256(signer || nonce || block || chain)`),
-//! so every transaction needs a freshly computed proof, and a proof
-//! computed for nonce N is dead the moment nonce N is consumed.
+//! A real wallet sends tx after tx. The anti-spam binding bakes the tx nonce
+//! into the input (`SHA-256(signer || nonce || block || chain)`), so every
+//! transaction needs a freshly solved proof, and a solution computed for nonce N
+//! is dead the moment nonce N is consumed.
 //!
 //! Three legs:
 //!
 //! 1. tx@nonce0 — canonical envelope → admitted AND executed.
-//! 2. tx@nonce1 — fresh envelope (VDF recomputed for nonce 1) →
+//! 2. tx@nonce1 — fresh envelope (solution recomputed for nonce 1) →
 //!    admitted AND executed. Pins "sequential submission just works".
-//! 3. tx@nonce2 carrying tx@nonce0's VDF section (input‖output‖proof
-//!    bytes [36..164) verbatim) — the "wallet reused a stale proof
-//!    after a nonce bump" failure mode → MUST be rejected with
-//!    `BadVdfInputBinding` BEFORE the (expensive) VDF verify runs.
+//! 3. tx@nonce2 carrying tx@nonce0's SOLUTION verbatim — the "wallet reused a
+//!    stale proof after a nonce bump" failure mode → MUST be rejected.
+//!
+//! Leg 3 splices the solution, not a binding. The binding is not on the wire:
+//! the node re-derives it from `(signer, nonce, block, chain)`, so a solution
+//! carried over from nonce 0 no longer solves the input derived at nonce 2 and
+//! the proof check refuses it as `InvalidVdfProof`. There is no separate
+//! binding-mismatch rejection to expect, because there is no transmitted
+//! binding that could disagree.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -59,15 +64,13 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         )
     };
 
-    // Leg 1 — nonce 0, capture the envelope's VDF binding section
-    // (vdf_input ‖ len‖output ‖ len‖proof; the 0x76 wire VDF_BINDING_RANGE)
-    // for leg 3.
+    // Leg 1 — nonce 0, capture the envelope's solution for leg 3.
     let captured: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
     let cap = captured.clone();
     let tx0 = wallet
         .submit_tx_with_envelope(TRIBUTE_DRAFT, inner(1), move |bytes| {
-            *cap.lock().expect("vdf capture") =
-                Some(bytes[crate::clients::envelope::VDF_BINDING_RANGE].to_vec());
+            *cap.lock().expect("solution capture") =
+                Some(bytes[crate::clients::envelope::POW_SOLUTION_RANGE].to_vec());
             bytes
         })
         .await
@@ -92,31 +95,34 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         return Err(eyre::eyre!("S044 leg2 reverted (tx {tx1:#x})"));
     }
 
-    // Leg 3 — nonce 2, but splice in leg 1's VDF section. The
-    // validator re-derives the expected input from (signer, nonce=2,
-    // block, chain) and must reject the nonce-0 binding.
+    // Leg 3 — nonce 2, but splice in leg 1's solution. The validator re-derives
+    // the input from (signer, nonce=2, block, chain), which the nonce-0 solution
+    // does not solve.
     let stale = captured
         .lock()
-        .expect("vdf capture")
+        .expect("solution capture")
         .clone()
         .ok_or_else(|| eyre::eyre!("S044: leg1 capture missing"))?;
     let result = wallet
         .submit_tx_with_envelope(TRIBUTE_DRAFT, inner(3), move |mut bytes| {
-            bytes[crate::clients::envelope::VDF_BINDING_RANGE].copy_from_slice(&stale);
+            bytes[crate::clients::envelope::POW_SOLUTION_RANGE].copy_from_slice(&stale);
             bytes
         })
         .await;
 
     match result {
-        Err(ActorClientError::PoolRejection(msg)) if msg.contains("BadVdfInputBinding") => {
-            tracing::info!(%msg, "S044: stale nonce binding rejected as expected");
+        Err(ActorClientError::PoolRejection(msg)) if msg.contains("InvalidVdfProof") => {
+            tracing::info!(%msg, "S044: stale nonce solution rejected as expected");
             Ok(())
         }
+        Err(ActorClientError::PoolRejection(msg)) => Err(eyre::eyre!(
+            "S044 leg3: rejected, but not as a failed proof: {msg}"
+        )),
         Err(other) => Err(eyre::eyre!(
-            "S044 leg3: expected BadVdfInputBinding, got {other:?}"
+            "S044 leg3: expected a pool rejection, got {other:?}"
         )),
         Ok(tx) => Err(eyre::eyre!(
-            "S044 leg3: stale nonce-0 VDF binding was ADMITTED at nonce 2 (tx {tx:?}) — \
+            "S044 leg3: stale nonce-0 solution was ADMITTED at nonce 2 (tx {tx:?}) — \
              replayed proofs must not survive a nonce bump"
         )),
     }
