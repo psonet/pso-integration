@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.20.2 - 2026-09-27
+#### Bug Fixes
+- (**e2e**) build S042's envelope through the mobile API's 0x77 encoder - (55c9e3e) - Anton Velichko
+
+- - -
+
 ## v0.20.1 - 2026-09-27
 #### Bug Fixes
 - (**e2e**) correct three assertions the 0x77 move left wrong - (d6a733a) - Anton Velichko
