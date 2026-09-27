@@ -1,23 +1,21 @@
-//! S031 — actor RPC rejects an envelope whose VDF proof was
-//! computed at a `T` outside the chain's accepted window.
+//! S031 — actor RPC rejects an envelope solved at too low a difficulty.
 //!
-//! Pool validation logic (`pso-chain::pool::users::validate_user_tx`):
+//! Admission accepts iff the solution satisfies EITHER the current epoch's
+//! difficulty or the previous epoch's:
 //!
 //! ```text
-//! let verified = MinRootVdf::verify(input, output, proof, current_T)
-//!     || (previous_T != current_T
-//!         && MinRootVdf::verify(input, output, proof, previous_T));
+//! scheme.verify(input, solution, current)
+//!     || (previous != current && scheme.verify(input, solution, previous))
 //! ```
 //!
-//! So the chain accepts iff the proof verifies under EITHER the
-//! current epoch's `T` OR the previous epoch's `T`. Anything else
-//! — including a deliberately higher `T` chosen by the wallet
-//! ("more work than necessary" is not a shortcut) — gets bounced
-//! as `PoolRejection`. That's by-design; the wallet can't pre-pay
-//! difficulty against arbitrary future epochs.
+//! The direction matters, and it is the opposite of what a sequential VDF would
+//! give. Hashcash is a THRESHOLD: a solution carrying more leading zero bits
+//! than required also satisfies any lower difficulty, so over-solving is
+//! legitimate and admitting it is correct — a wallet that did extra work has not
+//! cheated. Only UNDER-solving is a shortcut, so that is what this asserts.
 //!
-//! We compute the envelope at `current_difficulty * 3` (way past
-//! the current ∪ previous window) and assert rejection.
+//! The chosen difficulty must sit below BOTH published values, or the solution
+//! would satisfy whichever is lower and be admitted for a good reason.
 use crate::clients::actor::ActorClientError;
 use crate::data::USERS_LANE_PROBE_DEST;
 use crate::{Scenario, TestEnv};
@@ -30,24 +28,31 @@ impl Scenario for S031 {
         "S031"
     }
     fn description(&self) -> &'static str {
-        "actor RPC rejects envelope with VDF computed at T outside current ∪ previous"
+        "actor RPC rejects an envelope solved below both accepted difficulties"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
     }
 }
 async fn run(env: &TestEnv) -> eyre::Result<()> {
-    let current_t = env
+    let info = env
         .new_actor_as_attester_zero()?
-        .fetch_difficulty()
+        .fetch_vdf_info()
         .await
-        .map_err(|e| eyre::eyre!("S031: fetch_difficulty: {e}"))?;
-    let wrong_t = current_t.saturating_mul(3);
+        .map_err(|e| eyre::eyre!("S031: fetch_vdf_info: {e}"))?;
+    // Below BOTH accepted values, so neither arm of the check can pass it.
+    let floor = info.current_difficulty.min(info.previous_difficulty);
+    let wrong_t = (floor / 4).max(1);
+    eyre::ensure!(
+        wrong_t < floor,
+        "S031: difficulty floor {floor} is too low to under-solve against"
+    );
     tracing::info!(
         scenario = "S031",
-        current_t,
+        current_t = info.current_difficulty,
+        previous_t = info.previous_difficulty,
         wrong_t,
-        "submitting envelope with T outside the current ∪ previous window",
+        "submitting an envelope solved below both accepted difficulties",
     );
     let inner = Bytes::new();
     let result = env
@@ -58,11 +63,11 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .await;
     match result {
         Err(ActorClientError::PoolRejection(msg)) => {
-            tracing::info!(%msg, scenario = "S031", "actor pool refused wrong-difficulty envelope");
+            tracing::info!(%msg, scenario = "S031", "actor pool refused under-solved envelope");
             Ok(())
         }
         Err(other) => Err(eyre::eyre!(
-            "S031: expected PoolRejection on wrong T, got {other}"
+            "S031: expected PoolRejection on an under-solved envelope, got {other}"
         )),
         Ok(tx) => Err(eyre::eyre!(
             "S031: expected pool rejection but actor admitted tx {:?}",
