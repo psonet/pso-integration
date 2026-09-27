@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.20.0 - 2026-09-27
+#### Features
+- (**e2e**) restore nullifier-replay and proof-freshness coverage on 0x77 - (fad03a3) - Anton Velichko
+#### Tests
+- (**e2e**) move the users-lane scenarios to the 0x77 envelope - (fb66796) - Anton Velichko
+
+- - -
+
 ## v0.19.0 - 2026-09-25
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**attester**) mint a v2 SpendingUnit from a verified sealed batch - (ad7a459) - Anton Velichko
