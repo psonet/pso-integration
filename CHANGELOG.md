@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.20.3 - 2026-10-19
+#### Bug Fixes
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**s046**) verify finalize certificates under the chain-id namespace - (32d61e8) - Anton Velichko
+
+- - -
+
 ## v0.20.2 - 2026-09-27
 #### Bug Fixes
 - (**e2e**) build S042's envelope through the mobile API's 0x77 encoder - (55c9e3e) - Anton Velichko
