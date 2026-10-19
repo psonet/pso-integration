@@ -21,10 +21,18 @@ use commonware_cryptography::bls12381::primitives::{
     variant::{MinSig, Variant},
 };
 
-/// The chain's finalize namespace: `NAMESPACE ‖ "_FINALIZE"` =
-/// `b"_PSO_CHAIN" ‖ b"_FINALIZE"`. Mirrors commonware's `finalize_namespace`
-/// and `pso_l1_deployer::cert::finalize_namespace`.
-pub const FINALIZE_NAMESPACE: &[u8] = b"_PSO_CHAIN_FINALIZE";
+/// The finalize namespace of L2 chain `chain_id`: `namespace ‖ "_FINALIZE"`
+/// with `namespace = b"_PSO_CHAIN" ‖ chain_id (u64 big-endian)`, so it is
+/// `b"_PSO_CHAIN" ‖ chain_id ‖ b"_FINALIZE"` (27 bytes). Mirrors commonware's
+/// `finalize_namespace` and `pso_l1_deployer::cert::finalize_namespace`.
+pub fn finalize_namespace(chain_id: u64) -> Vec<u8> {
+    [
+        b"_PSO_CHAIN".as_slice(),
+        &chain_id.to_be_bytes(),
+        b"_FINALIZE",
+    ]
+    .concat()
+}
 
 /// Encode a `u64` as commonware-codec LEB128 varint (7 data bits per byte,
 /// high bit = continuation). Mirrors `commonware_codec::varint::UInt` /
@@ -99,10 +107,12 @@ pub fn g2_eip2537_to_compressed(eip: &[u8]) -> eyre::Result<[u8; 96]> {
 /// Verify the committee finalize signature `cert_sig_compressed` (compressed
 /// G1, 48 B) over the finalize message for `(round_epoch, round_view,
 /// parent_view, tip_digest)`, against the DaInbox group public key
-/// `group_pubkey_eip2537` (EIP-2537 G2, 256 B). `Ok(())` iff the threshold
-/// signature verifies — i.e. ≥2f+1 of the committee finalized that digest.
+/// `group_pubkey_eip2537` (EIP-2537 G2, 256 B), under the finalize namespace
+/// of L2 chain `chain_id`. `Ok(())` iff the threshold signature verifies —
+/// i.e. ≥2f+1 of the committee finalized that digest.
 pub fn verify_finalize_cert(
     group_pubkey_eip2537: &[u8],
+    chain_id: u64,
     round_epoch: u64,
     round_view: u64,
     parent_view: u64,
@@ -115,7 +125,7 @@ pub fn verify_finalize_cert(
     let sig = <MinSig as Variant>::Signature::decode(cert_sig_compressed)
         .map_err(|e| eyre::eyre!("decode cert signature (G1, expect 48B compressed): {e}"))?;
     let msg = proposal_bytes(round_epoch, round_view, parent_view, tip_digest);
-    verify_message::<MinSig>(&public, FINALIZE_NAMESPACE, &msg, &sig)
+    verify_message::<MinSig>(&public, &finalize_namespace(chain_id), &msg, &sig)
         .map_err(|e| eyre::eyre!("committee finalize signature failed to verify: {e}"))
 }
 
@@ -160,11 +170,14 @@ mod tests {
 
         let (epoch, view, parent) = (7u64, 9u64, 3u64);
         let digest = [0x5au8; 32];
+        let chain_id = 9_900_501u64;
+        let ns = finalize_namespace(chain_id);
+        assert_eq!(ns.len(), 27);
         let msg = proposal_bytes(epoch, view, parent, &digest);
-        let sig = sign_message::<MinSig>(&private, FINALIZE_NAMESPACE, &msg);
+        let sig = sign_message::<MinSig>(&private, &ns, &msg);
 
         // Direct commonware verify (sanity).
-        verify_message::<MinSig>(&public, FINALIZE_NAMESPACE, &msg, &sig)
+        verify_message::<MinSig>(&public, &ns, &msg, &sig)
             .expect("direct commonware verify must pass");
 
         // Round-trip the public key compressed -> EIP-2537 -> compressed and
@@ -180,14 +193,46 @@ mod tests {
 
         // Full S046 path: verify through the EIP-2537 group key + compressed sig.
         let sig_compressed = sig.encode();
-        verify_finalize_cert(&eip, epoch, view, parent, &digest, sig_compressed.as_ref())
-            .expect("verify_finalize_cert via EIP-2537 group key must pass");
+        verify_finalize_cert(
+            &eip,
+            chain_id,
+            epoch,
+            view,
+            parent,
+            &digest,
+            sig_compressed.as_ref(),
+        )
+        .expect("verify_finalize_cert via EIP-2537 group key must pass");
+
+        // Negative: the same certificate under another chain id must fail.
+        assert!(
+            verify_finalize_cert(
+                &eip,
+                chain_id + 1,
+                epoch,
+                view,
+                parent,
+                &digest,
+                sig_compressed.as_ref()
+            )
+            .is_err(),
+            "verify must reject a certificate signed for another chain"
+        );
 
         // Negative: a tampered digest must fail.
         let mut bad = digest;
         bad[0] ^= 0x01;
         assert!(
-            verify_finalize_cert(&eip, epoch, view, parent, &bad, sig_compressed.as_ref()).is_err(),
+            verify_finalize_cert(
+                &eip,
+                chain_id,
+                epoch,
+                view,
+                parent,
+                &bad,
+                sig_compressed.as_ref()
+            )
+            .is_err(),
             "verify must reject a tampered digest"
         );
     }
