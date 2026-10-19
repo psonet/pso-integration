@@ -53,6 +53,8 @@ sol! {
         // EIP-2537 G2 (256 bytes): the committee group public key the inbox
         // verifies every batch certificate against.
         function groupPubKey() external view returns (bytes);
+        // L2 chain id; part of the finalize signing namespace.
+        function l2ChainId() external view returns (uint64);
     }
 }
 
@@ -168,9 +170,15 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .call()
         .await
         .map_err(|e| eyre::eyre!("S046: DaInbox.groupPubKey(): {e}"))?;
+    let chain_id = inbox
+        .l2ChainId()
+        .call()
+        .await
+        .map_err(|e| eyre::eyre!("S046: DaInbox.l2ChainId(): {e}"))?;
 
     verify_finalize_cert(
         group_pubkey.as_ref(),
+        chain_id,
         round_epoch,
         round_view,
         parent_view,
