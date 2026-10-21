@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.20.4 - 2026-10-21
+#### Bug Fixes
+- (**e2e**) make S054 replay the same solution with a new nullifier - (e240e0c) - Anton Velichko
+
+- - -
+
 ## v0.20.3 - 2026-10-19
 #### Bug Fixes
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**s046**) verify finalize certificates under the chain-id namespace - (32d61e8) - Anton Velichko
