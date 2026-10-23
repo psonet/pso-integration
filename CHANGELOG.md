@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.21.0 - 2026-10-23
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**attester**) issue an SU v2 from a batch with a seal per claim pool - (ecbf53d) - Anton Velichko
+#### Bug Fixes
+- (**e2e**) settle S053 as one batch with a seal per claim pool - (dd20f75) - Anton Velichko
+#### Tests
+- (**attester**) match the provider's settlement parity batch - (bda19af) - Anton Velichko
+#### Style
+- satisfy clippy's too_many_arguments and unnecessary_sort_by - (41ac340) - Anton Velichko
+
+- - -
+
 ## v0.20.4 - 2026-10-21
 #### Bug Fixes
 - (**e2e**) make S054 replay the same solution with a new nullifier - (e240e0c) - Anton Velichko
