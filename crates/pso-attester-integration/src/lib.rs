@@ -62,16 +62,16 @@ pub struct SpendingUnit {
     pub amendment_records: Vec<Vec<u8>>,
 }
 
-/// A SpendingUnit **v2** as submitted on-chain (the FFI mirror of the `sol!`
-/// struct). Field elements / addresses are big-endian `Vec<u8>`.
+/// A SpendingUnit **v2** as the chain stores it (the FFI mirror of
+/// `SpendingUnitV2Entity`). Field elements / addresses are big-endian
+/// `Vec<u8>`.
 ///
 /// What changed from [`SpendingUnit`]: the record fingerprint lists are gone
 /// with the per-record path, and the batch this SU settles is named by
-/// `(ctx, seal_id)` — the loader context and the seal attempt the fingerprint
-/// committee certified. Those two fold into `nft_hash` where `sr`/`ar` used
-/// to, so a wallet holding a v2 SU proves ownership of a different preimage
-/// with the same circuits: the ownership proof takes `nft_hash` as a value
-/// and never re-derives it.
+/// `(ctx, seal_id)` — the loader context and the batch's settlement id. Those
+/// two fold into `nft_hash` where `sr`/`ar` used to, so a wallet holding a v2
+/// SU proves ownership of a different preimage with the same circuits: the
+/// ownership proof takes `nft_hash` as a value and never re-derives it.
 #[derive(Debug, uniffi::Record)]
 pub struct SpendingUnitV2 {
     /// Spending-unit id (32 bytes).
@@ -82,7 +82,7 @@ pub struct SpendingUnitV2 {
     pub attester: Vec<u8>,
     /// Referrer address (20 bytes).
     pub referrer: Vec<u8>,
-    /// Worldwide day (YYYYMMDD), as the committee stated it.
+    /// Worldwide day (YYYYMMDD): the latest of the batch's seals.
     pub worldwide_day: u64,
     /// ISO 4217 currency code.
     pub currency: u16,
@@ -92,29 +92,32 @@ pub struct SpendingUnitV2 {
     pub atto: u64,
     /// The loader context of the batch this SU settles (32 bytes).
     pub ctx: Vec<u8>,
-    /// The seal attempt it selects (32 bytes).
+    /// The batch's settlement id,
+    /// `SHA-256("bdp-settlement-id-v1" ‖ ctx ‖ u64le(sequence))` (32 bytes).
+    /// The entity keeps the slot's `sealId` name; the chain stores the
+    /// settlement id there and in `settlements(ctx)`.
     pub seal_id: Vec<u8>,
 }
 
-/// A sealed batch as the bank-data provider hands it over: the committee's
-/// certificate, the enclave's settlement statement, and the facts both cover.
+/// One claim pool's seal: the committee's handle over the pool, as the
+/// provider hands it over. A batch whose records settled in several key
+/// epochs holds one pool per epoch, and so one seal per pool.
 ///
-/// Everything here is evidence, not configuration — the attester verifies it
-/// before minting rather than trusting the provider that produced it, and the
-/// same two signatures are re-checked on chain by `SpendingUnitV2.submitSU`.
+/// The seal id is not here: it is derived from the batch and these facts
+/// (see [`Attester::issue_from_sealed_batch`]), as the chain derives it.
 #[derive(Debug, uniffi::Record)]
-pub struct SealedBatch {
-    /// Loader context of the batch (32 bytes).
-    pub ctx: Vec<u8>,
-    /// The seal attempt this SU settles (32 bytes).
-    pub seal_id: Vec<u8>,
-    /// The fingerprint-service epoch whose committee signed the handle.
+pub struct PoolSeal {
+    /// The claim pool: the key epoch the records were claimed under.
+    pub pool_epoch: u32,
+    /// The fingerprint-service epoch whose committee signed the handle. Not
+    /// `pool_epoch`: a pool is certified under the epoch live when it was
+    /// sealed.
     pub fs_epoch: u32,
     /// Worldwide day (YYYYMMDD) as the committee stated it.
     pub worldwide_day: u64,
     /// Claims the handle certifies.
     pub count: u64,
-    /// Fold over the batch's fingerprints (32 bytes).
+    /// Fold over the pool's fingerprints (32 bytes).
     pub f_fold: Vec<u8>,
     /// The committee key the enclave verified the handle under: compressed
     /// BLS12-381 G2, 96 bytes.
@@ -122,19 +125,42 @@ pub struct SealedBatch {
     /// The committee's threshold signature over the handle: compressed G1,
     /// 48 bytes.
     pub handle_sig: Vec<u8>,
+}
+
+/// A sealed batch as the bank-data provider hands it over: one sync, its
+/// pool seals, the totals they add up to, and the enclave's one settlement
+/// signature over those totals and the amount.
+///
+/// Everything here is evidence, not configuration — the attester verifies it
+/// before minting rather than trusting the provider that produced it, and the
+/// same signatures are re-checked on chain by `SpendingUnitV2.submitSU`.
+#[derive(Debug, uniffi::Record)]
+pub struct SealedBatch {
+    /// Loader context of the batch (32 bytes).
+    pub ctx: Vec<u8>,
+    /// The enclave's per-context commitment sequence of the sync.
+    pub sequence: u64,
     /// The batch's commitment root, as the seal discloses it.
     pub commitment_root: Vec<u8>,
-    /// The enclave's per-context sequence number for this settlement.
-    pub sequence: u64,
+    /// The latest of the seals' days, as the enclave signed it.
+    pub worldwide_day: u64,
+    /// The sum of the seals' counts, as the enclave signed it.
+    pub count: u64,
+    /// The sum of the seals' folds modulo the BN254 scalar field, as the
+    /// enclave signed it (32 bytes).
+    pub f_fold: Vec<u8>,
     /// ISO 4217 currency code.
     pub currency: u16,
     /// Amount integer part.
     pub base: u64,
     /// Amount fractional part (1e-18).
     pub atto: u64,
-    /// The enclave's Ed25519 settlement signature, 64 bytes. The only
-    /// signature covering the amount.
+    /// The enclave's Ed25519 settlement signature over the batch, 64 bytes.
+    /// The only signature covering the amount.
     pub settle_sig: Vec<u8>,
+    /// One seal per claim pool, `pool_epoch` strictly ascending, 1 to
+    /// [`MAX_SEALS`] of them.
+    pub seals: Vec<PoolSeal>,
 }
 
 /// The deployment as the chain's `EnclaveRegistry` holds it — what the
@@ -155,6 +181,8 @@ pub struct RegisteredEnclave {
 /// compressed form).
 #[derive(Debug, uniffi::Record)]
 pub struct FsEpochKey {
+    /// The epoch this entry is for: a seal's `fs_epoch` selects it.
+    pub epoch: u32,
     /// `PK_att` for the epoch: compressed BLS12-381 G2, 96 bytes.
     pub pk_att: Vec<u8>,
     /// The epoch's RFC 9380 hash-to-curve tag.
@@ -169,7 +197,7 @@ pub struct FsEpochKey {
 /// wallet's report.
 #[derive(Debug, uniffi::Record)]
 pub struct IssuedSpendingUnitV2 {
-    /// The SpendingUnit as `submitSU` takes it.
+    /// The SpendingUnit as the chain will store it.
     pub spending_unit: SpendingUnitV2,
     /// The report the wallet stores to later prove ownership.
     pub report: IssuanceReport,
@@ -243,9 +271,13 @@ pub enum AttesterError {
     /// the seal certifies nothing about this committee.
     #[error("the seal's committee key is not epoch {epoch}'s key")]
     GroupKeyMismatch { epoch: u32 },
-    /// The committee's threshold signature does not verify over the batch.
+    /// The committee's threshold signature does not verify over the pool.
     #[error("committee handle does not verify for epoch {epoch}: {detail}")]
     HandleSignatureInvalid { epoch: u32, detail: String },
+    /// The seals do not add up to the batch the enclave signed: their
+    /// counts, their folds, or their latest day.
+    #[error("the seals do not add up to the batch's {what}")]
+    BatchTotalsMismatch { what: String },
     /// The enclave's settlement signature does not verify under the
     /// registered enclave key — including over the amount.
     #[error("settlement signature does not verify under the registered enclave key: {detail}")]
@@ -441,101 +473,162 @@ impl Attester {
 
     /// Mint a **v2** SpendingUnit from a batch the provider has sealed.
     ///
+    /// `epochs` holds the fingerprint-service key directory entries the
+    /// seals were signed under, as `FsEpochRegistry.keyFor` returns them;
+    /// each seal takes the entry whose `epoch` is its `fs_epoch` (order does
+    /// not matter, extra entries are ignored, a missing one is `BadInput`).
+    ///
     /// The provider is not trusted for any of it. Before the SU exists, this
-    /// re-runs the two checks the chain will run at `submitSU`, in the same
-    /// order and over the same bytes, so a batch that would revert fails here
-    /// with a reason instead of costing a submission:
+    /// re-runs the checks the chain will run at `submitSU`, in the same order
+    /// and over the same bytes, so a batch that would revert fails here with
+    /// a reason instead of costing a submission:
     ///
-    /// 1. the seal's day falls in `epoch`'s window, and the key the enclave
-    ///    verified the handle under **is** that epoch's key — an entry naming
-    ///    some other committee certifies nothing about this seal;
-    /// 2. the committee's threshold signature verifies over
+    /// 1. shape: 1 to [`MAX_SEALS`] seals, `pool_epoch` strictly ascending
+    ///    (no pool counted twice);
+    /// 2. per seal: its day falls in its epoch's window, the key the enclave
+    ///    verified the handle under **is** that epoch's key, and the
+    ///    committee's threshold signature verifies over
     ///    `"bdp-fs-handle-v3" ‖ attester ‖ ctx ‖ lp(seal_id) ‖ count ‖ f_fold
-    ///    ‖ fs_epoch ‖ wwd` under that key and tag — so a handle issued to
-    ///    another attester, or moved onto a batch of another size, is refused;
-    /// 3. the enclave's settlement signature verifies under the **registered**
-    ///    enclave key over the statement rebuilt with the **registered**
-    ///    manifest digest. That signature is the only one covering the
-    ///    amount, which is why the amount comes from the batch and not from a
-    ///    caller argument.
+    ///    ‖ fs_epoch ‖ wwd`, with the seal id derived as
+    ///    `SHA-256("bdp-seal-id-v3" ‖ ctx ‖ u64le(sequence) ‖ u32le(pool_epoch)
+    ///    ‖ u64le(count) ‖ f_fold)` — so a handle issued to another attester,
+    ///    or moved onto other contents or another sync, is refused;
+    /// 3. the seals add up to the batch: the counts sum to `count`, the folds
+    ///    to `f_fold` modulo the BN254 scalar field, the latest day is
+    ///    `worldwide_day`;
+    /// 4. the enclave's settlement signature verifies under the
+    ///    **registered** enclave key over the statement rebuilt with the
+    ///    **registered** manifest digest. That signature is the only one
+    ///    covering the amount, which is why the amount comes from the batch
+    ///    and not from a caller argument.
     ///
-    /// Then `(ctx, seal_id)` fold into `nft_hash` where v1's record
+    /// Then `(ctx, settlement_id)` fold into `nft_hash` where v1's record
     /// fingerprints did, under the same consent-box identity.
     pub fn issue_from_sealed_batch(
         &self,
         header: NftHeader,
         batch: SealedBatch,
         enclave: RegisteredEnclave,
-        epoch: FsEpochKey,
+        epochs: Vec<FsEpochKey>,
         referrer_addr: Vec<u8>,
     ) -> Result<IssuedSpendingUnitV2, AttesterError> {
         let su_id = arr::<32>(&header.nft_id, "nft_id")?;
         let derived_owner = arr::<32>(&header.derived_owner, "derived_owner")?;
         let referrer = arr::<20>(&referrer_addr, "referrer_addr")?;
         let ctx = arr::<32>(&batch.ctx, "ctx")?;
-        let seal_id = arr::<32>(&batch.seal_id, "seal_id")?;
         let f_fold = arr::<32>(&batch.f_fold, "f_fold")?;
         let enclave_pk = arr::<32>(&enclave.enclave_pk, "enclave_pk")?;
         let rm_digest = arr::<32>(&enclave.rm_digest, "rm_digest")?;
         let settle_sig = arr::<64>(&batch.settle_sig, "settle_sig")?;
-        let handle_sig = arr::<48>(&batch.handle_sig, "handle_sig")?;
-        let group_key = arr::<96>(&batch.fs_group_key, "fs_group_key")?;
-        let pk_att = arr::<96>(&epoch.pk_att, "pk_att")?;
 
-        // 1. The window, then the key. Both are about which committee the
-        //    seal belongs to, and neither needs curve arithmetic.
-        let day = batch.worldwide_day;
-        if day < u64::from(epoch.start_wwd)
-            || (epoch.end_wwd_exclusive != 0 && day >= u64::from(epoch.end_wwd_exclusive))
+        // 1. Shape.
+        if batch.seals.is_empty() || batch.seals.len() > MAX_SEALS {
+            return Err(AttesterError::BadInput {
+                detail: format!("seals: expected 1..={MAX_SEALS}, got {}", batch.seals.len()),
+            });
+        }
+        if batch
+            .seals
+            .windows(2)
+            .any(|w| w[1].pool_epoch <= w[0].pool_epoch)
         {
-            return Err(AttesterError::DayOutsideEpochWindow {
-                day,
-                epoch: batch.fs_epoch,
-            });
-        }
-        if group_key != pk_att {
-            return Err(AttesterError::GroupKeyMismatch {
-                epoch: batch.fs_epoch,
+            return Err(AttesterError::BadInput {
+                detail: "seals: pool_epoch must be strictly ascending".into(),
             });
         }
 
-        // 2. The committee's statement about the batch.
-        verify_handle(
-            &pk_att,
-            &handle_sig,
-            &epoch.dst,
-            &handle_message(
-                &self.address,
+        // 2. Each pool's committee statement.
+        let mut count: u128 = 0;
+        let mut fold = U256::ZERO;
+        let mut day = 0u64;
+        for seal in &batch.seals {
+            let seal_f_fold = arr::<32>(&seal.f_fold, "seal f_fold")?;
+            let handle_sig = arr::<48>(&seal.handle_sig, "handle_sig")?;
+            let group_key = arr::<96>(&seal.fs_group_key, "fs_group_key")?;
+            let epoch = epochs
+                .iter()
+                .find(|e| e.epoch == seal.fs_epoch)
+                .ok_or_else(|| AttesterError::BadInput {
+                    detail: format!("epochs: no key for fs_epoch {}", seal.fs_epoch),
+                })?;
+            let pk_att = arr::<96>(&epoch.pk_att, "pk_att")?;
+
+            // The window, then the key. Both are about which committee the
+            // seal belongs to, and neither needs curve arithmetic.
+            if seal.worldwide_day < u64::from(epoch.start_wwd)
+                || (epoch.end_wwd_exclusive != 0
+                    && seal.worldwide_day >= u64::from(epoch.end_wwd_exclusive))
+            {
+                return Err(AttesterError::DayOutsideEpochWindow {
+                    day: seal.worldwide_day,
+                    epoch: seal.fs_epoch,
+                });
+            }
+            if group_key != pk_att {
+                return Err(AttesterError::GroupKeyMismatch {
+                    epoch: seal.fs_epoch,
+                });
+            }
+
+            let id = seal_id(
                 &ctx,
-                &seal_id,
-                batch.count,
-                &f_fold,
-                batch.fs_epoch,
-                day,
-            ),
-        )
-        .map_err(|detail| AttesterError::HandleSignatureInvalid {
-            epoch: batch.fs_epoch,
-            detail,
-        })?;
+                batch.sequence,
+                seal.pool_epoch,
+                seal.count,
+                &seal_f_fold,
+            );
+            verify_handle(
+                &pk_att,
+                &handle_sig,
+                &epoch.dst,
+                &handle_message(
+                    &self.address,
+                    &ctx,
+                    &id,
+                    seal.count,
+                    &seal_f_fold,
+                    seal.fs_epoch,
+                    seal.worldwide_day,
+                ),
+            )
+            .map_err(|detail| AttesterError::HandleSignatureInvalid {
+                epoch: seal.fs_epoch,
+                detail,
+            })?;
 
-        // 3. The enclave's statement about the amount.
-        let settlement =
-            settlement_message(&batch, &ctx, &seal_id, &f_fold, &group_key, &rm_digest);
+            count += u128::from(seal.count);
+            fold = fold.add_mod(U256::from_be_bytes(seal_f_fold), BN254_R);
+            day = day.max(seal.worldwide_day);
+        }
+
+        // 3. The seals are the batch the enclave signed, and nothing else.
+        for (what, ok) in [
+            ("count", count == u128::from(batch.count)),
+            ("f_fold", fold == U256::from_be_bytes(f_fold)),
+            ("worldwide_day", day == batch.worldwide_day),
+        ] {
+            if !ok {
+                return Err(AttesterError::BatchTotalsMismatch { what: what.into() });
+            }
+        }
+
+        // 4. The enclave's statement about the amount.
+        let settlement = settlement_message(&batch, &ctx, &f_fold, &rm_digest);
         verify_settlement(&enclave_pk, &settle_sig, &settlement)
             .map_err(|detail| AttesterError::SettlementSignatureInvalid { detail })?;
 
+        let settlement_id = settlement_id(&ctx, batch.sequence);
         let entity = pso_chain_abi::entity::SpendingUnitV2 {
             id: B256::new(su_id),
             derived_owner: B256::new(derived_owner),
             attester: Address::from(self.address),
             referrer: Address::from(referrer),
-            worldwide_day: U64::from(day),
+            worldwide_day: U64::from(batch.worldwide_day),
             currency: U16::from(batch.currency),
             base: U64::from(batch.base),
             atto: U64::from(batch.atto),
             ctx: U256::from_be_bytes(ctx),
-            seal_id: U256::from_be_bytes(seal_id),
+            seal_id: U256::from_be_bytes(settlement_id),
         };
         let nft_hash = Entity::<PsoV1>::entity_hash(&entity)?;
 
@@ -545,12 +638,12 @@ impl Attester {
                 derived_owner: header.derived_owner.clone(),
                 attester: self.address.to_vec(),
                 referrer: referrer.to_vec(),
-                worldwide_day: day,
+                worldwide_day: batch.worldwide_day,
                 currency: batch.currency,
                 base: batch.base,
                 atto: batch.atto,
                 ctx: ctx.to_vec(),
-                seal_id: seal_id.to_vec(),
+                seal_id: settlement_id.to_vec(),
             },
             report: IssuanceReport {
                 nft_id: header.nft_id,
@@ -563,25 +656,65 @@ impl Attester {
     }
 }
 
-// ── The provider's two preimages ─────────────────────────────────────────
+// ── The provider's preimages ─────────────────────────────────────────────
 //
 // Mirrored from `bdp-seal-codec` (the provider's wire) and re-mirrored in
 // `SpendingUnitV2.sol`, because neither side can depend on the other's crate.
 // Little-endian integers, `u32le` length prefixes on the variable fields.
-// A parity fixture published by the provider would pin all three; until then
-// these two functions and the contract's `_settlementMessage` /
+// A parity fixture published by the provider would pin all of them; until
+// then these functions and the contract's `submitSU` / `_settlementMessage` /
 // `_verifyHandle` are the definition, and the tests below pin the bytes.
 
+/// The most claim pools one batch can hold — `SpendingUnitV2.MAX_SEALS`.
+pub const MAX_SEALS: usize = 5;
+/// The BN254 scalar modulus `r`, the field the folds are sums in.
+const BN254_R: U256 = U256::from_be_bytes(alloy_primitives::hex!(
+    "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001"
+));
 /// Domain separation of everything the enclave signs.
 const BDP_DST: &[u8] = b"bdp-enclave-v1";
 /// The settlement statement's tag.
 const TAG_SETTLEMENT: u8 = 0x12;
 /// The committee handle's message prefix (RFC-0015 v3).
 const HANDLE_PREFIX: &[u8] = b"bdp-fs-handle-v3";
+/// The seal id: one claim pool of one sync, with its contents.
+const SEAL_ID_DOMAIN: &[u8] = b"bdp-seal-id-v3";
+/// The settlement id: one sync.
+const SETTLEMENT_ID_DOMAIN: &[u8] = b"bdp-settlement-id-v1";
 
 fn push_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
     out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
     out.extend_from_slice(bytes);
+}
+
+/// `SHA-256("bdp-seal-id-v3" ‖ ctx ‖ u64le(sequence) ‖ u32le(pool_epoch)
+///  ‖ u64le(count) ‖ f_fold)`.
+fn seal_id(
+    ctx: &[u8; 32],
+    sequence: u64,
+    pool_epoch: u32,
+    count: u64,
+    f_fold: &[u8; 32],
+) -> [u8; 32] {
+    Sha256::new()
+        .chain_update(SEAL_ID_DOMAIN)
+        .chain_update(ctx)
+        .chain_update(sequence.to_le_bytes())
+        .chain_update(pool_epoch.to_le_bytes())
+        .chain_update(count.to_le_bytes())
+        .chain_update(f_fold)
+        .finalize()
+        .into()
+}
+
+/// `SHA-256("bdp-settlement-id-v1" ‖ ctx ‖ u64le(sequence))`.
+fn settlement_id(ctx: &[u8; 32], sequence: u64) -> [u8; 32] {
+    Sha256::new()
+        .chain_update(SETTLEMENT_ID_DOMAIN)
+        .chain_update(ctx)
+        .chain_update(sequence.to_le_bytes())
+        .finalize()
+        .into()
 }
 
 /// `"bdp-fs-handle-v3" ‖ attester(20) ‖ ctx(32) ‖ lp(seal_id) ‖ u64le(count)
@@ -607,24 +740,19 @@ fn handle_message(
     out
 }
 
-/// `DST ‖ 0x12 ‖ ctx ‖ lp(seal_id) ‖ u32le(fs_epoch) ‖ lp(fs_group_key)
-///  ‖ rm_digest ‖ lp(commitment_root) ‖ u64le(sequence) ‖ u16le(currency)
-///  ‖ u64le(base) ‖ u64le(atto) ‖ u64le(wwd) ‖ u64le(count) ‖ f_fold`.
+/// `DST ‖ 0x12 ‖ ctx ‖ rm_digest ‖ lp(commitment_root) ‖ u64le(sequence)
+///  ‖ u16le(currency) ‖ u64le(base) ‖ u64le(atto) ‖ u64le(wwd)
+///  ‖ u64le(count) ‖ f_fold` — over the batch totals, once per sync.
 fn settlement_message(
     batch: &SealedBatch,
     ctx: &[u8; 32],
-    seal_id: &[u8; 32],
     f_fold: &[u8; 32],
-    group_key: &[u8; 96],
     rm_digest: &[u8; 32],
 ) -> Vec<u8> {
-    let mut out = Vec::with_capacity(BDP_DST.len() + 320);
+    let mut out = Vec::with_capacity(BDP_DST.len() + 200);
     out.extend_from_slice(BDP_DST);
     out.push(TAG_SETTLEMENT);
     out.extend_from_slice(ctx);
-    push_len_prefixed(&mut out, seal_id);
-    out.extend_from_slice(&batch.fs_epoch.to_le_bytes());
-    push_len_prefixed(&mut out, group_key);
     out.extend_from_slice(rm_digest);
     push_len_prefixed(&mut out, &batch.commitment_root);
     out.extend_from_slice(&batch.sequence.to_le_bytes());
@@ -797,6 +925,8 @@ mod tests {
     const TEST_DST: &[u8] = b"PSO-FP-v1-SEAL_BLS12381G1_XMD:SHA-256_SSWU_RO_";
     const ATTESTER_ADDR: [u8; 20] = [0xab; 20];
     const RM_DIGEST: [u8; 32] = [0x5a; 32];
+    /// The signing epoch of every test seal.
+    const FS_EPOCH: u32 = 3;
 
     fn committee() -> blst::min_sig::SecretKey {
         blst::min_sig::SecretKey::key_gen(&[7u8; 32], &[]).expect("committee key")
@@ -806,52 +936,89 @@ mod tests {
         ed25519_dalek::SigningKey::from_bytes(&[9u8; 32])
     }
 
-    /// A batch the provider would hand over: both signatures real, over the
-    /// same preimages the chain rebuilds.
+    /// `BN254_R - 1`: a pool fold that makes the batch fold wrap the modulus.
+    fn r_minus_one() -> Vec<u8> {
+        (BN254_R - U256::from(1u64)).to_be_bytes::<32>().to_vec()
+    }
+
+    /// A pool's seal, its handle signed by `sk` for the test attester under
+    /// the id the chain derives for `(ctx, sequence)`.
+    fn pool_seal(
+        sk: &blst::min_sig::SecretKey,
+        ctx: &[u8; 32],
+        sequence: u64,
+        pool_epoch: u32,
+        worldwide_day: u64,
+        count: u64,
+        f_fold: Vec<u8>,
+    ) -> PoolSeal {
+        let fold = arr::<32>(&f_fold, "f_fold").unwrap();
+        let id = seal_id(ctx, sequence, pool_epoch, count, &fold);
+        let handle = handle_message(
+            &ATTESTER_ADDR,
+            ctx,
+            &id,
+            count,
+            &fold,
+            FS_EPOCH,
+            worldwide_day,
+        );
+        PoolSeal {
+            pool_epoch,
+            fs_epoch: FS_EPOCH,
+            worldwide_day,
+            count,
+            f_fold,
+            fs_group_key: sk.sk_to_pk().compress().to_vec(),
+            handle_sig: sk.sign(&handle, TEST_DST, &[]).compress().to_vec(),
+        }
+    }
+
+    /// Fill in the totals from the seals and sign the settlement over them.
+    fn settle(batch: &mut SealedBatch, enclave: &ed25519_dalek::SigningKey) {
+        use ed25519_dalek::Signer as _;
+
+        batch.count = batch.seals.iter().map(|s| s.count).sum();
+        batch.worldwide_day = batch.seals.iter().map(|s| s.worldwide_day).max().unwrap();
+        let fold = batch.seals.iter().fold(U256::ZERO, |acc, s| {
+            acc.add_mod(U256::from_be_slice(&s.f_fold), BN254_R)
+        });
+        batch.f_fold = fold.to_be_bytes::<32>().to_vec();
+        let settlement = settlement_message(
+            batch,
+            &arr::<32>(&batch.ctx, "ctx").unwrap(),
+            &arr::<32>(&batch.f_fold, "f_fold").unwrap(),
+            &RM_DIGEST,
+        );
+        batch.settle_sig = enclave.sign(&settlement).to_bytes().to_vec();
+    }
+
+    /// A batch the provider would hand over: two claim pools whose folds
+    /// wrap the modulus, every signature real, over the same preimages the
+    /// chain rebuilds.
     fn sealed_batch(
         sk: &blst::min_sig::SecretKey,
         enclave: &ed25519_dalek::SigningKey,
     ) -> SealedBatch {
-        use ed25519_dalek::Signer as _;
-
+        let ctx = [0x11; 32];
+        let sequence = 7;
         let mut batch = SealedBatch {
-            ctx: vec![0x11; 32],
-            // A SHA-256-shaped id above the BN254 modulus: ordinary here.
-            seal_id: vec![0xff; 32],
-            fs_epoch: 3,
-            worldwide_day: 20_260_924,
-            count: 42,
-            f_fold: vec![0xf0; 32],
-            fs_group_key: sk.sk_to_pk().compress().to_vec(),
-            handle_sig: Vec::new(),
+            ctx: ctx.to_vec(),
+            sequence,
             commitment_root: vec![0x44; 32],
-            sequence: 7,
+            worldwide_day: 0,
+            count: 0,
+            f_fold: Vec::new(),
             currency: 978,
             base: 1_234,
             atto: 567_890_000_000_000_000,
             settle_sig: Vec::new(),
+            seals: vec![
+                pool_seal(sk, &ctx, sequence, 1, 20_260_917, 30, r_minus_one()),
+                pool_seal(sk, &ctx, sequence, 2, 20_260_924, 12, fp(5)),
+            ],
         };
-
-        let handle = handle_message(
-            &ATTESTER_ADDR,
-            &arr::<32>(&batch.ctx, "ctx").unwrap(),
-            &arr::<32>(&batch.seal_id, "seal_id").unwrap(),
-            batch.count,
-            &arr::<32>(&batch.f_fold, "f_fold").unwrap(),
-            batch.fs_epoch,
-            batch.worldwide_day,
-        );
-        batch.handle_sig = sk.sign(&handle, TEST_DST, &[]).compress().to_vec();
-
-        let settlement = settlement_message(
-            &batch,
-            &arr::<32>(&batch.ctx, "ctx").unwrap(),
-            &arr::<32>(&batch.seal_id, "seal_id").unwrap(),
-            &arr::<32>(&batch.f_fold, "f_fold").unwrap(),
-            &arr::<96>(&batch.fs_group_key, "group_key").unwrap(),
-            &RM_DIGEST,
-        );
-        batch.settle_sig = enclave.sign(&settlement).to_bytes().to_vec();
+        settle(&mut batch, enclave);
         batch
     }
 
@@ -864,6 +1031,7 @@ mod tests {
 
     fn epoch_key(sk: &blst::min_sig::SecretKey) -> FsEpochKey {
         FsEpochKey {
+            epoch: FS_EPOCH,
             pk_att: sk.sk_to_pk().compress().to_vec(),
             dst: TEST_DST.to_vec(),
             start_wwd: 20_260_101,
@@ -879,31 +1047,94 @@ mod tests {
         (att, header)
     }
 
+    /// Issue `batch` with the test enclave and the committee's epoch key.
+    fn issue(
+        att: &Attester,
+        header: NftHeader,
+        batch: SealedBatch,
+    ) -> Result<IssuedSpendingUnitV2, AttesterError> {
+        att.issue_from_sealed_batch(
+            header,
+            batch,
+            deployment(&enclave_key()),
+            vec![epoch_key(&committee())],
+            vec![0u8; 20],
+        )
+    }
+
+    /// `BN254_R` is the modulus of the suite's field: the first value the
+    /// canonical decode refuses.
+    #[test]
+    fn bn254_r_is_the_field_modulus() {
+        let r = BN254_R.to_be_bytes::<32>();
+        let below = (BN254_R - U256::from(1u64)).to_be_bytes::<32>();
+        assert!(pso_protocol::codec::field_from_be_bytes_canonical::<Fr>(&r, "r").is_err());
+        assert!(pso_protocol::codec::field_from_be_bytes_canonical::<Fr>(&below, "r-1").is_ok());
+    }
+
+    /// The two ids and the settlement statement, byte for byte as
+    /// `SpendingUnitV2.sol` lays them out.
+    #[test]
+    fn preimages_follow_the_contract_layout() {
+        let ctx = [0x11; 32];
+        let fold = [0x22; 32];
+        let mut preimage = b"bdp-seal-id-v3".to_vec();
+        preimage.extend_from_slice(&ctx);
+        preimage.extend_from_slice(&7u64.to_le_bytes());
+        preimage.extend_from_slice(&2u32.to_le_bytes());
+        preimage.extend_from_slice(&12u64.to_le_bytes());
+        preimage.extend_from_slice(&fold);
+        let expected: [u8; 32] = Sha256::digest(&preimage).into();
+        assert_eq!(seal_id(&ctx, 7, 2, 12, &fold), expected);
+        // Any of the pool's contents gives another id.
+        assert_ne!(seal_id(&ctx, 7, 2, 13, &fold), expected);
+        assert_ne!(seal_id(&ctx, 8, 2, 12, &fold), expected);
+
+        let mut preimage = b"bdp-settlement-id-v1".to_vec();
+        preimage.extend_from_slice(&ctx);
+        preimage.extend_from_slice(&7u64.to_le_bytes());
+        let expected: [u8; 32] = Sha256::digest(&preimage).into();
+        assert_eq!(settlement_id(&ctx, 7), expected);
+
+        let batch = sealed_batch(&committee(), &enclave_key());
+        let message = settlement_message(&batch, &ctx, &fold, &RM_DIGEST);
+        // DST ‖ tag ‖ ctx ‖ rm ‖ (4 + 32) ‖ seq ‖ cur ‖ base ‖ atto ‖ wwd ‖ count ‖ fold
+        assert_eq!(
+            message.len(),
+            BDP_DST.len() + 1 + 32 + 32 + 36 + 8 + 2 + 8 * 4 + 32
+        );
+        let rm_at = BDP_DST.len() + 1 + 32;
+        assert_eq!(&message[rm_at..rm_at + 32], &RM_DIGEST);
+        assert_eq!(&message[message.len() - 32..], &fold);
+    }
+
     #[test]
     fn issue_from_sealed_batch_mints_and_binds_the_batch() {
         let (att, header) = attester_and_header(11);
-        let sk = committee();
-        let enclave = enclave_key();
-        let batch = sealed_batch(&sk, &enclave);
+        let batch = sealed_batch(&committee(), &enclave_key());
+        // The folds wrap: (r - 1) + 5 = 4.
+        assert_eq!(batch.f_fold, fp(4));
 
-        let issued = att
-            .issue_from_sealed_batch(
-                header.clone(),
-                sealed_batch(&sk, &enclave),
-                deployment(&enclave),
-                epoch_key(&sk),
-                vec![0u8; 20],
-            )
-            .expect("a genuine batch mints");
+        let issued = issue(
+            &att,
+            header.clone(),
+            sealed_batch(&committee(), &enclave_key()),
+        )
+        .expect("a genuine batch mints");
 
         assert_eq!(issued.spending_unit.su_id, header.nft_id);
         assert_eq!(issued.spending_unit.derived_owner, header.derived_owner);
         assert_eq!(issued.spending_unit.ctx, batch.ctx);
-        assert_eq!(issued.spending_unit.seal_id, batch.seal_id);
-        // The amounts come from the signed batch, not from an argument.
+        // The entity names the settlement, not a seal.
+        assert_eq!(
+            issued.spending_unit.seal_id,
+            settlement_id(&[0x11; 32], batch.sequence).to_vec()
+        );
+        // The amounts come from the signed batch, not from an argument; the
+        // day is the latest pool's.
         assert_eq!(issued.spending_unit.base, batch.base);
         assert_eq!(issued.spending_unit.atto, batch.atto);
-        assert_eq!(issued.spending_unit.worldwide_day, batch.worldwide_day);
+        assert_eq!(issued.spending_unit.worldwide_day, 20_260_924);
         assert_eq!(issued.report.nft_hash.len(), 32);
 
         // A v1 SU under the same header and amount is a different preimage.
@@ -927,19 +1158,10 @@ mod tests {
     #[test]
     fn issue_from_sealed_batch_refuses_an_unsigned_amount() {
         let (att, header) = attester_and_header(12);
-        let sk = committee();
-        let enclave = enclave_key();
-        let mut batch = sealed_batch(&sk, &enclave);
+        let mut batch = sealed_batch(&committee(), &enclave_key());
         batch.base += 1;
-
         assert!(matches!(
-            att.issue_from_sealed_batch(
-                header,
-                batch,
-                deployment(&enclave),
-                epoch_key(&sk),
-                vec![0u8; 20],
-            ),
+            issue(&att, header, batch),
             Err(AttesterError::SettlementSignatureInvalid { .. })
         ));
     }
@@ -960,31 +1182,40 @@ mod tests {
                 header,
                 sealed_batch(&sk, &enclave),
                 record,
-                epoch_key(&sk),
+                vec![epoch_key(&sk)],
                 vec![0u8; 20],
             ),
             Err(AttesterError::SettlementSignatureInvalid { .. })
         ));
     }
 
-    /// The handle covers `count`, so a seal cannot be moved onto a batch of
-    /// another size — and the check fires before the settlement one.
+    /// The seal id is derived from the pool's contents, so a handle cannot
+    /// be moved onto another count — and the check fires before the totals.
     #[test]
-    fn issue_from_sealed_batch_refuses_a_tampered_batch_statement() {
+    fn issue_from_sealed_batch_refuses_a_tampered_pool() {
         let (att, header) = attester_and_header(14);
-        let sk = committee();
-        let enclave = enclave_key();
-        let mut batch = sealed_batch(&sk, &enclave);
-        batch.count += 1;
-
+        let mut batch = sealed_batch(&committee(), &enclave_key());
+        batch.seals[1].count += 1;
         assert!(matches!(
-            att.issue_from_sealed_batch(
-                header,
-                batch,
-                deployment(&enclave),
-                epoch_key(&sk),
-                vec![0u8; 20],
-            ),
+            issue(&att, header, batch),
+            Err(AttesterError::HandleSignatureInvalid {
+                epoch: FS_EPOCH,
+                ..
+            })
+        ));
+    }
+
+    /// A seal from another sync of the same context (another sequence) has
+    /// another id, so its handle does not verify inside this batch.
+    #[test]
+    fn issue_from_sealed_batch_refuses_a_seal_from_another_sync() {
+        let (att, header) = attester_and_header(18);
+        let sk = committee();
+        let mut batch = sealed_batch(&sk, &enclave_key());
+        let ctx = [0x11; 32];
+        batch.seals[0] = pool_seal(&sk, &ctx, 8, 1, 20_260_917, 30, r_minus_one());
+        assert!(matches!(
+            issue(&att, header, batch),
             Err(AttesterError::HandleSignatureInvalid { .. })
         ));
     }
@@ -995,17 +1226,8 @@ mod tests {
     fn issue_from_sealed_batch_refuses_a_handle_for_another_attester() {
         let (_, header) = attester_and_header(15);
         let other = Attester::new(vec![0xcd; 20]).unwrap();
-        let sk = committee();
-        let enclave = enclave_key();
-
         assert!(matches!(
-            other.issue_from_sealed_batch(
-                header,
-                sealed_batch(&sk, &enclave),
-                deployment(&enclave),
-                epoch_key(&sk),
-                vec![0u8; 20],
-            ),
+            issue(&other, header, sealed_batch(&committee(), &enclave_key())),
             Err(AttesterError::HandleSignatureInvalid { .. })
         ));
     }
@@ -1030,10 +1252,10 @@ mod tests {
                 header,
                 sealed_batch(&sk, &enclave),
                 deployment(&enclave),
-                epoch,
+                vec![epoch],
                 vec![0u8; 20],
             ),
-            Err(AttesterError::GroupKeyMismatch { epoch: 3 })
+            Err(AttesterError::GroupKeyMismatch { epoch: FS_EPOCH })
         ));
     }
 
@@ -1043,21 +1265,116 @@ mod tests {
         let sk = committee();
         let enclave = enclave_key();
         let mut epoch = epoch_key(&sk);
-        epoch.end_wwd_exclusive = 20_260_901; // closed before the seal's day
+        epoch.end_wwd_exclusive = 20_260_920; // closed between the two pools
 
         assert!(matches!(
             att.issue_from_sealed_batch(
                 header,
                 sealed_batch(&sk, &enclave),
                 deployment(&enclave),
-                epoch,
+                vec![epoch],
                 vec![0u8; 20],
             ),
             Err(AttesterError::DayOutsideEpochWindow {
                 day: 20_260_924,
-                epoch: 3
+                epoch: FS_EPOCH
             })
         ));
+    }
+
+    /// A seal's epoch must have a key in `epochs`; the others are ignored.
+    #[test]
+    fn issue_from_sealed_batch_selects_the_key_by_epoch() {
+        let (att, header) = attester_and_header(19);
+        let sk = committee();
+        let enclave = enclave_key();
+        let other = || FsEpochKey {
+            epoch: FS_EPOCH + 1,
+            ..epoch_key(&sk)
+        };
+
+        assert!(matches!(
+            att.issue_from_sealed_batch(
+                header.clone(),
+                sealed_batch(&sk, &enclave),
+                deployment(&enclave),
+                vec![other()],
+                vec![0u8; 20],
+            ),
+            Err(AttesterError::BadInput { .. })
+        ));
+        att.issue_from_sealed_batch(
+            header,
+            sealed_batch(&sk, &enclave),
+            deployment(&enclave),
+            vec![other(), epoch_key(&sk)],
+            vec![0u8; 20],
+        )
+        .expect("the matching entry is found among others");
+    }
+
+    /// Dropping a pool leaves seals that verify one by one but no longer add
+    /// up to what the enclave signed.
+    #[test]
+    fn issue_from_sealed_batch_refuses_a_dropped_pool() {
+        let (att, header) = attester_and_header(20);
+        let mut batch = sealed_batch(&committee(), &enclave_key());
+        batch.seals.pop();
+        assert!(matches!(
+            issue(&att, header, batch),
+            Err(AttesterError::BatchTotalsMismatch { .. })
+        ));
+    }
+
+    /// Re-stating the totals to match fewer seals breaks the settlement.
+    #[test]
+    fn issue_from_sealed_batch_refuses_totals_the_enclave_did_not_sign() {
+        let (att, header) = attester_and_header(21);
+        let mut batch = sealed_batch(&committee(), &enclave_key());
+        let signed = batch.settle_sig.clone();
+        batch.seals.pop();
+        settle(&mut batch, &enclave_key());
+        batch.settle_sig = signed;
+        assert!(matches!(
+            issue(&att, header, batch),
+            Err(AttesterError::SettlementSignatureInvalid { .. })
+        ));
+    }
+
+    /// No seals, too many, or pools out of order (or twice) is malformed
+    /// before anything is verified.
+    #[test]
+    fn issue_from_sealed_batch_refuses_a_malformed_seal_list() {
+        let sk = committee();
+        let enclave = enclave_key();
+        let ctx = [0x11; 32];
+
+        let mut empty = sealed_batch(&sk, &enclave);
+        empty.seals.clear();
+
+        let mut too_many = sealed_batch(&sk, &enclave);
+        too_many.seals = (1..=MAX_SEALS as u32 + 1)
+            .map(|p| pool_seal(&sk, &ctx, 7, p, 20_260_924, 1, fp(1)))
+            .collect();
+        settle(&mut too_many, &enclave);
+
+        let mut unordered = sealed_batch(&sk, &enclave);
+        unordered.seals.reverse();
+
+        let mut twice = sealed_batch(&sk, &enclave);
+        twice.seals[1] = pool_seal(&sk, &ctx, 7, 1, 20_260_924, 12, fp(5));
+        settle(&mut twice, &enclave);
+
+        for (n, batch) in [empty, too_many, unordered, twice].into_iter().enumerate() {
+            let (att, header) = attester_and_header(30 + n as u8);
+            assert!(
+                matches!(
+                    issue(&att, header, batch),
+                    Err(AttesterError::BadInput { .. })
+                ),
+                "case {n}"
+            );
+        }
     }
 
     #[test]
