@@ -1410,4 +1410,69 @@ mod tests {
     fn hex_encode(b: &[u8]) -> String {
         b.iter().map(|x| format!("{x:02x}")).collect()
     }
+
+    /// Parity with the provider: the two-pool batch of bank-data-provider's
+    /// `settlement_parity.json` (crates/bdp-seal-codec), the same vector the
+    /// SpendingUnitV2 contract test settles. Seal ids, the settlement id, the
+    /// fold sum and the settlement message must match it byte for byte.
+    #[test]
+    fn matches_the_providers_parity_batch() {
+        use alloy_primitives::hex;
+        let ctx: [u8; 32] =
+            hex!("c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7");
+        let rm_digest: [u8; 32] =
+            hex!("5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a");
+        let pools = [
+            (
+                5u32,
+                40u64,
+                hex!("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593effffffc"),
+                hex!("b2212da341106c52f5a7a52e504c81bdf8312b885f48cd5be0fbc76a94cc005b"),
+            ),
+            (
+                6u32,
+                2u64,
+                hex!("0a8b4bafe0e957560923ce81b942e03477423198cba97a1d03a498681c5073fa"),
+                hex!("a412bdcde57fb1651c2e2b5daedec27249a109ee13d07296fca17acd51d00610"),
+            ),
+        ];
+        let mut fold = U256::ZERO;
+        for (pool, count, f_fold, id) in pools {
+            assert_eq!(
+                seal_id(&ctx, 9, pool, count, &f_fold),
+                id,
+                "seal id, pool {pool}"
+            );
+            fold = fold.add_mod(U256::from_be_bytes(f_fold), BN254_R);
+        }
+        let f_fold: [u8; 32] =
+            hex!("0a8b4bafe0e957560923ce81b942e03477423198cba97a1d03a498681c5073f5");
+        assert_eq!(
+            fold.to_be_bytes::<32>(),
+            f_fold,
+            "the fold sum wraps the modulus"
+        );
+        assert_eq!(
+            settlement_id(&ctx, 9),
+            hex!("b0b9374c5ff30da9c7d4c646e31432e7478b8733cf6b28825abc3915b8a5fb0a")
+        );
+
+        let batch = SealedBatch {
+            ctx: ctx.to_vec(),
+            sequence: 9,
+            commitment_root: hex!("111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111").to_vec(),
+            worldwide_day: 20260924,
+            count: 42,
+            f_fold: f_fold.to_vec(),
+            currency: 978,
+            base: 1234,
+            atto: 250000000000000,
+            settle_sig: Vec::new(),
+            seals: Vec::new(),
+        };
+        assert_eq!(
+            settlement_message(&batch, &ctx, &f_fold, &rm_digest),
+            hex!("6264702d656e636c6176652d763112c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c75a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a300000001111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111110900000000000000d203d20400000000000000a031a95fe300003c283501000000002a000000000000000a8b4bafe0e957560923ce81b942e03477423198cba97a1d03a498681c5073f5").to_vec()
+        );
+    }
 }
