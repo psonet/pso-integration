@@ -195,7 +195,7 @@ pub(crate) async fn submit_full_tribute_draft(env: &TestEnv) -> eyre::Result<TdS
     // per-SU public inputs are recomputed in submitted-`suIds` order, so sort
     // the receipts by su_id up front: the witnesses (hence proof inputs),
     // `su_ids_minted`, and the submitted `suIds` then all share one order.
-    receipts.sort_by(|a, b| a.su_id.cmp(&b.su_id));
+    receipts.sort_by_key(|r| r.su_id);
     let su_ids_minted: Vec<U256> = receipts.iter().map(|r| r.su_id).collect();
     env.attester_zero
         .wait_for_su_existence(&su_ids_minted, Duration::from_secs(30))
