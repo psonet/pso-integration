@@ -950,6 +950,7 @@ impl Wallet {
     /// `::entity_hash` of the `pso-chain-abi` `TributeDraft` struct (the one true
     /// `#[derive(Entity)]` fold the chain's `0x0211` precompile computes). Folded
     /// internally by [`Wallet::tribute_ownership_witness`] — not exposed over FFI.
+    #[allow(clippy::too_many_arguments)]
     fn tribute_draft_hash_fr(
         &self,
         id: &[u8],
