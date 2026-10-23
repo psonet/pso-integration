@@ -14,6 +14,7 @@
 
 use alloy_primitives::{Address, B256};
 use alloy_sol_types::sol;
+use sha2::{Digest, Sha256};
 
 /// The committee's secret, fixed so a rerun against a fresh devnet produces
 /// the same epoch 0.
@@ -32,6 +33,10 @@ pub const BDP_DST: &[u8] = b"bdp-enclave-v1";
 pub const TAG_SETTLEMENT: u8 = 0x12;
 /// The committee handle's prefix (RFC-0015 v3).
 pub const HANDLE_PREFIX: &[u8] = b"bdp-fs-handle-v3";
+/// The seal id: one claim pool of one sync, with its contents.
+pub const SEAL_ID_DOMAIN: &[u8] = b"bdp-seal-id-v3";
+/// The settlement id: one sync.
+pub const SETTLEMENT_ID_DOMAIN: &[u8] = b"bdp-settlement-id-v1";
 
 /// Epoch 0 opens well before any day a scenario uses.
 pub const EPOCH0_START_WWD: u32 = 20_200_101;
@@ -88,15 +93,21 @@ sol! {
     #[sol(rpc)]
     interface ISpendingUnitV2 {
         struct Seal {
-            bytes32 ctx;
-            bytes32 sealId;
+            uint32 poolEpoch;
             uint32 fsEpoch;
             uint64 worldwideDay;
             uint64 count;
             bytes32 fFold;
-            bytes fsGroupKey;
-            bytes commitmentRoot;
+            bytes handleSig;
+        }
+        struct Batch {
+            bytes32 ctx;
             uint64 sequence;
+            bytes commitmentRoot;
+            uint64 worldwideDay;
+            uint64 count;
+            bytes32 fFold;
+            bytes settleSig;
         }
         struct Mint {
             uint256 suId;
@@ -120,16 +131,12 @@ sol! {
             bytes32 ctx;
             bytes32 sealId;
         }
-        function submitSU(
-            Mint calldata mint,
-            Seal calldata seal,
-            bytes calldata handleSigG1,
-            bytes calldata settleSig
-        ) external;
+        function submitSU(Mint calldata mint, Batch calldata batch, Seal[] calldata seals) external;
         function getData(uint256 suId) external view returns (SpendingUnitV2Entity memory);
         function exists(uint256 suId) external view returns (bool);
-        function batches(bytes32 ctx) external view returns (bool);
-        error AlreadySettled(bytes32 ctx, bytes32 sealId);
+        function settlements(bytes32 ctx) external view returns (bytes32);
+        error AlreadySettled(bytes32 ctx, bytes32 settledId);
+        error BatchTotalsMismatch();
     }
 }
 
@@ -190,14 +197,43 @@ fn push_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
     out.extend_from_slice(bytes);
 }
 
+/// `SHA-256("bdp-seal-id-v3" ‖ ctx ‖ u64le(sequence) ‖ u32le(pool_epoch)
+///  ‖ u64le(count) ‖ f_fold)` — the id the chain derives for one pool of one
+/// sync.
+pub fn seal_id(ctx: B256, sequence: u64, seal: &ISpendingUnitV2::Seal) -> B256 {
+    let mut h = Sha256::new();
+    h.update(SEAL_ID_DOMAIN);
+    h.update(ctx);
+    h.update(sequence.to_le_bytes());
+    h.update(seal.poolEpoch.to_le_bytes());
+    h.update(seal.count.to_le_bytes());
+    h.update(seal.fFold);
+    B256::from(<[u8; 32]>::from(h.finalize()))
+}
+
+/// `SHA-256("bdp-settlement-id-v1" ‖ ctx ‖ u64le(sequence))` — what
+/// `settlements(ctx)` holds once the sync settled.
+pub fn settlement_id(ctx: B256, sequence: u64) -> B256 {
+    let mut h = Sha256::new();
+    h.update(SETTLEMENT_ID_DOMAIN);
+    h.update(ctx);
+    h.update(sequence.to_le_bytes());
+    B256::from(<[u8; 32]>::from(h.finalize()))
+}
+
 /// `HANDLE_PREFIX ‖ attester(20) ‖ ctx ‖ lp(seal_id) ‖ u64le(count) ‖ f_fold
-///  ‖ u32le(fs_epoch) ‖ u64le(wwd)` — what the committee signs.
-pub fn handle_message(attester: Address, seal: &ISpendingUnitV2::Seal) -> Vec<u8> {
+///  ‖ u32le(fs_epoch) ‖ u64le(wwd)` — what the committee signs for one pool.
+pub fn handle_message(
+    attester: Address,
+    ctx: B256,
+    seal_id: B256,
+    seal: &ISpendingUnitV2::Seal,
+) -> Vec<u8> {
     let mut out = Vec::with_capacity(HANDLE_PREFIX.len() + 160);
     out.extend_from_slice(HANDLE_PREFIX);
     out.extend_from_slice(attester.as_slice());
-    out.extend_from_slice(seal.ctx.as_slice());
-    push_len_prefixed(&mut out, seal.sealId.as_slice());
+    out.extend_from_slice(ctx.as_slice());
+    push_len_prefixed(&mut out, seal_id.as_slice());
     out.extend_from_slice(&seal.count.to_le_bytes());
     out.extend_from_slice(seal.fFold.as_slice());
     out.extend_from_slice(&seal.fsEpoch.to_le_bytes());
@@ -205,31 +241,28 @@ pub fn handle_message(attester: Address, seal: &ISpendingUnitV2::Seal) -> Vec<u8
     out
 }
 
-/// `BDP_DST ‖ 0x12 ‖ ctx ‖ lp(seal_id) ‖ u32le(fs_epoch) ‖ lp(fs_group_key)
-///  ‖ rm_digest ‖ lp(commitment_root) ‖ u64le(sequence) ‖ u16le(currency)
-///  ‖ u64le(base) ‖ u64le(atto) ‖ u64le(wwd) ‖ u64le(count) ‖ f_fold` — what
-/// the enclave signs, and the only statement covering the amount.
+/// `BDP_DST ‖ 0x12 ‖ ctx ‖ rm_digest ‖ lp(commitment_root) ‖ u64le(sequence)
+///  ‖ u16le(currency) ‖ u64le(base) ‖ u64le(atto) ‖ u64le(wwd)
+///  ‖ u64le(count) ‖ f_fold` — what the enclave signs once per sync, over
+/// the batch totals, and the only statement covering the amount.
 pub fn settlement_message(
     mint: &ISpendingUnitV2::Mint,
-    seal: &ISpendingUnitV2::Seal,
+    batch: &ISpendingUnitV2::Batch,
     rm_digest: B256,
 ) -> Vec<u8> {
-    let mut out = Vec::with_capacity(BDP_DST.len() + 320);
+    let mut out = Vec::with_capacity(BDP_DST.len() + 200);
     out.extend_from_slice(BDP_DST);
     out.push(TAG_SETTLEMENT);
-    out.extend_from_slice(seal.ctx.as_slice());
-    push_len_prefixed(&mut out, seal.sealId.as_slice());
-    out.extend_from_slice(&seal.fsEpoch.to_le_bytes());
-    push_len_prefixed(&mut out, &seal.fsGroupKey);
+    out.extend_from_slice(batch.ctx.as_slice());
     out.extend_from_slice(rm_digest.as_slice());
-    push_len_prefixed(&mut out, &seal.commitmentRoot);
-    out.extend_from_slice(&seal.sequence.to_le_bytes());
+    push_len_prefixed(&mut out, &batch.commitmentRoot);
+    out.extend_from_slice(&batch.sequence.to_le_bytes());
     out.extend_from_slice(&mint.currency.to_le_bytes());
     out.extend_from_slice(&mint.amountBase.to_le_bytes());
     out.extend_from_slice(&mint.amountAtto.to_le_bytes());
-    out.extend_from_slice(&seal.worldwideDay.to_le_bytes());
-    out.extend_from_slice(&seal.count.to_le_bytes());
-    out.extend_from_slice(seal.fFold.as_slice());
+    out.extend_from_slice(&batch.worldwideDay.to_le_bytes());
+    out.extend_from_slice(&batch.count.to_le_bytes());
+    out.extend_from_slice(batch.fFold.as_slice());
     out
 }
 
@@ -263,6 +296,18 @@ mod tests {
         );
     }
 
+    fn test_seal() -> ISpendingUnitV2::Seal {
+        use alloy_primitives::keccak256;
+        ISpendingUnitV2::Seal {
+            poolEpoch: 0,
+            fsEpoch: 1,
+            worldwideDay: BATCH_WWD,
+            count: 42,
+            fFold: keccak256("fold"),
+            handleSig: Default::default(),
+        }
+    }
+
     /// The handle signature the contract verifies is the one `blst` verifies
     /// under the same DST, and its EIP-2537 form is two padded slots.
     #[test]
@@ -270,18 +315,14 @@ mod tests {
         use alloy_primitives::keccak256;
 
         let sk = committee_key(&COMMITTEE_SK_IKM_NEXT);
-        let seal = ISpendingUnitV2::Seal {
-            ctx: keccak256("ctx"),
-            sealId: keccak256("seal"),
-            fsEpoch: 1,
-            worldwideDay: BATCH_WWD,
-            count: 42,
-            fFold: keccak256("fold"),
-            fsGroupKey: sk.sk_to_pk().compress().to_vec().into(),
-            commitmentRoot: keccak256("root").to_vec().into(),
-            sequence: 7,
-        };
-        let message = handle_message(Address::repeat_byte(0xA1), &seal);
+        let seal = test_seal();
+        let ctx = keccak256("ctx");
+        let message = handle_message(
+            Address::repeat_byte(0xA1),
+            ctx,
+            seal_id(ctx, 7, &seal),
+            &seal,
+        );
         // prefix ‖ 20 ‖ 32 ‖ (4 + 32) ‖ 8 ‖ 32 ‖ 4 ‖ 8
         assert_eq!(message.len(), HANDLE_PREFIX.len() + 140);
         assert!(message.starts_with(HANDLE_PREFIX));
@@ -299,23 +340,54 @@ mod tests {
         }
     }
 
+    /// The seal id covers the pool's contents and the sync; the settlement
+    /// id only the sync.
+    #[test]
+    fn ids_follow_the_contract_layout() {
+        use alloy_primitives::keccak256;
+
+        let ctx = keccak256("ctx");
+        let seal = test_seal();
+        let mut preimage = SEAL_ID_DOMAIN.to_vec();
+        preimage.extend_from_slice(ctx.as_slice());
+        preimage.extend_from_slice(&7u64.to_le_bytes());
+        preimage.extend_from_slice(&0u32.to_le_bytes());
+        preimage.extend_from_slice(&42u64.to_le_bytes());
+        preimage.extend_from_slice(seal.fFold.as_slice());
+        assert_eq!(
+            seal_id(ctx, 7, &seal).0,
+            <[u8; 32]>::from(Sha256::digest(&preimage))
+        );
+        let mut other_pool = seal.clone();
+        other_pool.poolEpoch = 1;
+        assert_ne!(seal_id(ctx, 7, &other_pool), seal_id(ctx, 7, &seal));
+        assert_ne!(seal_id(ctx, 8, &seal), seal_id(ctx, 7, &seal));
+
+        let mut preimage = SETTLEMENT_ID_DOMAIN.to_vec();
+        preimage.extend_from_slice(ctx.as_slice());
+        preimage.extend_from_slice(&7u64.to_le_bytes());
+        assert_eq!(
+            settlement_id(ctx, 7).0,
+            <[u8; 32]>::from(Sha256::digest(&preimage))
+        );
+    }
+
     /// The settlement statement's shape: the tagged frame, the registry's
-    /// manifest digest inside it, and the amount covered.
+    /// manifest digest right after the context, the batch totals last, and
+    /// the amount covered.
     #[test]
     fn settlement_message_is_the_tagged_statement() {
         use alloy_primitives::keccak256;
 
         let (sk, enclave_pk) = enclave_key();
-        let seal = ISpendingUnitV2::Seal {
+        let batch = ISpendingUnitV2::Batch {
             ctx: keccak256("ctx"),
-            sealId: keccak256("seal"),
-            fsEpoch: 1,
+            sequence: 7,
+            commitmentRoot: keccak256("root").to_vec().into(),
             worldwideDay: BATCH_WWD,
             count: 42,
             fFold: keccak256("fold"),
-            fsGroupKey: vec![0u8; 96].into(),
-            commitmentRoot: keccak256("root").to_vec().into(),
-            sequence: 7,
+            settleSig: Default::default(),
         };
         let mint = ISpendingUnitV2::Mint {
             suId: alloy_primitives::U256::from(1u64),
@@ -328,19 +400,30 @@ mod tests {
             amountAtto: 5,
         };
         let rm = keccak256("manifest");
-        let message = settlement_message(&mint, &seal, rm);
+        let message = settlement_message(&mint, &batch, rm);
 
+        // DST ‖ tag ‖ ctx ‖ rm ‖ (4 + root) ‖ seq ‖ cur ‖ base ‖ atto ‖ wwd ‖ count ‖ fold
+        assert_eq!(
+            message.len(),
+            BDP_DST.len() + 1 + 32 + 32 + 36 + 8 + 2 + 8 * 4 + 32
+        );
         assert!(message.starts_with(BDP_DST));
         assert_eq!(message[BDP_DST.len()], TAG_SETTLEMENT);
-        // The registered manifest digest sits between the key and the root.
-        let at = BDP_DST.len() + 1 + 32 + (4 + 32) + 4 + (4 + 96);
+        let at = BDP_DST.len() + 1 + 32;
         assert_eq!(&message[at..at + 32], rm.as_slice());
+        let tail = message.len() - 32 - 8 - 8;
+        assert_eq!(&message[tail..tail + 8], &BATCH_WWD.to_le_bytes());
+        assert_eq!(&message[tail + 8..tail + 16], &42u64.to_le_bytes());
+        assert_eq!(&message[message.len() - 32..], batch.fFold.as_slice());
 
-        // Changing only the amount changes the statement: that is why the
-        // enclave's signature is what binds it.
+        // Changing only the amount, or only a total, changes the statement:
+        // that is why the enclave's signature is what binds them.
         let mut louder = mint.clone();
         louder.amountBase += 1;
-        assert_ne!(settlement_message(&louder, &seal, rm), message);
+        assert_ne!(settlement_message(&louder, &batch, rm), message);
+        let mut fewer = batch.clone();
+        fewer.count -= 1;
+        assert_ne!(settlement_message(&mint, &fewer, rm), message);
 
         // And the enclave's strict verify accepts its own signature.
         use ed25519_dalek::{Signer as _, Verifier as _};

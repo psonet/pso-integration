@@ -2,28 +2,38 @@
 //!
 //! The whole chain of custody the earlier scenarios built, exercised in one
 //! transaction: the deployment S052 registered, the committee key S051's
-//! epoch 1 installed, a handle that committee signed, and the enclave's
-//! settlement over the amount. `submitSU` verifies all of it in the EVM —
-//! EIP-2537 pairings for the handle, `0x0208` for the settlement — and mints
-//! the SU, which is the first time `FsEpochRegistry.keyFor` has an on-chain
+//! epoch 1 installed, a handle that committee signed for each claim pool of
+//! the sync, and the enclave's one settlement over the batch totals and the
+//! amount. `submitSU` verifies all of it in the EVM — EIP-2537 pairings for
+//! each handle, `0x0208` for the settlement — and mints one SU for the
+//! batch, which is the first time `FsEpochRegistry.keyFor` has an on-chain
 //! consumer.
 //!
-//! Then the two refusals that make a batch settle once: the same context
-//! again, and the same seal id moved to a fresh context.
+//! Settlement is once per loader context. The same batch again is refused,
+//! and so is a sibling sync of the same context — a re-run from the same
+//! cursor seals the same pools under the next sequence — and the refusal
+//! names the settlement that won. A batch with a pool dropped no longer adds
+//! up to what the enclave signed.
 
 use alloy_primitives::{address, keccak256, Address, B256, U256};
+use alloy_provider::Provider;
 use async_trait::async_trait;
 use ed25519_dalek::Signer as _;
 
 use super::registries::{
-    committee_key, enclave_key, handle_message, settlement_message, sig_g1_eip2537,
-    ISpendingUnitV2, BATCH_WWD, COMMITTEE_SK_IKM_NEXT, SEAL_DST,
+    committee_key, enclave_key, handle_message, seal_id, settlement_id, settlement_message,
+    sig_g1_eip2537, ISpendingUnitV2, BATCH_WWD, COMMITTEE_SK_IKM_NEXT, SEAL_DST,
 };
 use super::s052_enclave_registered_for_attester::{provider_id, rm_digest};
 use crate::{Scenario, TestEnv};
 
 /// The canonical predeploy (`pso_chain_abi::addresses::SPENDING_UNIT_V2`).
 const SPENDING_UNIT_V2: Address = address!("5200000000000000000000000000000000000008");
+
+/// The committee epoch (S051's epoch 1) that signs every handle here.
+const FS_EPOCH: u32 = 1;
+/// The sync that settles.
+const SEQUENCE: u64 = 7;
 
 pub struct S053;
 
@@ -33,7 +43,7 @@ impl Scenario for S053 {
         "S053"
     }
     fn description(&self) -> &'static str {
-        "a committee-sealed, enclave-settled batch mints one SU v2 and cannot settle twice"
+        "a two-pool sealed batch mints one SU v2, and its context cannot settle twice"
     }
     async fn run(&self, env: &TestEnv) -> eyre::Result<()> {
         run(env).await
@@ -52,18 +62,87 @@ fn field_element(label: &str) -> B256 {
     B256::from(U256::from_be_bytes(keccak256(label).0) >> 8)
 }
 
-fn seal(ctx: B256, seal_id: B256, group_key: Vec<u8>) -> ISpendingUnitV2::Seal {
-    ISpendingUnitV2::Seal {
-        ctx,
-        sealId: seal_id,
-        fsEpoch: 1,
-        worldwideDay: BATCH_WWD,
-        count: 42,
-        fFold: field_element("S053 f_fold"),
-        fsGroupKey: group_key.into(),
-        commitmentRoot: keccak256("S053 commitment root").to_vec().into(),
-        sequence: 7,
+/// Two claim pools of one sync: the records settled across a week boundary,
+/// so pool 0 is a week older than pool 1. Both certified by epoch 1's
+/// committee.
+fn pools() -> Vec<ISpendingUnitV2::Seal> {
+    [
+        (0, BATCH_WWD - 7, 30, "S053 pool 0 fold"),
+        (1, BATCH_WWD, 12, "S053 pool 1 fold"),
+    ]
+    .into_iter()
+    .map(|(pool, day, count, fold)| ISpendingUnitV2::Seal {
+        poolEpoch: pool,
+        fsEpoch: FS_EPOCH,
+        worldwideDay: day,
+        count,
+        fFold: field_element(fold),
+        handleSig: Default::default(),
+    })
+    .collect()
+}
+
+/// The committee's handles for `seals` under the ids the chain derives for
+/// `(ctx, sequence)`, issued to `attester`.
+fn sign_handles(
+    committee: &blst::min_sig::SecretKey,
+    attester: Address,
+    ctx: B256,
+    sequence: u64,
+    seals: &mut [ISpendingUnitV2::Seal],
+) {
+    for seal in seals {
+        let message = handle_message(attester, ctx, seal_id(ctx, sequence, seal), seal);
+        seal.handleSig = sig_g1_eip2537(&committee.sign(&message, SEAL_DST, &[])).into();
     }
+}
+
+/// The batch `seals` add up to, with the enclave's settlement over it.
+fn settled_batch(
+    enclave: &ed25519_dalek::SigningKey,
+    mint: &ISpendingUnitV2::Mint,
+    ctx: B256,
+    sequence: u64,
+    seals: &[ISpendingUnitV2::Seal],
+) -> ISpendingUnitV2::Batch {
+    let mut batch = ISpendingUnitV2::Batch {
+        ctx,
+        sequence,
+        commitmentRoot: keccak256("S053 commitment root").to_vec().into(),
+        worldwideDay: seals.iter().map(|s| s.worldwideDay).max().unwrap_or(0),
+        count: seals.iter().map(|s| s.count).sum(),
+        // Each fold is below 2^248, so two of them sum below the BN254
+        // modulus and the chain's `addmod` reduces nothing.
+        fFold: B256::from(
+            seals
+                .iter()
+                .map(|s| U256::from_be_bytes(s.fFold.0))
+                .fold(U256::ZERO, |a, b| a + b),
+        ),
+        settleSig: Default::default(),
+    };
+    batch.settleSig = enclave
+        .sign(&settlement_message(mint, &batch, rm_digest()))
+        .to_bytes()
+        .to_vec()
+        .into();
+    batch
+}
+
+async fn submit<P: Provider>(
+    su: &ISpendingUnitV2::ISpendingUnitV2Instance<P>,
+    mint: &ISpendingUnitV2::Mint,
+    batch: &ISpendingUnitV2::Batch,
+    seals: &[ISpendingUnitV2::Seal],
+) -> Result<(), alloy_contract::Error> {
+    su.submitSU(mint.clone(), batch.clone(), seals.to_vec())
+        .max_fee_per_gas(0)
+        .max_priority_fee_per_gas(0)
+        .send()
+        .await?
+        .get_receipt()
+        .await?;
+    Ok(())
 }
 
 async fn run(env: &TestEnv) -> eyre::Result<()> {
@@ -75,16 +154,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         env.attester_zero.inner().write_provider()?,
     );
 
-    // The seal carries the committee key the enclave verified the handle
-    // under, compressed — the form the provider's wire uses. The registry
-    // holds the same key in the EIP-2537 layout; `submitSU` verifies under the
-    // registry's, and the settlement signature covers this copy.
-    let group_key = committee.sk_to_pk().compress().to_vec();
-
     let ctx = field_element("S053 loader context");
-    let seal_id = field_element("S053 seal attempt");
-    let batch = seal(ctx, seal_id, group_key.clone());
-
     let mint = ISpendingUnitV2::Mint {
         suId: U256::from_be_bytes(keccak256("S053 su id").0) >> 8, // < field modulus
         derivedOwner: field_element("S053 derived owner"),
@@ -95,32 +165,19 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         amountBase: 1_234,
         amountAtto: 567_890_000_000_000_000,
     };
+    let mut seals = pools();
+    sign_handles(&committee, attester, ctx, SEQUENCE, &mut seals);
+    let batch = settled_batch(&enclave_sk, &mint, ctx, SEQUENCE, &seals);
+    let settled = settlement_id(ctx, SEQUENCE);
 
-    let handle_sig =
-        sig_g1_eip2537(&committee.sign(&handle_message(attester, &batch), SEAL_DST, &[]));
-    let settle_sig = enclave_sk
-        .sign(&settlement_message(&mint, &batch, rm_digest()))
-        .to_bytes()
-        .to_vec();
-
+    // 1. Both pools settle as one SU.
     if !su.exists(mint.suId).call().await? {
-        su.submitSU(
-            mint.clone(),
-            batch.clone(),
-            handle_sig.clone().into(),
-            settle_sig.clone().into(),
-        )
-        .max_fee_per_gas(0)
-        .max_priority_fee_per_gas(0)
-        .send()
-        .await?
-        .get_receipt()
-        .await?;
+        submit(&su, &mint, &batch, &seals).await?;
     }
 
     // What the chain stored is what the committee and the enclave stated, not
-    // what the submitter typed: the day comes from the handle, the amount from
-    // the settlement, the attester from `msg.sender`.
+    // what the submitter typed: the day is the latest pool's, the amount the
+    // settlement's, the attester `msg.sender`.
     let entity = su.getData(mint.suId).call().await?;
     eyre::ensure!(
         entity.attesterAddress == attester,
@@ -128,69 +185,94 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
     );
     eyre::ensure!(
         entity.worldwideDay == BATCH_WWD,
-        "the SU must record the committee's day"
+        "the SU must record the latest pool's day"
     );
     eyre::ensure!(
         entity.amountBase == mint.amountBase && entity.amountAtto == mint.amountAtto,
         "the SU must record the settled amount"
     );
     eyre::ensure!(
-        entity.ctx == ctx && entity.sealId == seal_id,
-        "the SU must name the batch it settled"
+        entity.ctx == ctx && entity.sealId == settled,
+        "the SU must name the batch's settlement"
     );
     eyre::ensure!(
-        su.batches(ctx).call().await?,
-        "the context must be consumed"
+        su.settlements(ctx).call().await? == settled,
+        "the context must be consumed under the batch's settlement id"
     );
 
-    // The same batch again, under a fresh SU id: the context is spent.
+    // 2. The same batch again, under a fresh SU id. The settlement does not
+    //    cover the SU id, so the enclave's signature still holds.
     let again = ISpendingUnitV2::Mint {
         suId: mint.suId + U256::from(1u64),
         ..mint.clone()
     };
-    let replay_settle = enclave_sk
-        .sign(&settlement_message(&again, &batch, rm_digest()))
-        .to_bytes()
-        .to_vec();
-    let replayed = su
-        .submitSU(
-            again.clone(),
-            batch.clone(),
-            handle_sig.clone().into(),
-            replay_settle.into(),
-        )
-        .max_fee_per_gas(0)
-        .max_priority_fee_per_gas(0)
-        .send()
-        .await;
-    eyre::ensure!(
-        replayed.is_err(),
-        "a second SU for the same context must be refused"
-    );
+    expect_already_settled(
+        submit(&su, &again, &batch, &seals).await,
+        ctx,
+        settled,
+        "the same batch again",
+    )?;
 
-    // The handle moved to a fresh context: the seal id is spent too, which is
-    // what stops a certificate being reused across batches. A new context
-    // needs a new handle signature, so the committee signs the moved seal.
-    let moved = seal(field_element("S053 another context"), seal_id, group_key);
-    let moved_mint = ISpendingUnitV2::Mint {
+    // 3. A sibling sync of the same context: a re-run from the same cursor
+    //    seals the same pools under the next sequence, so every seal id is
+    //    new, and the committee and the enclave both sign it. Only one sync
+    //    per context settles, and the refusal names the one that did.
+    let sibling_mint = ISpendingUnitV2::Mint {
         suId: mint.suId + U256::from(2u64),
+        ..mint.clone()
+    };
+    let mut sibling_seals = pools();
+    sign_handles(&committee, attester, ctx, SEQUENCE + 1, &mut sibling_seals);
+    let sibling = settled_batch(
+        &enclave_sk,
+        &sibling_mint,
+        ctx,
+        SEQUENCE + 1,
+        &sibling_seals,
+    );
+    expect_already_settled(
+        submit(&su, &sibling_mint, &sibling, &sibling_seals).await,
+        ctx,
+        settled,
+        "a sibling sync of a settled context",
+    )?;
+
+    // 4. A pool dropped: the remaining seal verifies on its own, but no
+    //    longer adds up to the totals the enclave signed. Checked before the
+    //    context, so it is the same refusal on every run.
+    let dropped_mint = ISpendingUnitV2::Mint {
+        suId: mint.suId + U256::from(3u64),
         ..mint
     };
-    let moved_handle =
-        sig_g1_eip2537(&committee.sign(&handle_message(attester, &moved), SEAL_DST, &[]));
-    let moved_settle = enclave_sk
-        .sign(&settlement_message(&moved_mint, &moved, rm_digest()))
-        .to_bytes()
-        .to_vec();
-    let moved_result = su
-        .submitSU(moved_mint, moved, moved_handle.into(), moved_settle.into())
-        .max_fee_per_gas(0)
-        .max_priority_fee_per_gas(0)
-        .send()
-        .await;
+    let refused = submit(&su, &dropped_mint, &batch, &seals[..1])
+        .await
+        .err()
+        .ok_or_else(|| eyre::eyre!("a batch with a pool dropped must be refused"))?;
     eyre::ensure!(
-        moved_result.is_err(),
-        "a seal id replayed under another context must be refused"
+        refused
+            .as_decoded_error::<ISpendingUnitV2::BatchTotalsMismatch>()
+            .is_some(),
+        "a dropped pool must be refused as BatchTotalsMismatch: {refused}"
+    );
+    Ok(())
+}
+
+/// `result` must be the chain's `AlreadySettled(ctx, settled)`.
+fn expect_already_settled(
+    result: Result<(), alloy_contract::Error>,
+    ctx: B256,
+    settled: B256,
+    what: &str,
+) -> eyre::Result<()> {
+    let refused = result
+        .err()
+        .ok_or_else(|| eyre::eyre!("{what} must be refused"))?;
+    let named = refused
+        .as_decoded_error::<ISpendingUnitV2::AlreadySettled>()
+        .ok_or_else(|| eyre::eyre!("{what} must be refused as AlreadySettled: {refused}"))?;
+    eyre::ensure!(
+        named.ctx == ctx && named.settledId == settled,
+        "AlreadySettled for {what} must name the context and the settlement that won"
     );
     Ok(())
 }
