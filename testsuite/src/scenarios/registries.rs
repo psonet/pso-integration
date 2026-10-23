@@ -91,6 +91,7 @@ sol! {
             bytes32 ctx;
             bytes32 sealId;
             uint32 fsEpoch;
+            uint32 poolEpoch;
             uint64 worldwideDay;
             uint64 count;
             bytes32 fFold;
@@ -128,8 +129,8 @@ sol! {
         ) external;
         function getData(uint256 suId) external view returns (SpendingUnitV2Entity memory);
         function exists(uint256 suId) external view returns (bool);
-        function batches(bytes32 ctx) external view returns (bool);
-        error AlreadySettled(bytes32 ctx, bytes32 sealId);
+        function settledPools(bytes32 ctx, uint32 poolEpoch) external view returns (bytes32);
+        error AlreadySettled(bytes32 ctx, uint32 poolEpoch, bytes32 settledSealId);
     }
 }
 
@@ -207,8 +208,9 @@ pub fn handle_message(attester: Address, seal: &ISpendingUnitV2::Seal) -> Vec<u8
 
 /// `BDP_DST ‖ 0x12 ‖ ctx ‖ lp(seal_id) ‖ u32le(fs_epoch) ‖ lp(fs_group_key)
 ///  ‖ rm_digest ‖ lp(commitment_root) ‖ u64le(sequence) ‖ u16le(currency)
-///  ‖ u64le(base) ‖ u64le(atto) ‖ u64le(wwd) ‖ u64le(count) ‖ f_fold` — what
-/// the enclave signs, and the only statement covering the amount.
+///  ‖ u64le(base) ‖ u64le(atto) ‖ u64le(wwd) ‖ u64le(count) ‖ f_fold
+///  ‖ u32le(pool_epoch)` — what the enclave signs, and the only statement
+/// covering the amount and the claim pool the SU settles.
 pub fn settlement_message(
     mint: &ISpendingUnitV2::Mint,
     seal: &ISpendingUnitV2::Seal,
@@ -230,6 +232,7 @@ pub fn settlement_message(
     out.extend_from_slice(&seal.worldwideDay.to_le_bytes());
     out.extend_from_slice(&seal.count.to_le_bytes());
     out.extend_from_slice(seal.fFold.as_slice());
+    out.extend_from_slice(&seal.poolEpoch.to_le_bytes());
     out
 }
 
@@ -274,6 +277,7 @@ mod tests {
             ctx: keccak256("ctx"),
             sealId: keccak256("seal"),
             fsEpoch: 1,
+            poolEpoch: 0,
             worldwideDay: BATCH_WWD,
             count: 42,
             fFold: keccak256("fold"),
@@ -310,6 +314,7 @@ mod tests {
             ctx: keccak256("ctx"),
             sealId: keccak256("seal"),
             fsEpoch: 1,
+            poolEpoch: 0,
             worldwideDay: BATCH_WWD,
             count: 42,
             fFold: keccak256("fold"),
@@ -341,6 +346,13 @@ mod tests {
         let mut louder = mint.clone();
         louder.amountBase += 1;
         assert_ne!(settlement_message(&louder, &seal, rm), message);
+
+        // The claim pool closes the statement, and it is not the signing
+        // epoch: the same seal under another pool is another statement.
+        assert_eq!(&message[message.len() - 4..], &seal.poolEpoch.to_le_bytes());
+        let mut other_pool = seal.clone();
+        other_pool.poolEpoch += 1;
+        assert_ne!(settlement_message(&mint, &other_pool, rm), message);
 
         // And the enclave's strict verify accepts its own signature.
         use ed25519_dalek::{Signer as _, Verifier as _};

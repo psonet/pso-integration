@@ -8,8 +8,11 @@
 //! the SU, which is the first time `FsEpochRegistry.keyFor` has an on-chain
 //! consumer.
 //!
-//! Then the two refusals that make a batch settle once: the same context
-//! again, and the same seal id moved to a fresh context.
+//! Settlement is once per claim pool, `(ctx, poolEpoch)`: the same seal
+//! again is refused, and so is a sibling attempt over the same pool — a sync
+//! re-run from the same cursor seals the pool again under a new seal id, and
+//! the refusal names the attempt that won. A second pool of the same context
+//! — a sync whose records settled in two key epochs — settles on its own.
 
 use alloy_primitives::{address, keccak256, Address, B256, U256};
 use async_trait::async_trait;
@@ -24,6 +27,10 @@ use crate::{Scenario, TestEnv};
 
 /// The canonical predeploy (`pso_chain_abi::addresses::SPENDING_UNIT_V2`).
 const SPENDING_UNIT_V2: Address = address!("5200000000000000000000000000000000000008");
+
+/// The claim pool the batch was accumulated in: an earlier key epoch than the
+/// committee epoch (1) that signs it, as a batch sealed after a rotation is.
+const POOL: u32 = 0;
 
 pub struct S053;
 
@@ -52,17 +59,24 @@ fn field_element(label: &str) -> B256 {
     B256::from(U256::from_be_bytes(keccak256(label).0) >> 8)
 }
 
-fn seal(ctx: B256, seal_id: B256, group_key: Vec<u8>) -> ISpendingUnitV2::Seal {
+fn seal(
+    ctx: B256,
+    pool: u32,
+    seal_id: B256,
+    sequence: u64,
+    group_key: Vec<u8>,
+) -> ISpendingUnitV2::Seal {
     ISpendingUnitV2::Seal {
         ctx,
         sealId: seal_id,
         fsEpoch: 1,
+        poolEpoch: pool,
         worldwideDay: BATCH_WWD,
         count: 42,
         fFold: field_element("S053 f_fold"),
         fsGroupKey: group_key.into(),
         commitmentRoot: keccak256("S053 commitment root").to_vec().into(),
-        sequence: 7,
+        sequence,
     }
 }
 
@@ -83,7 +97,7 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
 
     let ctx = field_element("S053 loader context");
     let seal_id = field_element("S053 seal attempt");
-    let batch = seal(ctx, seal_id, group_key.clone());
+    let batch = seal(ctx, POOL, seal_id, 7, group_key.clone());
 
     let mint = ISpendingUnitV2::Mint {
         suId: U256::from_be_bytes(keccak256("S053 su id").0) >> 8, // < field modulus
@@ -139,11 +153,11 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         "the SU must name the batch it settled"
     );
     eyre::ensure!(
-        su.batches(ctx).call().await?,
-        "the context must be consumed"
+        su.settledPools(ctx, POOL).call().await? == seal_id,
+        "the pool must name the attempt that settled it"
     );
 
-    // The same batch again, under a fresh SU id: the context is spent.
+    // The same batch again, under a fresh SU id: the pool is spent.
     let again = ISpendingUnitV2::Mint {
         suId: mint.suId + U256::from(1u64),
         ..mint.clone()
@@ -165,32 +179,82 @@ async fn run(env: &TestEnv) -> eyre::Result<()> {
         .await;
     eyre::ensure!(
         replayed.is_err(),
-        "a second SU for the same context must be refused"
+        "a second SU for the same seal must be refused"
     );
 
-    // The handle moved to a fresh context: the seal id is spent too, which is
-    // what stops a certificate being reused across batches. A new context
-    // needs a new handle signature, so the committee signs the moved seal.
-    let moved = seal(field_element("S053 another context"), seal_id, group_key);
-    let moved_mint = ISpendingUnitV2::Mint {
+    // A sibling attempt over the same pool: a re-run from the same cursor
+    // seals it again under a new seal id and the next sequence, and the
+    // committee and the enclave both sign it. Only one attempt per pool
+    // settles, and the refusal names the one that did.
+    let sibling = seal(
+        ctx,
+        POOL,
+        field_element("S053 sibling attempt"),
+        8,
+        group_key.clone(),
+    );
+    let sibling_mint = ISpendingUnitV2::Mint {
         suId: mint.suId + U256::from(2u64),
-        ..mint
+        ..mint.clone()
     };
-    let moved_handle =
-        sig_g1_eip2537(&committee.sign(&handle_message(attester, &moved), SEAL_DST, &[]));
-    let moved_settle = enclave_sk
-        .sign(&settlement_message(&moved_mint, &moved, rm_digest()))
+    let sibling_handle =
+        sig_g1_eip2537(&committee.sign(&handle_message(attester, &sibling), SEAL_DST, &[]));
+    let sibling_settle = enclave_sk
+        .sign(&settlement_message(&sibling_mint, &sibling, rm_digest()))
         .to_bytes()
         .to_vec();
-    let moved_result = su
-        .submitSU(moved_mint, moved, moved_handle.into(), moved_settle.into())
+    let refused = su
+        .submitSU(
+            sibling_mint,
+            sibling,
+            sibling_handle.into(),
+            sibling_settle.into(),
+        )
         .max_fee_per_gas(0)
         .max_priority_fee_per_gas(0)
         .send()
-        .await;
+        .await
+        .err()
+        .ok_or_else(|| eyre::eyre!("a sibling attempt over a settled pool must be refused"))?;
+    let named = refused
+        .as_decoded_error::<ISpendingUnitV2::AlreadySettled>()
+        .ok_or_else(|| eyre::eyre!("the sibling must be refused as AlreadySettled: {refused}"))?;
     eyre::ensure!(
-        moved_result.is_err(),
-        "a seal id replayed under another context must be refused"
+        named.ctx == ctx && named.poolEpoch == POOL && named.settledSealId == seal_id,
+        "AlreadySettled must name the pool and the attempt that won"
+    );
+
+    // The next pool of the same context: a sync whose records settled in two
+    // key epochs seals one batch per pool under one context, and each settles.
+    let next_pool_id = field_element("S053 next pool attempt");
+    let next_pool = seal(ctx, POOL + 1, next_pool_id, 7, group_key);
+    let next_mint = ISpendingUnitV2::Mint {
+        suId: mint.suId + U256::from(3u64),
+        ..mint
+    };
+    if !su.exists(next_mint.suId).call().await? {
+        let next_handle =
+            sig_g1_eip2537(&committee.sign(&handle_message(attester, &next_pool), SEAL_DST, &[]));
+        let next_settle = enclave_sk
+            .sign(&settlement_message(&next_mint, &next_pool, rm_digest()))
+            .to_bytes()
+            .to_vec();
+        su.submitSU(
+            next_mint.clone(),
+            next_pool,
+            next_handle.into(),
+            next_settle.into(),
+        )
+        .max_fee_per_gas(0)
+        .max_priority_fee_per_gas(0)
+        .send()
+        .await?
+        .get_receipt()
+        .await?;
+    }
+    eyre::ensure!(
+        su.settledPools(ctx, POOL + 1).call().await? == next_pool_id,
+        "another pool of the same context must settle on its own"
     );
     Ok(())
 }
