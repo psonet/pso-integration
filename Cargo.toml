@@ -122,20 +122,24 @@ tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Same profile shape as pso-zk-circuits — proving times collapse
-# under opt-level=3 even in dev.
+# under opt-level=3 even in dev. Sized for disk otherwise: no incremental
+# cache (set CARGO_INCREMENTAL=1 to opt back in), line-table debuginfo only.
 [profile.dev]
 opt-level = 3
-debug = 2
+debug = "line-tables-only"
 overflow-checks = true
-incremental = true
+incremental = false
+# Build scripts and proc-macros keep their own cache unless told otherwise.
+[profile.dev.build-override]
+incremental = false
 
 [profile.local]
 inherits = "dev"
 opt-level = 3
-debug = 2
+debug = "line-tables-only"
 debug-assertions = false
 panic = 'unwind'
-incremental = true
+incremental = false
 lto = "thin"
 codegen-units = 16
 
