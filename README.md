@@ -67,6 +67,23 @@ cargo test  --workspace        # node-free unit + framework tests
 needs a C++ toolchain (cmake/clang) and network access (noir git deps + first-run
 SRS). `pso-attester-integration` and the CLIs are pure Rust.
 
+### Build cache
+
+Every distinct package selection (`-p`), feature set, `RUSTFLAGS` value and
+toolchain is a separate build variant under `target/`, and cargo never prunes
+the ones no longer in use. Prefer `--workspace` invocations and keep lint
+flags on the tool (`cargo clippy -- -D warnings`) rather than in `RUSTFLAGS`,
+which rebuilds every dependency into a new variant.
+
+Dev builds keep no incremental cache and only line-table debuginfo (see
+`[profile.dev]` in `Cargo.toml`); `CARGO_INCREMENTAL=1` re-enables the cache
+for a session. To reclaim space without recompiling dependencies:
+
+```bash
+# Drop every variant of the workspace crates; dependencies stay cached
+cargo clean --workspace
+```
+
 ## Client packages
 
 Non-Rust clients consume the UniFFI bindings, published per release (and to the
