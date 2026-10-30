@@ -515,8 +515,6 @@ jobs:
           token: ${{ secrets.PSONET_REPO_TOKEN }}
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
@@ -595,8 +593,6 @@ jobs:
           token: ${{ secrets.PSONET_REPO_TOKEN }}
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
@@ -754,8 +750,6 @@ jobs:
           token: ${{ secrets.PSONET_REPO_TOKEN }}
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
 
       - name: Install C++ toolchain (Linux runner only)
         if: startsWith(matrix.runner, 'ubuntu-')
@@ -815,8 +809,6 @@ jobs:
           token: ${{ secrets.PSONET_REPO_TOKEN }}
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
 
       - name: Add Rust target
         run: rustup target add aarch64-apple-darwin
@@ -863,8 +855,6 @@ jobs:
           token: ${{ secrets.PSONET_REPO_TOKEN }}
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
 
       # Linux desktop targets only. The aarch64-apple-darwin slice
       # comes from the `build-attester-native-darwin` job (downloaded
@@ -1035,8 +1025,6 @@ jobs:
           token: ${{ secrets.PSONET_REPO_TOKEN }}
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
